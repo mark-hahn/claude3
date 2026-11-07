@@ -1,5 +1,12 @@
-# Vue 3 + Vite
+# claude3
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+Claude Code in a browser page: one tab per project, each a session sidebar and a conversation
+pane, like the claude2 VS Code extension. The claude CLI runs under a small Node backend on each
+host (WSL, Windows, hahnca.com); the tabs and hosts are in `shared/config.ts`.
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+- `./run`: deploy any backend not running the repo's server code, then the page with hot update at http://localhost:5310 (`npm run dev` is the page alone)
+- `npm run build`: type-check page and server, build the page to `dist/`
+- `npm test`: the renderer's self-check
+- `./deploy [--if-stale] [wsl] [win] [srv]`: copy the backend to its hosts and (re)start it there
+
+See `.claude/architecture.md` for how it fits together.

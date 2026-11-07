@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# Build the page and copy the backend to its three hosts, then start or restart each one. The
+# first run on a host also sets up what keeps the backend running there:
+#   WSL      /root/apps/claude3Wsl              systemd service claude3, at WSL boot (port 7310, serves dist/)
+#   Windows  C:\Users\mark\apps\claude3Win      HKCU Run key claude3, at logon (port 7311)
+#   server   hahnca.com:/root/dev/apps/claude3Srv  pm2 process claude3 (port 7312)
+# Each backend runs server/main.ts as it is: Node strips the types, so there is no build step for it.
+# The version is a hash of server/ and shared/, written beside each deployed copy and answered at
+# GET /version. Page-only changes (src/) don't change it, so they never restart a backend.
+# Usage: ./deploy [wsl] [win] [srv]              deploy and restart these hosts (none named: all three)
+#        ./deploy --if-stale [wsl] [win] [srv]   only those whose running backend isn't this version
+# A restart cuts that backend's running turns.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+REMOTE=hahnca.com
+WSL_DIR=/root/apps/claude3Wsl
+WIN_DIR=/mnt/c/Users/mark/apps/claude3Win
+WIN_DIR_W='C:\Users\mark\apps\claude3Win'
+WIN_NODE='C:\nvm4w\nodejs\node.exe'
+SRV_DIR=/root/dev/apps/claude3Srv
+# package.json only for its "type": "module", which makes Node read the .ts files as ES modules.
+FILES=(package.json server shared)
+VERSION=$(find server shared -type f -print0 | sort -z | xargs -0 sha1sum | sha1sum | cut -c1-12)
+
+# What the host's backend answers at /version; empty when nothing answers.
+running() {
+  case $1 in
+  wsl) curl -s -m 3 http://localhost:7310/version || true ;;
+  # Windows' own curl: under WSL's NAT, Windows' localhost isn't reachable from here.
+  win) (cd /mnt/c && /mnt/c/Windows/System32/curl.exe -s -m 3 http://localhost:7311/version | tr -d '\r') || true ;;
+  srv) curl -s -m 3 "http://$REMOTE:7312/version" || true ;;
+  esac
+}
+
+wait_up() {
+  for _ in $(seq 20); do
+    if [ "$(running "$1")" = "$VERSION" ]; then
+      echo "$1 backend up, version $VERSION"
+      return 0
+    fi
+    sleep 1
+  done
+  echo "!! $1 backend not answering with version $VERSION after 20s" >&2
+  return 1
+}
+
+if [ "${1:-}" = "--if-stale" ]; then
+  shift
+  HOSTS=("$@")
+  [ ${#HOSTS[@]} -gt 0 ] || HOSTS=(wsl win srv)
+  for host in "${HOSTS[@]}"; do
+    now=$(running "$host")
+    if [ "$now" = "$VERSION" ]; then
+      echo "== $host backend running version $VERSION"
+      continue
+    fi
+    echo "== $host backend running ${now:-nothing}; deploying $VERSION"
+    # Its own process, so set -e stops that host's steps and the other hosts still get theirs.
+    "$0" "$host" || echo "!! $host deploy failed" >&2
+  done
+  exit 0
+fi
+
+HOSTS=("$@")
+[ ${#HOSTS[@]} -gt 0 ] || HOSTS=(wsl win srv)
+
+for host in "${HOSTS[@]}"; do
+  case $host in
+  wsl)
+    echo "== WSL =="
+    npm run build
+    mkdir -p "$WSL_DIR"
+    rsync -a --delete "${FILES[@]}" dist "$WSL_DIR/"
+    echo "$VERSION" > "$WSL_DIR/version"
+    # A system unit, not a user one: everything here runs as root, and a user unit would need
+    # lingering to start before anyone logs in.
+    cat > /etc/systemd/system/claude3.service <<EOF
+[Unit]
+Description=claude3 WSL backend
+After=network.target
+
+[Service]
+WorkingDirectory=$WSL_DIR
+ExecStart=/usr/local/bin/node $WSL_DIR/server/main.ts wsl
+Environment=HOME=/root
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable claude3 >/dev/null 2>&1
+    systemctl restart claude3
+    wait_up wsl || { journalctl -u claude3 --no-pager -n 10; exit 1; }
+    ;;
+  win)
+    echo "== Windows =="
+    mkdir -p "$WIN_DIR"
+    rsync -rt --delete "${FILES[@]}" "$WIN_DIR/"
+    echo "$VERSION" > "$WIN_DIR/version"
+    # Node 22.12 there still needs the flag for type stripping. conhost --headless keeps the
+    # backend's console window out of sight.
+    # ponytail: conhost --headless is undocumented; a hidden-window launcher if Windows drops it.
+    # Started at logon from the user's Run key: a logon-triggered scheduled task needs an admin
+    # prompt, which this script can't answer. Called directly, not through cmd.exe, so WSL quotes
+    # the command as one argument.
+    (cd /mnt/c && reg.exe add 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v claude3 /t REG_SZ /f \
+      /d "conhost.exe --headless $WIN_NODE --experimental-strip-types $WIN_DIR_W\\server\\main.ts win" | tr -d '\r')
+    # Whatever holds the port is the old backend, whichever launcher started it. exit 0: with
+    # nothing on the port, Get-NetTCPConnection still leaves an error and PowerShell exits 1.
+    (cd /mnt/c && powershell.exe -NoProfile -Command "Get-NetTCPConnection -LocalPort 7311 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id \$_.OwningProcess -Force }; exit 0" | tr -d '\r')
+    # Through Start-Process, so the backend is its own process and outlives this script.
+    (cd /mnt/c && powershell.exe -NoProfile -Command "Start-Process conhost.exe -ArgumentList '--headless','$WIN_NODE','--experimental-strip-types','$WIN_DIR_W\\server\\main.ts','win'" | tr -d '\r')
+    wait_up win || { tail -n 10 /mnt/c/Users/mark/.claude3/win.log 2>/dev/null; exit 1; }
+    ;;
+  srv)
+    echo "== $REMOTE =="
+    ssh "$REMOTE" "mkdir -p $SRV_DIR"
+    rsync -a --delete "${FILES[@]}" "$REMOTE:$SRV_DIR/"
+    ssh "$REMOTE" "echo $VERSION > $SRV_DIR/version"
+    # node itself is the pm2 script (interpreter none), as tv-api runs xvfb-run: pm2's own
+    # wrapper would not load a .ts file.
+    ssh "$REMOTE" "cd $SRV_DIR && if pm2 describe claude3 >/dev/null 2>&1; then pm2 restart claude3; else pm2 start \$(which node) --name claude3 --interpreter none --cwd $SRV_DIR -- server/main.ts srv && pm2 save; fi" | tail -4
+    wait_up srv || { ssh "$REMOTE" "pm2 logs claude3 --nostream --lines 10"; exit 1; }
+    ;;
+  *)
+    echo "unknown host $host (wsl, win or srv)" >&2
+    exit 1
+    ;;
+  esac
+done
+echo "== done =="

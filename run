@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Start the page with hot update at http://localhost:5310 (vite.config.ts pins the port), after
+# making sure each backend runs this repo's server code: hosts whose backend is missing, stopped
+# or older get deployed and restarted (./deploy --if-stale), the rest are left alone. A host that
+# fails is reported and the page starts anyway.
+cd "$(dirname "$0")"
+./deploy --if-stale
+exec npx vite "$@"
