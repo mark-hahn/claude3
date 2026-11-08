@@ -129,4 +129,6 @@ export type ServerEvent =
   | { type: "session"; session: ClaudeSession; status: RunningStatus | null }
   // Streamed text, spliced in at `at` of the turn's response, plus the run's latest status.
   | { type: "delta"; sessionId: string; turnId: string; at: number; delta: string; status: RunningStatus | null }
-  | { type: "models"; models: ModelMap };
+  | { type: "models"; models: ModelMap }
+  // Sessions gone for good (empty ones swept away).
+  | { type: "removed"; ids: string[] };

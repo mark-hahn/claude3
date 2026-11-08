@@ -329,7 +329,9 @@ function applyDelta(turnId: string, next: RunningStatus | null): void {
   fillResponse(response, turn, true);
   if (Number(node.dataset.index) === anchorIndex) requestAnimationFrame(() => syncSelectedBlock(pinned ? "bottom" : top));
 }
-defineExpose({ applyDelta, focusPrompt: () => promptEl.value?.focus() });
+// Sessions holding unsent text: the sidebar's sweep of empty sessions spares them.
+const drafted = (): string[] => [...drafts].filter(([, text]) => text.trim()).map(([id]) => id).concat(draft.value.trim() && props.session ? [props.session.id] : []);
+defineExpose({ applyDelta, drafted, focusPrompt: () => promptEl.value?.focus() });
 
 // ---- the dock ----
 

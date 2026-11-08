@@ -4,6 +4,8 @@
 //   POST /api/<action>         body: { tab, sessionId?, ... } -> JSON
 //        prompt  { prompt, model, effort, advisor } -> { sessionId } (an empty sessionId starts a session)
 //        stop | rename { name } | trash { trashed } | picks { model, effort, advisor } | ctx -> { table }
+//        new { keep } -> { session } (an empty "New session"; sweeps other empty ones, as discard does)
+//        discard { keep } -> {} (drop every session with no turns, except the ids in keep)
 //        clean -> {} (every session to the trash) | git -> { files: [{ x, y, path }] } (git status)
 //        commit { message } -> {} (add everything, commit, push)
 //        snips { text? } -> { text } (claude2's Snips text, kept on claude2-stats; text saves it)
@@ -150,9 +152,12 @@ async function submitPrompt(project: Project, body: Record<string, unknown>): Pr
   }
   let session = project.sessions.find((entry) => entry.id === body.sessionId);
   if (!session) {
-    // A new session exists from its first prompt on, so the sidebar never collects empty ones.
+    // The pane's draft (no card picked): the session exists from its first prompt on.
     session = { id: randomUUID(), name: firstWords(prompt), createdAt: Date.now(), updatedAt: Date.now(), trashed: false, model, effort, advisor: !!advisor, turns: [] };
     project.sessions.unshift(session);
+  }
+  if (!session.turns.length && !session.name) {
+    session.name = firstWords(prompt);
   }
   if (session.trashed) {
     throw new Error("A trashed session takes no prompts.");
@@ -321,6 +326,19 @@ async function ctxTable(project: Project, session: ClaudeSession): Promise<unkno
   return { table: await contextTable(project.tab.path, session.id, usage) };
 }
 
+// claude2's sweep: a session "+" made that never got a prompt is scratch, dropped as soon as
+// attention moves elsewhere. The page keeps the one it opens and any holding unsent text.
+// ponytail: another page showing an empty session can lose it; per-client keeps if that matters.
+function discardEmpty(project: Project, keep: string[]): void {
+  const ids = project.sessions.filter((session) => !session.turns.length && !keep.includes(session.id) && !runs.has(session.id)).map((session) => session.id);
+  if (!ids.length) {
+    return;
+  }
+  project.sessions = project.sessions.filter((session) => !ids.includes(session.id));
+  save(project);
+  send(project, { type: "removed", ids });
+}
+
 async function action(name: string, body: Record<string, unknown>): Promise<unknown> {
   const project = projects.get(String(body.tab));
   if (!project) {
@@ -337,6 +355,18 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "snips") {
     return await snips(body.text);
+  }
+  if (name === "new" || name === "discard") {
+    discardEmpty(project, Array.isArray(body.keep) ? body.keep.map(String) : []);
+    if (name === "discard") {
+      return {};
+    }
+    // Blank picks: the pane shows its defaults and the first prompt sends them.
+    const session: ClaudeSession = { id: randomUUID(), name: "", createdAt: Date.now(), updatedAt: Date.now(), trashed: false, model: "", effort: "", advisor: true, turns: [] };
+    project.sessions.unshift(session);
+    save(project);
+    sendSession(project, session);
+    return { session };
   }
   if (name === "clean") {
     for (const entry of project.sessions.filter((session) => !session.trashed)) {

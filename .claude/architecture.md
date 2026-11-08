@@ -61,10 +61,14 @@ on the laptop, and talks to each backend directly.
 
 - **Connect.** A tab opens `GET /events?tab=<label>` on its host's backend. The first event is the
   full state (sessions, running statuses, model list); then `session` (one session changed shape),
-  `delta` (streamed text spliced at an offset, plus status) and `models`. EventSource reconnects by
+  `delta` (streamed text spliced at an offset, plus status), `models` and `removed`. EventSource reconnects by
   itself, and each reconnect starts with a full state again.
-- **A prompt.** Ctrl+Enter → `POST /api/prompt` → `submitPrompt` (an empty sessionId creates the
-  session, so the sidebar never collects empty ones; a running session is stopped first unless the
+- **New session.** "+" → `POST /api/new` makes an empty "New session" card (blank picks) and the
+  pane opens it, as claude2 does. Empty sessions are scratch: "+", a card click, Clean and Trash
+  sweep them (`discard`; the backend posts `removed`), sparing the one being opened and any
+  holding unsent text (`Pane.drafted`).
+- **A prompt.** Ctrl+Enter → `POST /api/prompt` → `submitPrompt` (an empty sessionId, the pane's
+  draft after a trash or Clean, creates the session; a running session is stopped first unless the
   prompt can follow up a background wait) → `runTurn` stores the turn, posts `session`, names the
   session on its first prompt, and runs the CLI. Text and status go out as `delta` every 80ms.
   The result settles the turn (`markAnswer` puts the answer mark in), saves, posts `session`.

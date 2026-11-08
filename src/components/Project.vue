@@ -75,6 +75,10 @@ function onEvent(event: ServerEvent): void {
     if (event.sessionId === selectedId.value) pane.value?.applyDelta(event.turnId, event.status);
   } else if (event.type === "models") {
     models.value = event.models;
+  } else if (event.type === "removed") {
+    sessions = sessions.filter((session) => !event.ids.includes(session.id));
+    if (event.ids.includes(selectedId.value)) selectedId.value = "";
+    version.value++;
   }
 }
 
@@ -82,17 +86,37 @@ function select(id: string): void {
   selectedId.value = id;
 }
 
-// The pane goes back to a new-session draft; the session it showed stays in the sidebar.
-function newSession(): void {
+// claude2's "+": a "New session" card, opened in the pane. Attention moving on (another card,
+// Clean, Trash, "+" again) sweeps it away while it is still empty and holds no typing.
+async function newSession(): Promise<void> {
   showTrash.value = false;
-  selectedId.value = "";
-  focusPrompt();
+  try {
+    const { session } = await post<{ session: ClaudeSession }>(props.tab, "new", { keep: keepIds() });
+    if (!sessions.some((entry) => entry.id === session.id)) onEvent({ type: "session", session, status: null });
+    selectedId.value = session.id;
+    focusPrompt();
+  } catch (error) {
+    report(error);
+  }
+}
+
+function keepIds(keep = ""): string[] {
+  return [keep, ...(pane.value?.drafted() ?? [])].filter(Boolean);
+}
+function sweep(keep = ""): void {
+  if (sessions.some((session) => !session.turns.length)) void post(props.tab, "discard", { keep: keepIds(keep) }).catch(report);
 }
 
 // claude2's Clean: every session to the trash, the pane back to a new-session draft.
 function clean(): void {
+  sweep();
   selectedId.value = "";
   void post(props.tab, "clean", {}).catch(report);
+}
+
+function toggleTrash(): void {
+  sweep();
+  showTrash.value = !showTrash.value;
 }
 
 function focusPrompt(): void {
@@ -118,6 +142,7 @@ function dragDivider(event: PointerEvent): void {
 }
 
 function trash(session: ClaudeSession, trashed: boolean): void {
+  sweep(session.turns.length ? "" : session.id);
   if (trashed && session.id === selectedId.value) selectedId.value = "";
   void post(props.tab, "trash", { sessionId: session.id, trashed }).catch(report);
 }
@@ -149,6 +174,7 @@ function clickCard(session: ClaudeSession, event: MouseEvent): void {
     (event.currentTarget as HTMLElement).animate([{ backgroundColor: "#ffc9c9" }, { backgroundColor: "#ffc9c9" }], 200);
     return;
   }
+  sweep(session.id);
   if (renamed) return;
   selectedId.value = session.id;
 }
@@ -189,14 +215,14 @@ onBeforeUnmount(() => source?.close());
     <aside class="sidebar">
       <div class="top">
         <div class="row">
-          <button class="new" title="New session: the pane goes empty, and its first prompt starts the session" @click="newSession">
+          <button class="new" title="New session" @click="newSession">
             <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
           </button>
           <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" />
         </div>
         <div class="row">
           <button class="clean" title="Move every session to the trash" :disabled="showTrash || !counts.active" @click="clean">Clean</button>
-          <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="showTrash = !showTrash">Trash</button>
+          <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="toggleTrash">Trash</button>
           <span class="counts" title="Active sessions / trashed sessions">{{ counts.active }}/{{ counts.trashed }}</span>
         </div>
         <div v-if="!connected" class="offline">No answer from the {{ tab.host }} backend at {{ HOSTS[tab.host].url }}. Retrying.</div>
