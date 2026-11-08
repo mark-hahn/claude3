@@ -56,5 +56,4 @@
 - the prompt box is the text box where prompt text is entered
 - the footer is the stats/buttons to the right of the prompt box
   - the nav row is the top row in the footer with the status indicator, stop, and ctx buttons
-  - the model row is the second row with the model/effort/advisor selectors
-  - the stats row is the third bottom row with stats and no buttons
+  - the stats row is the second bottom row with stats and no buttons

@@ -7,13 +7,13 @@
 // prompt editor.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
-import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, DEFAULT_EFFORT, type ClaudeSession, type ClaudeTurn, type ModelMap, type RunningStatus } from "../../shared/types.ts";
+import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
 import { post } from "../api.ts";
 import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
 import { answerText, fillBox, renderMarkdown, withoutDetails } from "../render.ts";
 
 // active: this pane's tab is the one on show, so the page-wide keys are its.
-const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: RunningStatus | null; models: ModelMap; version: number; active: boolean }>();
+const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: RunningStatus | null; version: number; active: boolean }>();
 const emit = defineEmits<{ started: [sessionId: string]; new: [] }>();
 
 const historyEl = ref<HTMLElement>();
@@ -28,9 +28,6 @@ const promptMdEl = ref<HTMLElement>();
 let promptBox: monaco.editor.IStandaloneCodeEditor | null = null;
 // The prompt box's text, kept in step with the editor both ways.
 const draft = ref("");
-const model = ref("");
-const effort = ref("");
-const advisorOn = ref(true);
 const stopping = ref("");
 const now = ref(Date.now());
 
@@ -395,35 +392,6 @@ defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt });
 
 // ---- the dock ----
 
-const modelIds = computed(() => Object.keys(props.models));
-const defaultModel = (): string => modelIds.value.find((id) => id === "opus") ?? modelIds.value.find((id) => id.includes("opus")) ?? modelIds.value[0] ?? "";
-const effortsOf = (id: string): string[] => props.models[id] ?? [...new Set(Object.values(props.models).flat())];
-const modelOptions = computed(() => (model.value && !modelIds.value.includes(model.value) ? [...modelIds.value, model.value] : modelIds.value));
-const effortOptions = computed(() => effortsOf(model.value));
-// The next family up from the model's that the CLI lists; the backend's advisorFor picks the
-// run's advisor by the same rule.
-const advisorFamily = computed(() => {
-  const families = ["fable", "opus", "sonnet"];
-  const own = families.findIndex((family) => model.value.includes(family));
-  return families.slice(0, own === -1 ? families.length : own).filter((family) => modelIds.value.some((id) => id.includes(family))).pop() ?? "";
-});
-const advisorLabel = computed(() => (advisorFamily.value ? advisorFamily.value[0]!.toUpperCase() + advisorFamily.value.slice(1) : "None"));
-
-function loadPicks(): void {
-  const session = props.session;
-  model.value = session?.model || defaultModel();
-  const efforts = effortsOf(model.value);
-  const wanted = session?.effort || DEFAULT_EFFORT;
-  effort.value = efforts.includes(wanted) ? wanted : efforts.includes(DEFAULT_EFFORT) ? DEFAULT_EFFORT : efforts[0] ?? "";
-  advisorOn.value = session ? session.advisor : true;
-}
-
-function picksChanged(): void {
-  const efforts = effortsOf(model.value);
-  if (!efforts.includes(effort.value)) effort.value = efforts.includes(DEFAULT_EFFORT) ? DEFAULT_EFFORT : efforts[0] ?? "";
-  if (props.session) void post(props.tab, "picks", { sessionId: props.session.id, model: model.value, effort: effort.value, advisor: advisorOn.value }).catch(report);
-}
-
 function report(error: unknown): void {
   window.alert(error instanceof Error ? error.message : String(error));
 }
@@ -521,7 +489,7 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
   }
   pendingTurnCount = turns().length + 1;
   try {
-    const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: props.session?.id ?? "", prompt: text, model: model.value, effort: effort.value, advisor: advisorOn.value });
+    const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: props.session?.id ?? "", prompt: text });
     if (!props.session) {
       storeBig(sessionId, bigPrompt.value);
       emit("started", sessionId);
@@ -543,13 +511,13 @@ function sendKey(): void {
   void submit();
 }
 
-// The frame grows with the text (--content-h), never below three lines, and the CSS caps it at
+// The frame grows with the text (--content-h), never below two lines, and the CSS caps it at
 // six. The floor is Monaco's own rounded line height.
 function fitPrompt(): void {
   const box = promptBox;
   if (!box) return;
-  const threeLines = 3 * box.getOption(monaco.editor.EditorOption.lineHeight) + 10;
-  promptHostEl.value!.style.setProperty("--content-h", Math.max(box.getContentHeight(), threeLines) + 8 + "px");
+  const twoLines = 2 * box.getOption(monaco.editor.EditorOption.lineHeight) + 10;
+  promptHostEl.value!.style.setProperty("--content-h", Math.max(box.getContentHeight(), twoLines) + 8 + "px");
 }
 
 // bigPromptEditor: the prompt box takes the pane's full height on the left, and the history and
@@ -637,7 +605,7 @@ function stop(): void {
 // The context gauge: the conversation's level against where the CLI compacts it. A click when
 // nothing is running compacts now.
 const compactAt = computed(() => {
-  const window = (active.value ? latest.value?.contextWindow : undefined) ?? [...turns()].reverse().find((turn) => turn.model === model.value)?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+  const window = (active.value ? latest.value?.contextWindow : undefined) ?? turns().at(-1)?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
   return Math.max(1000, window - COMPACT_RESERVE);
 });
 const contextUsed = computed(() => {
@@ -871,7 +839,6 @@ watch(
       expandedPrompts = new Set();
       openToolCalls = new Set();
       if (ctxPopEl.value) ctxPopEl.value.hidden = true;
-      loadPicks();
       bigPrompt.value = localStorage.getItem(bigKey(id)) === "1";
       setPromptMarkdown(false);
     }
@@ -887,10 +854,6 @@ watch(
     if (!next?.active || next.turnId !== stopping.value) stopping.value = "";
   },
 );
-// The model list arrives after the first state; a pane still without a model takes the default.
-watch(modelIds, () => {
-  if (!model.value) loadPicks();
-});
 watch(draft, (text) => {
   if (promptBox && promptBox.getValue() !== text) promptBox.setValue(untab(text));
   if (text.trim()) localStorage.setItem(lostKey(), text);
@@ -937,7 +900,6 @@ onMounted(() => {
   box.onDidChangeModelContent(() => (draft.value = box.getValue()));
   lockPrompt();
   window.addEventListener("keydown", onPageKey, true);
-  loadPicks();
   render();
   const pendingRun = sessionStorage.getItem(runKey());
   if (pendingRun !== null) showRun(pendingRun);
@@ -996,20 +958,6 @@ onBeforeUnmount(() => {
             <button ref="ctxButtonEl" title="Tokens by source, for the last prompt and the whole conversation, in and out" :disabled="!session?.turns.length" @click="toggleCtx">Ctx</button>
           </div>
         </div>
-        <div class="bar">
-          <div class="group">
-            <select v-model="model" class="pick" title="Model" @change="picksChanged">
-              <option v-for="id in modelOptions" :key="id" :value="id">{{ id }}</option>
-            </select>
-            <select v-model="effort" class="pick" title="Effort" :disabled="!effortOptions.length" @change="picksChanged">
-              <option v-for="level in effortOptions" :key="level" :value="level">{{ level }}</option>
-            </select>
-            <select v-model="advisorOn" class="pick" title="Advisor: the model Claude can consult mid-task, one step stronger than the model picked" @change="picksChanged">
-              <option :value="false">None</option>
-              <option v-if="advisorFamily" :value="true">{{ advisorLabel }}</option>
-            </select>
-          </div>
-        </div>
         <div class="stats">
           <div class="status" title="Agentic turns in the last prompt / the limit">{{ stats.turns }}</div>
           <div class="status context" :class="{ over: contextUsed > compactAt }" title="Context used / where the CLI compacts it, in thousands of tokens. Click to compact now" @click="compactNow">
@@ -1032,8 +980,7 @@ onBeforeUnmount(() => {
 .pane > .history { grid-area: 1 / 1; }
 .pane .dock { display: flex; align-items: stretch; gap: 10px; border-top: 1px solid var(--border); background: var(--page); padding: 8px 12px; }
 .pane .dock-controls { display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 4px; flex: 0 1 auto; min-width: 0; margin-left: auto; }
-.pane .dock-controls button, .pane .dock-controls select { min-height: 0; padding: 3px 8px; }
-.pane .pick { padding-left: 6.5px; padding-right: 6.5px; width: 11ch; flex: none; }
+.pane .dock-controls button { min-height: 0; padding: 3px 8px; }
 .pane .history { overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 10px 12px 4px; outline: none; }
 .pane .turn { margin-bottom: 4px; }
 .pane .turn.selected .prompt-bar { outline: 2px solid #f28b82; outline-offset: -2px; }
@@ -1071,15 +1018,15 @@ onBeforeUnmount(() => {
 .pane .run-arrow { font-weight: 700; margin-right: 6px; animation: run-blink 0.6s steps(1) infinite; }
 @keyframes run-blink { 50% { visibility: hidden; } }
 /* The prompt box: a frame around a Monaco editor. It grows with the text (--content-h, set by the
-   script) from three lines to six, and still stretches to the controls' height beside it. */
-.pane .prompt { position: relative; flex: 1 1 260px; min-width: 180px; min-height: max(64px, min(var(--content-h, 0px), 144px)); max-height: 144px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+   script) from two lines to six, and still stretches to the controls' height beside it. */
+.pane .prompt { position: relative; flex: 1 1 260px; min-width: 180px; min-height: min(var(--content-h, 0px), 144px); max-height: 144px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .pane .prompt:focus-within { outline: 2px solid var(--ink); outline-offset: -1px; border-color: transparent; }
 /* Inset just past the rounded corners, so the editor's square ones stay inside the border. */
 .pane .prompt > div { position: absolute; inset: 3px; }
 /* promptMarkdown: the big box's text rendered as a markdown box, read-only, in the editor's place. */
 .pane .prompt > .prompt-md { margin: 0; border-left: none; padding: 7px 10px 3px 14px; background: transparent; overflow-y: auto; outline: none; }
 /* bigPromptEditor: the editor runs the pane's full height on the left, and the history and the
-   controls share the column to its right, the controls at their own three-row height. The dock
+   controls share the column to its right, the controls at their own two-row height. The dock
    dissolves so its two children can sit in the pane's grid beside the history. The right column
    takes at least half the pane, more only if the controls need it. */
 .pane.big-prompt-editor { grid-template-columns: minmax(0, 1fr) minmax(max-content, 1fr); }
@@ -1088,9 +1035,9 @@ onBeforeUnmount(() => {
 /* Sized by the column, never by its own content, or a long line would widen the column. */
 .pane.big-prompt-editor > .history { grid-area: 1 / 2; contain: inline-size; }
 .pane.big-prompt-editor .dock-controls { grid-column: 2; grid-row: 2; margin: 0; padding: 8px 16px 8px 12px; border-top: 1px solid var(--border); }
-.pane.big-prompt-editor .footer, .pane.big-prompt-editor .bar, .pane.big-prompt-editor .stats { justify-content: center; }
+.pane.big-prompt-editor .footer, .pane.big-prompt-editor .stats { justify-content: center; }
 .pane.big-prompt-editor .stats { margin-right: 0; }
-.pane .bar, .pane .footer { display: flex; gap: 8px; align-items: center; }
+.pane .footer { display: flex; gap: 8px; align-items: center; }
 .pane .group { display: flex; gap: 6px; align-items: center; min-width: 0; flex-wrap: wrap; }
 /* Every digit one width, so a ticking stat does not resize the column. */
 .pane .stats { display: flex; gap: 1ch; align-items: center; justify-content: flex-end; margin-left: 8px; margin-right: 20px; font-variant-numeric: tabular-nums; }

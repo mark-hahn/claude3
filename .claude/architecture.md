@@ -19,7 +19,7 @@ on the laptop, and talks to each backend directly.
 - `server/claudeCli.ts`: `ClaudeCliRunner`, claude2's runner nearly verbatim: spawns the CLI,
   parses its stream into the response text (tool lines with marks, details), stop by interrupt,
   follow-up into a background wait, titles, the model list, `contextUsage` for Ctx. Also
-  `advisorFor` / `cheapestModel` from claude2's modelInfo.ts.
+  `cheapestModel` from claude2's modelInfo.ts.
 - `server/contextStats.ts`: the Ctx popup's table, copied unchanged from claude2.
 - `src/App.vue`: the tab strip; every tab's `Project` stays mounted (`v-show`). The Snips and
   gear (Settings) toggles are here, at the row's right end, one each for every tab; they share one
@@ -47,7 +47,7 @@ on the laptop, and talks to each backend directly.
   and the poll lease live on claude2-stats (hahnca.com:7301), shared with claude2's windows; local
   fallback files in `~/.claude3/quota-*.json`. No footer 95% alert, no reading after a turn.
 - `src/components/Pane.vue`: claude2's conversation pane. History (bars and boxes) is built
-  imperatively, as claude2 builds it; the dock (prompt box, "+", pill, stop, Ctx, pickers, stats; its "+" emits `new` to Project's newSession) is a
+  imperatively, as claude2 builds it; the dock (prompt box, "+", pill, stop, Ctx, stats; its "+" emits `new` to Project's newSession) is a
   template. Also the Ctx popup. The prompt box is a Monaco editor whose text is mirrored into the
   `draft` ref both ways. claude2's big prompt editor: Ctrl-Alt-click in the box or Ctrl-Alt-Z
   (the tab on show only, via the `active` prop) puts the box full height left of the history,
@@ -84,7 +84,7 @@ on the laptop, and talks to each backend directly.
   full state (sessions, running statuses, model list); then `session` (one session changed shape),
   `delta` (streamed text spliced at an offset, plus status), `models` and `removed`. EventSource reconnects by
   itself, and each reconnect starts with a full state again.
-- **New session.** "+" → `POST /api/new` makes an empty "New session" card (blank picks) and the
+- **New session.** "+" → `POST /api/new` makes an empty "New session" card and the
   pane opens it, as claude2 does. Empty sessions are scratch: "+", a card click, Clean and Trash
   sweep them (`discard`; the backend posts `removed`), sparing the one being opened and any
   holding unsent text (`Pane.drafted`).
@@ -138,8 +138,11 @@ on the laptop, and talks to each backend directly.
 - The CLI processes are children of the backend: restarting a backend cuts its running turns,
   which keep their text so far and are marked "The backend stopped during this response."
 - Windows backend start-up: a logon-triggered scheduled task needs an admin prompt, so logon goes
-  through the HKCU Run key instead. The deploy starts it with `powershell Start-Process conhost.exe
-  --headless node.exe ...`, which outlives the deploy and WSL's interop, and shows no window.
+  through the HKCU Run key instead. The deploy opens a shortcut (`start.lnk`, `conhost.exe
+  --headless node.exe ...`) through `explorer.exe`, which outlives the deploy and WSL's interop,
+  shows no window, and is never elevated. Windows programs started under the WSL backend ("r",
+  Claude's shell) run elevated, and a plain terminal gets Access Denied stopping a backend
+  started that way. `runas /trustlevel:0x20000` does not drop the elevation.
   ponytail: `conhost --headless` is undocumented.
 - `deploy` runs under `set -e`, and `powershell.exe -Command` exits 1 whenever its last command
   left an error, even one silenced with `-ErrorAction SilentlyContinue` (e.g.
@@ -155,7 +158,8 @@ on the laptop, and talks to each backend directly.
   tells Vue the shape changed. A delta goes to `Pane.applyDelta`, which refills only the growing
   box, as claude2 does.
 - Run settings are fixed in `server/main.ts` `LIMITS` (100 turns, bypassPermissions), copied from
-  claude2's Settings pane; the Settings pane has no Settings tab yet.
+  claude2's Settings pane; the Settings pane has no Settings tab yet. `MODEL`, `EFFORT` and
+  `ADVISOR` beside it hard-wire every run; the page has no pickers and sends none of them.
 - Not ported yet from claude2: search, fork, images/Cap, File, export, presets (M),
   Stats/Models/Instructions/Settings tabs, login/auth, the git changes check, prompt
   suggestions, the restored prompt, arrow-key navigation, styled tooltips.

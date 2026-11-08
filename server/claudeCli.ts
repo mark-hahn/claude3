@@ -42,7 +42,7 @@ interface RunPromptOptions {
   // The Long tool display setting: tool lines in longToolUseLine's form instead of toolUseLine's.
   longTools: boolean;
   fastMode: boolean;
-  // Empty for none, else the family the advisor tool consults (the Use advisor setting, advisorFor).
+  // Empty for none, else the family the advisor tool consults.
   advisor: string;
   // The Prompt suggestions setting: the CLI predicts the next prompt after the turn and
   // onSuggestion gets it. Not every turn has one; the CLI skips a cold cache, for one.
@@ -1338,13 +1338,4 @@ export function cheapestModel(models: ModelMap): string {
     }
   }
   throw new Error(`no known model family in the CLI's list (${Object.keys(models).join(", ")}).`);
-}
-
-// The advisor a run gets: the next family up from the model's that the CLI lists, empty when none
-// outranks it (fable). A model in none of them (haiku) is the weakest, so it gets sonnet. The
-// pane's advisor picker shows the same rule.
-export function advisorFor(model: string, models: ModelMap): string {
-  const families = ["fable", "opus", "sonnet"];
-  const own = families.findIndex((family) => model.includes(family));
-  return families.slice(0, own === -1 ? families.length : own).filter((family) => Object.keys(models).some((id) => id.includes(family))).pop() ?? "";
 }

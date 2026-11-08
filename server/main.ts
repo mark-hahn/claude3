@@ -2,8 +2,8 @@
 // claude CLI for the tabs whose host is this one, keeps their sessions, and streams them to the page.
 //   GET  /events?tab=<label>   -> server-sent events (ServerEvent), the full state first
 //   POST /api/<action>         body: { tab, sessionId?, ... } -> JSON
-//        prompt  { prompt, model, effort, advisor } -> { sessionId } (an empty sessionId starts a session)
-//        stop | rename { name } | trash { trashed } | picks { model, effort, advisor } | ctx -> { table }
+//        prompt  { prompt } -> { sessionId } (an empty sessionId starts a session)
+//        stop | rename { name } | trash { trashed } | ctx -> { table }
 //        new { keep } -> { session } (an empty "New session"; sweeps other empty ones, as discard does)
 //        discard { keep } -> {} (drop every session with no turns, except the ids in keep)
 //        run -> { output } (the project's ./run, the prompt box's "r")
@@ -27,7 +27,7 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 import { HOSTS, ORIGINS, TABS, type HostName, type Tab } from "../shared/config.ts";
 import { ANSWER_MARK, DEFAULT_CONTEXT_WINDOW, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent } from "../shared/types.ts";
-import { advisorFor, cheapestModel, ClaudeCliRunner, effortArgs, sanitizeModel, swapSessionTranscripts, type RunLimits } from "./claudeCli.ts";
+import { cheapestModel, ClaudeCliRunner, swapSessionTranscripts, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
 import { checkCosts, QuotaService, speechmaticsCost } from "./quota.ts";
 
@@ -54,6 +54,10 @@ const VERSION = (() => {
 })();
 // claude2's Settings-pane values as the user has them. ponytail: fixed until a Settings pane exists.
 const LIMITS: RunLimits = { maxTurns: 100, maxBudgetUsd: 0, permissionMode: "bypassPermissions" };
+// What every run uses, in every tab on every host.
+const MODEL = "claude-opus-5-5";
+const EFFORT = "xhigh";
+const ADVISOR = "fable";
 
 // Windows has no journal or pm2 log, so every host keeps its own file too.
 function log(line: string): void {
@@ -130,9 +134,6 @@ async function loadModels(): Promise<void> {
   const cwd = [...projects.values()][0]?.tab.path ?? os.homedir();
   try {
     models = (await runner.listModels(cwd)).models;
-    for (const project of projects.values()) {
-      send(project, { type: "models", models });
-    }
   } catch (error) {
     log(`Model list failed: ${errorText(error)}`);
     setTimeout(() => void loadModels(), 60000);
@@ -148,22 +149,13 @@ const quota = new QuotaService(DATA_DIR, DATA_DIR, () => models, log);
 
 async function submitPrompt(project: Project, body: Record<string, unknown>): Promise<{ sessionId: string }> {
   const prompt = String(body.prompt ?? "");
-  const model = String(body.model ?? "");
-  const effort = String(body.effort ?? "");
-  // Only what the pickers showed runs: a missing or malformed model sends nothing.
-  sanitizeModel(model);
-  effortArgs(effort);
-  const advisor = body.advisor === true ? advisorFor(model, models) : "";
-  if (advisor) {
-    sanitizeModel(advisor);
-  }
   if (!prompt.trim()) {
     throw new Error("Empty prompt.");
   }
   let session = project.sessions.find((entry) => entry.id === body.sessionId);
   if (!session) {
     // The pane's draft (no card picked): the session exists from its first prompt on.
-    session = { id: randomUUID(), name: firstWords(prompt), createdAt: Date.now(), updatedAt: Date.now(), trashed: false, model, effort, advisor: !!advisor, turns: [] };
+    session = { id: randomUUID(), name: firstWords(prompt), createdAt: Date.now(), updatedAt: Date.now(), trashed: false, turns: [] };
     project.sessions.unshift(session);
   }
   if (!session.turns.length && !session.name) {
@@ -175,11 +167,11 @@ async function submitPrompt(project: Project, body: Record<string, unknown>): Pr
   const id = session.id;
   // While the CLI waits on a background task the prompt joins that process instead; otherwise a
   // prompt sent during a run replaces it (the page asked first).
-  if (!runner.canFollowUp(id, model, effort, advisor) && (runs.has(id) || runner.isRunning(id))) {
+  if (!runner.canFollowUp(id, MODEL, EFFORT, ADVISOR) && (runs.has(id) || runner.isRunning(id))) {
     runner.stop(id);
     await runs.get(id);
   }
-  const run = runTurn(project, session, prompt, model, effort, advisor).catch((error) => log(`Turn failed: ${errorText(error)}`));
+  const run = runTurn(project, session, prompt).catch((error) => log(`Turn failed: ${errorText(error)}`));
   runs.set(id, run);
   void run.finally(() => {
     if (runs.get(id) === run) {
@@ -190,19 +182,19 @@ async function submitPrompt(project: Project, body: Record<string, unknown>): Pr
 }
 
 // Ported from claude2's runTurn, without images, files, stats, quota or notifications.
-async function runTurn(project: Project, session: ClaudeSession, prompt: string, model: string, effort: string, advisor: string): Promise<void> {
+async function runTurn(project: Project, session: ClaudeSession, prompt: string): Promise<void> {
   const workspacePath = project.tab.path;
   const wasFirstPrompt = session.turns.length === 0;
   // Context is a level: a run inherits where the last one that recorded one left off.
   const priorContext = session.turns.reduce((level, prior) => prior.contextUsed || (prior.cleared ? 0 : level), 0);
   const priorCost = session.turns.reduce((total, prior) => prior.cliCostTotal ?? total, 0);
   const turn: ClaudeTurn = {
-    id: randomUUID(), prompt, response: "", createdAt: Date.now(), completedAt: null, model, modelId: "", effort, advisor,
-    tokensIn: 0, tokensOut: 0, contextWindow: windows[model] ?? DEFAULT_CONTEXT_WINDOW, contextUsed: priorContext, cleared: false,
+    id: randomUUID(), prompt, response: "", createdAt: Date.now(), completedAt: null, model: MODEL, modelId: "", effort: EFFORT, advisor: ADVISOR,
+    tokensIn: 0, tokensOut: 0, contextWindow: windows[MODEL] ?? DEFAULT_CONTEXT_WINDOW, contextUsed: priorContext, cleared: false,
     finished: false, stopped: false, error: null, costUsd: null, cliCostTotal: null, stopReason: null, turns: 0,
     maxTurns: LIMITS.maxTurns, durationMs: 0, ponySkips: [],
   };
-  Object.assign(session, { model, effort, advisor: !!advisor, updatedAt: Date.now() });
+  session.updatedAt = Date.now();
   session.turns.push(turn);
   save(project);
   sendSession(project, session);
@@ -230,8 +222,8 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
       sessionId: session.id,
       turnId: turn.id,
       prompt,
-      model,
-      effort,
+      model: MODEL,
+      effort: EFFORT,
       contextWindow: turn.contextWindow,
       compactWindow: null,
       workspacePath,
@@ -241,7 +233,7 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
       limits: LIMITS,
       longTools: false,
       fastMode: false,
-      advisor,
+      advisor: ADVISOR,
       promptSuggestions: false,
       onSuggestion: () => undefined,
       debugDir: path.join(DATA_DIR, "debug"),
@@ -261,12 +253,12 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
     // cleared conversation. If the swap fails Claude keeps its context, and so does the gauge.
     const cleared = result.clearedInto !== null && swapSessionTranscripts(workspacePath, session.id, result.clearedInto);
     if (result.modelWindow) {
-      windows[model] = result.modelWindow;
+      windows[MODEL] = result.modelWindow;
     }
     Object.assign(turn, {
       response: markAnswer(streamed || result.text, result.stopped ? "" : result.answer),
       completedAt: Date.now(),
-      contextWindow: windows[model] ?? turn.contextWindow,
+      contextWindow: windows[MODEL] ?? turn.contextWindow,
       tokensIn: result.tokensIn,
       tokensOut: result.tokensOut,
       contextUsed: result.contextTokens,
@@ -318,17 +310,16 @@ async function nameSession(project: Project, session: ClaudeSession, prompt: str
 
 // The Ctx popup's table: the transcript's counts with the CLI's own split of the fixed parts.
 async function ctxTable(project: Project, session: ClaudeSession): Promise<unknown> {
-  const model = session.turns.at(-1)?.model || session.model;
   let usage: Record<string, unknown> | null = null;
   try {
     usage = await runner.contextUsage({
       sessionId: session.id,
       workspacePath: project.tab.path,
-      model,
-      contextWindow: windows[model] ?? DEFAULT_CONTEXT_WINDOW,
+      model: MODEL,
+      contextWindow: windows[MODEL] ?? DEFAULT_CONTEXT_WINDOW,
       compactWindow: null,
       permissionMode: LIMITS.permissionMode,
-      advisor: session.advisor && model ? advisorFor(model, models) : "",
+      advisor: ADVISOR,
     });
   } catch (error) {
     log(`Ctx: the CLI's context count failed: ${errorText(error)}`);
@@ -393,8 +384,7 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     if (name === "discard") {
       return {};
     }
-    // Blank picks: the pane shows its defaults and the first prompt sends them.
-    const session: ClaudeSession = { id: randomUUID(), name: "", createdAt: Date.now(), updatedAt: Date.now(), trashed: false, model: "", effort: "", advisor: true, turns: [] };
+    const session: ClaudeSession = { id: randomUUID(), name: "", createdAt: Date.now(), updatedAt: Date.now(), trashed: false, turns: [] };
     project.sessions.unshift(session);
     save(project);
     sendSession(project, session);
@@ -423,9 +413,6 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
       break;
     case "trash":
       session.trashed = body.trashed === true;
-      break;
-    case "picks":
-      Object.assign(session, { model: String(body.model ?? ""), effort: String(body.effort ?? ""), advisor: body.advisor === true });
       break;
     default:
       throw new Error(`Unknown action ${name}.`);
@@ -678,7 +665,7 @@ const server = createServer((req, res) => {
       return;
     }
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
-    res.write(`data: ${JSON.stringify({ type: "state", sessions: project.sessions, statuses: statuses(project), models } satisfies ServerEvent)}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: "state", sessions: project.sessions, statuses: statuses(project) } satisfies ServerEvent)}\n\n`);
     project.clients.add(res);
     req.on("close", () => project.clients.delete(res));
     return;

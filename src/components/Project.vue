@@ -5,7 +5,7 @@
 // multi-pick, management, Close, Re-Auth.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { HOSTS, type Tab } from "../../shared/config.ts";
-import type { ClaudeSession, ModelMap, RunningStatus, ServerEvent } from "../../shared/types.ts";
+import type { ClaudeSession, RunningStatus, ServerEvent } from "../../shared/types.ts";
 import { listen, post } from "../api.ts";
 import Git from "./Git.vue";
 import Pane from "./Pane.vue";
@@ -21,7 +21,6 @@ const emit = defineEmits<{ busy: [count: number]; closeSide: [] }>();
 let sessions: ClaudeSession[] = [];
 const version = ref(0);
 const statuses = ref<Record<string, RunningStatus>>({});
-const models = ref<ModelMap>({});
 const selectedKey = `claude3.session.${props.tab.label}`;
 // '' is the new-session draft: the pane is empty until its first prompt makes the session.
 const selectedId = ref(localStorage.getItem(selectedKey) ?? "");
@@ -61,7 +60,6 @@ function onEvent(event: ServerEvent): void {
   if (event.type === "state") {
     sessions = event.sessions;
     statuses.value = event.statuses;
-    models.value = event.models;
     if (selectedId.value && !sessions.some((session) => session.id === selectedId.value)) selectedId.value = "";
     version.value++;
   } else if (event.type === "session") {
@@ -76,8 +74,6 @@ function onEvent(event: ServerEvent): void {
     if (turn && event.delta) turn.response = turn.response.slice(0, event.at) + event.delta;
     setStatus(event.sessionId, event.status);
     if (event.sessionId === selectedId.value) pane.value?.applyDelta(event.turnId, event.status);
-  } else if (event.type === "models") {
-    models.value = event.models;
   } else if (event.type === "removed") {
     sessions = sessions.filter((session) => !event.ids.includes(session.id));
     if (event.ids.includes(selectedId.value)) selectedId.value = "";
@@ -276,7 +272,7 @@ onBeforeUnmount(() => source?.close());
       </div>
     </aside>
     <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
-    <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :models="models" :version="version" @started="select" @new="newSession" />
+    <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" @started="select" @new="newSession" />
     <Snips v-if="side === 'snips' && active" :tab="tab" @close="emit('closeSide')" @insert="(text) => pane?.appendPrompt(text)" />
     <Settings v-if="side === 'settings' && active" :tab="tab" @close="emit('closeSide')" />
   </div>
