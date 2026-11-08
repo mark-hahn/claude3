@@ -7,9 +7,11 @@
 //        new { keep } -> { session } (an empty "New session"; sweeps other empty ones, as discard does)
 //        discard { keep } -> {} (drop every session with no turns, except the ids in keep)
 //        run -> { output } (the project's ./run, the prompt box's "r")
+//        runResult -> { done, code, output } (the last ./run's result, for a page whose answer was cut off)
 //        deployNeeded -> { script, files } (project files changed since .deployed; see deployNeeded)
 //        clean -> {} (every session to the trash) | git -> { files: [{ x, y, path }] } (git status)
 //        commit { message } -> {} (add everything, commit, push)
+//        describeChanges -> { text } (Opus 5.5's commit message for the uncommitted changes)
 //        snips { text? } -> { text } (claude2's Snips text, kept on claude2-stats; text saves it)
 //        quota { force } -> { readAt, rows, state, apiCosts } (the Quotas pane; force is its Update)
 //        quotaSync { readAt, error } -> { payload } (null when the pane already shows the newest)
@@ -364,8 +366,14 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (name === "run") {
     return { output: await runScript(project, body.restartVite === true) };
   }
+  if (name === "runResult") {
+    return runResult(project);
+  }
   if (name === "deployNeeded") {
     return await deployNeeded(project);
+  }
+  if (name === "describeChanges") {
+    return { text: await describeChanges(project) };
   }
   if (name === "snips") {
     return await snips(body.text);
@@ -453,6 +461,9 @@ function errorText(error: unknown): string {
 // The project's ./run, its output combined. On WSL it runs as a transient systemd unit, outside
 // claude3.service's cgroup: a restart of this backend (claude3's own ./run deploys) would
 // otherwise kill it and whatever it leaves running. KillMode=process lets those outlive it.
+// Its output and exit code go to files, not a pipe back here, so they survive that restart and
+// the next backend can answer runResult. The unit needs a fresh name each time: one that leaves
+// vite running stays loaded as long as vite does, so a fixed name would refuse every later ./run.
 // Done at the script's exit, not its pipes' close: a detached child may hold them open.
 // restartVite sets RESTART_VITE=1 for it (the page's "v" prompt); claude3's ./run then restarts vite.
 function runScript(project: Project, restartVite: boolean): Promise<string> {
@@ -460,8 +471,12 @@ function runScript(project: Project, restartVite: boolean): Promise<string> {
   if (!fs.existsSync(path.join(cwd, "run"))) {
     return Promise.reject(new Error(`No ./run in ${cwd}.`));
   }
-  const [command, ...args] = hostName === "wsl"
-    ? ["systemd-run", "--quiet", "--collect", "--pipe", "--wait", "-p", "KillMode=process", "-p", `WorkingDirectory=${cwd}`, "-E", `PATH=${process.env.PATH}`, "-E", `HOME=${os.homedir()}`, ...(restartVite ? ["-E", "RESTART_VITE=1"] : []), "./run"]
+  const logFile = runFile(project, "log");
+  const statusFile = runFile(project, "status");
+  fs.rmSync(statusFile, { force: true });
+  const detached = hostName === "wsl";
+  const [command, ...args] = detached
+    ? ["systemd-run", "--quiet", "--collect", "--wait", "--expand-environment=no", "-p", "KillMode=process", "-p", `WorkingDirectory=${cwd}`, "-E", `PATH=${process.env.PATH}`, "-E", `HOME=${os.homedir()}`, ...(restartVite ? ["-E", "RESTART_VITE=1"] : []), "/bin/sh", "-c", './run > "$1" 2>&1; code=$?; echo $code > "$2"; exit $code', "sh", logFile, statusFile]
     : ["./run"];
   log(`./run in ${cwd}`);
   return new Promise((resolve, reject) => {
@@ -474,10 +489,31 @@ function runScript(project: Project, restartVite: boolean): Promise<string> {
     child.on("error", (error) => (clearTimeout(timer), reject(error)));
     child.on("exit", (code, signal) => {
       clearTimeout(timer);
+      if (!detached) {
+        fs.writeFileSync(logFile, output);
+        fs.writeFileSync(statusFile, String(code ?? 1));
+      } else if (!output && fs.existsSync(logFile)) {
+        // Output from systemd-run itself would mean it failed, and that's the message to show.
+        output = fs.readFileSync(logFile, "utf8").slice(-20_000);
+      }
       if (code === 0) resolve(output.trim());
       else reject(new Error(`./run failed (${signal ?? `exit ${code}`}):\n${output.trim()}`));
     });
   });
+}
+
+function runFile(project: Project, extension: "log" | "status"): string {
+  return path.join(DATA_DIR, `run-${project.tab.label.replace(/\W/g, "-")}.${extension}`);
+}
+
+// The last ./run's result, for a page that lost the answer to `run` (the backend restarted under
+// it, or the page reloaded). No exit code written yet means it's still going.
+function runResult(project: Project): { done: boolean; code: number; output: string } {
+  try {
+    const status = fs.readFileSync(runFile(project, "status"), "utf8").trim();
+    if (status) return { done: true, code: Number(status), output: fs.readFileSync(runFile(project, "log"), "utf8").slice(-20_000).trim() };
+  } catch {} // no status file: it was removed when this ./run started
+  return { done: false, code: 0, output: "" };
 }
 
 // Whether the project needs a deploy before a prompt: its ./deploy (or ./run when it has none)
@@ -502,6 +538,25 @@ async function deployNeeded(project: Project): Promise<{ script: string; files: 
     }
   });
   return { script, files };
+}
+
+// The Git popup's "Describe changes": everything a commit would take (the diff against HEAD, plus
+// the text of untracked files), written up by Opus 5.5 as a commit message.
+// ponytail: cut at 300k characters (the model is told), so a giant generated file can't run up the bill.
+async function describeChanges(project: Project): Promise<string> {
+  const diff = await git(project, "diff", "HEAD");
+  const untracked = (await git(project, "ls-files", "-z", "--others", "--exclude-standard")).split("\0").filter(Boolean);
+  const added = untracked.map((file) => {
+    let body = "";
+    try {
+      body = fs.readFileSync(path.join(project.tab.path, file), "utf8");
+    } catch {} // an untracked folder or a dangling link: its name is enough
+    return body && !body.includes("\0") ? `New file ${file}:\n${body}` : `New file ${file}`;
+  });
+  let text = [diff, ...added].join("\n\n").trim();
+  if (!text) throw new Error("No uncommitted changes to describe.");
+  if (text.length > 300_000) text = `${text.slice(0, 300_000)}\n\n(The changes were cut off here: there are more.)`;
+  return await runner.describeChanges(text, project.tab.path);
 }
 
 function git(project: Project, ...args: string[]): Promise<string> {

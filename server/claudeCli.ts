@@ -773,6 +773,16 @@ export class ClaudeCliRunner {
     }
   }
 
+  // The Git popup's "Describe changes": a commit message of a few sentences from Opus 5.5 (the
+  // user's pick), with no tools and no project settings, like the titles.
+  public async describeChanges(diff: string, workspacePath: string): Promise<string> {
+    const args = ["-p", "--output-format", "json", "--model", "claude-opus-5-5", "--max-budget-usd", "1", "--tools", "", "--setting-sources", "", "--no-session-persistence", "--system-prompt", "You write git commit messages."];
+    const prompt = `Write a commit message for these changes: a few plain sentences saying what changed. Return only the message, with no quotes, headings or lists.\n\n${diff}`;
+    const output = await collectProcess("claude", args, workspacePath, 180000, prompt);
+    const parsed = JSON.parse(output) as unknown;
+    return (isRecord(parsed) ? stringOf(parsed.result) : "").trim() || output;
+  }
+
   // Asks the CLI which models this account can use and each one's effort levels: the same
   // initialize handshake the Agent SDK sends, answered without starting a turn.
   // Each model's Anthropic name: its description up to a " · " when it has one (only there

@@ -30,7 +30,9 @@ on the laptop, and talks to each backend directly.
   selected session to the pane. Picking a tab focuses its prompt box (the `active` prop).
 - `src/components/Git.vue`: the Git button (label counts the changed files) and its `<dialog>`, a
   small VS Code Source Control: message, staged and changed files, Commit (= `add -A`, commit,
-  push on the backend). Status is re-read only for the tab on show: on showing, window focus, and
+  push on the backend). "Describe changes" in its header (`describeChanges` action) sends the
+  uncommitted diff and untracked files' text to `claude -p` on Opus 5.5 and puts the few
+  sentences in the message box. Status is re-read only for the tab on show: on showing, window focus, and
   session events (a turn starting or ending).
 - `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane
   (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude2-stats (`/snips` on
@@ -50,7 +52,8 @@ on the laptop, and talks to each backend directly.
   `draft` ref both ways. claude2's big prompt editor: Ctrl-Alt-click in the box or Ctrl-Alt-Z
   (the tab on show only, via the `active` prop) puts the box full height left of the history,
   per session in localStorage (`bigPrompt:<tab>:<session id>`); Ctrl-Alt-X there shows it
-  rendered as markdown.
+  rendered as markdown. A plain Enter outside the prompt box and the controls (claude2's
+  `selectBottomBlock`) selects and opens the last block; pressed again it toggles that box.
 - `src/monaco.ts` (+ `monaco.css`): claude2's Monaco setup (its webviews.ts `monacoScript` /
   `monacoStyle`), shared by the prompt box and the Snips: markdown only, the worker through Vite's
   `?worker`, the black theme, the user's VS Code keys (Ctrl-D delete line, ...), the line dots in
@@ -100,8 +103,12 @@ on the laptop, and talks to each backend directly.
 - **"r".** A prompt of just `r` goes to `POST /api/run` instead of claude: the backend runs the
   project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`), its text kept in sessionStorage until OK so a page reload doesn't lose it. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
   (`KillMode=process`), outside claude3.service's cgroup, so claude3's own `./run` restarting
-  this backend kills neither the script nor the vite it leaves running; the page's request
-  dies with the backend then.
+  this backend kills neither the script nor the vite it leaves running. The page's request
+  dies with the backend then, so the script's output and exit code go to
+  `~/.claude3/run-<tab>.log` / `.status`, never a pipe back to the backend, and the page asks
+  `runResult` once a second until they're there (resuming after a reload, via sessionStorage).
+  `deploy` sends its own output through `tee`, so a caller's pipe vanishing can't fail an echo
+  under its `set -e`.
 - **Session ↔ transcript.** A session id is the CLI session id; `--resume` or `--session-id` is
   picked by whether the transcript exists (claude2's rule). `/clear` swaps transcript files so the
   session keeps its id.

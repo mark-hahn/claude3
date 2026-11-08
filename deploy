@@ -11,6 +11,10 @@
 #        ./deploy --if-stale [wsl] [win] [srv]   only those whose running backend isn't this version
 # A restart cuts that backend's running turns.
 set -euo pipefail
+# Whoever started this may go away partway (the page's "r" can run it under the backend it
+# restarts). Output goes through tee, which carries on, so a lost reader can't fail an echo here
+# and let set -e stop the deploy before the remaining hosts.
+exec > >(tee --output-error=warn-nopipe /dev/null) 2>&1
 cd "$(dirname "$0")"
 # The prompt box's "r" runs this under the WSL backend's systemd service, whose PATH has none of
 # WSL's Windows directories, so reg.exe, powershell.exe and conhost.exe weren't found.

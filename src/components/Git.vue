@@ -23,12 +23,13 @@ const failure = ref("");
 const message = ref("");
 const error = ref("");
 const committing = ref(false);
+const describing = ref(false);
 const dialog = ref<HTMLDialogElement>();
 const button = ref<HTMLButtonElement>();
 
 const staged = computed(() => files.value.filter((file) => !" ?".includes(file.x)).map((file) => ({ ...file, letter: file.x })));
 const changed = computed(() => files.value.filter((file) => file.y !== " ").map((file) => ({ ...file, letter: file.y === "?" ? "U" : file.y })));
-const canCommit = computed(() => !committing.value && !!message.value.trim() && files.value.length > 0);
+const canCommit = computed(() => !committing.value && !describing.value && !!message.value.trim() && files.value.length > 0);
 
 const messageOf = (problem: unknown): string => (problem instanceof Error ? problem.message : String(problem));
 const nameOf = (path: string): string => path.slice(path.lastIndexOf("/") + 1);
@@ -84,6 +85,18 @@ async function commit(): Promise<void> {
   void refresh();
 }
 
+// Like VS Code's generate button: Opus 5.5 writes the commit message, replacing what's in the box.
+async function describe(): Promise<void> {
+  describing.value = true;
+  error.value = "";
+  try {
+    message.value = (await post<{ text: string }>(props.tab, "describeChanges", {})).text;
+  } catch (problem) {
+    error.value = messageOf(problem);
+  }
+  describing.value = false;
+}
+
 function onMessageKey(event: KeyboardEvent): void {
   if (event.key === "Enter" && event.ctrlKey) {
     event.preventDefault();
@@ -97,8 +110,11 @@ function onMessageKey(event: KeyboardEvent): void {
     Git<span v-if="files.length">&nbsp;{{ files.length }}</span>
   </button>
   <dialog ref="dialog" class="git-pop" @cancel="committing && $event.preventDefault()" @close="emit('closed')" @click="onDialogClick">
-    <div class="git-title">Source Control: {{ tab.path }}</div>
-    <textarea v-model="message" class="git-message" rows="3" spellcheck="false" autofocus placeholder="Message (Ctrl+Enter commits and pushes)" @keydown="onMessageKey"></textarea>
+    <div class="git-head">
+      <div class="git-title">Source Control: {{ tab.path }}</div>
+      <button class="git-describe" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "Describing…" : "Describe changes" }}</button>
+    </div>
+    <textarea v-model="message" class="git-message" rows="3" spellcheck="false" autofocus :readonly="describing" placeholder="Message (Ctrl+Enter commits and pushes)" @keydown="onMessageKey"></textarea>
     <div v-if="failure" class="git-error">{{ failure }}</div>
     <div v-if="error" class="git-error">{{ error }}</div>
     <div class="git-files">
@@ -114,6 +130,7 @@ function onMessageKey(event: KeyboardEvent): void {
     </div>
     <div class="git-buttons">
       <button class="git-commit" :disabled="!canCommit" @click="commit">{{ committing ? "Committing…" : "Commit" }}</button>
+      <button :disabled="committing" @click="dialog?.close()">Hide</button>
       <button :disabled="committing" @click="dialog?.close()">Cancel</button>
     </div>
   </dialog>
@@ -126,7 +143,9 @@ function onMessageKey(event: KeyboardEvent): void {
 .git-pop { width: min(560px, 92vw); max-height: 86vh; padding: 12px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: var(--ink); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2); }
 .git-pop[open] { display: flex; flex-direction: column; gap: 8px; }
 .git-pop::backdrop { background: rgba(0, 0, 0, 0.15); }
-.git-title { font-weight: 600; overflow-wrap: anywhere; }
+.git-head { display: flex; align-items: center; gap: 8px; }
+.git-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.git-describe { flex: none; }
 .git-message { resize: vertical; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--ink); font: inherit; }
 .git-message::placeholder { color: var(--ink); opacity: 1; }
 .git-error { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 6px; padding: 4px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -258,6 +258,28 @@ function selectBlock(index: number): void {
   render();
 }
 
+// Enter (claude2's selectBottomBlock): the last block selected and open, every other box closed,
+// its bar as high as the rules allow. Already there, it toggles that box, so a second Enter leaves
+// every box closed and a third opens the last one again.
+function selectBottomBlock(): void {
+  const last = turns().length - 1;
+  if (last < 0) return;
+  if (anchorIndex !== last) selectBlock(last);
+  else {
+    boxOpen = !boxOpen;
+    if (boxOpen) {
+      boxScrollNext = "restore";
+      toolsBox = false;
+    }
+    render();
+  }
+  // After the render's own sync has set the clamps, so the bounds see the final layout.
+  requestAnimationFrame(() => {
+    const bounds = scrollBounds();
+    if (bounds) historyEl.value!.scrollTop = bounds.max;
+  });
+}
+
 // The window the pane's scrollTop must stay in so the bar above the selected block, the whole
 // selected block, and the bar below all sit inside the pane at once. min > max can only happen in a
 // pane too short for that span; the bottom bar is given up first.
@@ -420,15 +442,40 @@ function runClosed(): void {
   sessionStorage.removeItem(runKey());
 }
 
+// Set while a ./run's answer is due, so a page reloaded meanwhile picks up the wait.
+const runWaitKey = (): string => `runWait:${props.tab.label}`;
+
 async function runScript(restartVite: boolean): Promise<void> {
   draft.value = "";
+  sessionStorage.setItem(runWaitKey(), "1");
   try {
     const { output } = await post<{ output: string }>(props.tab, "run", { restartVite });
+    sessionStorage.removeItem(runWaitKey());
     showRun(`./run in ${props.tab.label} finished.\n\n${output.slice(-3000)}`);
   } catch (error) {
-    // A ./run that restarts this backend (claude3's own) cuts the answer off; the script runs on.
+    // A network failure: a ./run that restarts this backend (claude3's own) cuts the answer off,
+    // and the script runs on, so its result is fetched once the backend is back.
+    if (error instanceof TypeError) return awaitRun();
+    sessionStorage.removeItem(runWaitKey());
     showRun(`./run in ${props.tab.label}: ${error instanceof Error ? error.message.slice(-3000) : String(error)}`);
   }
+}
+
+async function awaitRun(): Promise<void> {
+  for (let tries = 0; tries < 300; tries++) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    let result: { done: boolean; code: number; output: string };
+    try {
+      result = await post<{ done: boolean; code: number; output: string }>(props.tab, "runResult", {});
+    } catch {
+      continue; // the backend is still restarting
+    }
+    if (!result.done) continue;
+    sessionStorage.removeItem(runWaitKey());
+    return showRun(`./run in ${props.tab.label} ${result.code === 0 ? "finished" : `failed (exit ${result.code})`}.\n\n${result.output.slice(-3000)}`);
+  }
+  sessionStorage.removeItem(runWaitKey());
+  showRun(`./run in ${props.tab.label}: no result after 5 minutes.`);
 }
 
 // Before a prompt: when files changed since the project's ./deploy (or ./run) last finished, a
@@ -533,6 +580,12 @@ function onMdKey(event: KeyboardEvent): void {
 }
 // Capture phase, so Monaco never sees the press.
 function onPageKey(event: KeyboardEvent): void {
+  if (props.active && event.key === "Enter" && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
+    const target = event.target as HTMLElement;
+    if (target.closest?.("textarea, input, select, [contenteditable], dialog, .dock-controls, .prompt-md")) return;
+    event.preventDefault();
+    return selectBottomBlock();
+  }
   if (!props.active || !event.ctrlKey || !event.altKey || event.metaKey || event.shiftKey) return;
   if (event.code === "KeyZ") {
     event.preventDefault();
@@ -868,6 +921,7 @@ onMounted(() => {
   render();
   const pendingRun = sessionStorage.getItem(runKey());
   if (pendingRun !== null) showRun(pendingRun);
+  if (sessionStorage.getItem(runWaitKey()) !== null) void awaitRun();
   // Nothing arrives between API calls, so the clock ticks on its own.
   ticker = window.setInterval(() => {
     if (props.status?.active) now.value = Date.now();
