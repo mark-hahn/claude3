@@ -53,6 +53,9 @@ let openToolCalls = new Set<string>();
 let programmaticScroll = false;
 // Unsent text per session; '' is the new-session draft.
 const drafts = new Map<string, string>();
+// The prompt box's text when something other than sending emptied it (a session switch); Ctrl+Enter
+// in an empty box puts it back.
+let clearedDraft = "";
 
 const turns = (): ClaudeTurn[] => props.session?.turns ?? [];
 const typedText = (turn: ClaudeTurn): string => turn.prompt;
@@ -423,6 +426,11 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
 function onPromptKey(event: KeyboardEvent): void {
   if (event.key === "Enter" && event.ctrlKey) {
     event.preventDefault();
+    if (!draft.value.trim() && clearedDraft) {
+      draft.value = clearedDraft;
+      clearedDraft = "";
+      return;
+    }
     void submit();
   }
 }
@@ -661,6 +669,7 @@ watch(
     if (id !== switchedFrom) {
       // Another session in the pane: its own draft, picks and a fresh view.
       if (switchedFrom !== null) drafts.set(switchedFrom, draft.value);
+      if (draft.value.trim()) clearedDraft = draft.value;
       draft.value = drafts.get(id) ?? "";
       // A session just started from the new-session draft keeps nothing of it.
       if (switchedFrom === "") drafts.delete("");

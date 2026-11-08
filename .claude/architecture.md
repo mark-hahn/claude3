@@ -72,6 +72,8 @@ on the laptop, and talks to each backend directly.
   prompt can follow up a background wait) → `runTurn` stores the turn, posts `session`, names the
   session on its first prompt, and runs the CLI. Text and status go out as `delta` every 80ms.
   The result settles the turn (`markAnswer` puts the answer mark in), saves, posts `session`.
+  Text a session switch takes out of the prompt box is kept (`clearedDraft`); Ctrl+Enter in an
+  empty box puts it back.
 - **"r".** A prompt of just `r` goes to `POST /api/run` instead of claude: the backend runs the
   project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`), its text kept in sessionStorage until OK so a page reload doesn't lose it. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
   (`KillMode=process`), outside claude3.service's cgroup, so claude3's own `./run` restarting
