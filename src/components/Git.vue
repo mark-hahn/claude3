@@ -24,6 +24,7 @@ const message = ref("");
 const error = ref("");
 const committing = ref(false);
 const dialog = ref<HTMLDialogElement>();
+const button = ref<HTMLButtonElement>();
 
 const staged = computed(() => files.value.filter((file) => !" ?".includes(file.x)).map((file) => ({ ...file, letter: file.x })));
 const changed = computed(() => files.value.filter((file) => file.y !== " ").map((file) => ({ ...file, letter: file.y === "?" ? "U" : file.y })));
@@ -60,6 +61,14 @@ function open(): void {
   dialog.value?.showModal();
 }
 
+// The modal's backdrop covers the Git button, so a click on the button lands on the dialog
+// instead; when it falls inside the button's box, close, so the button toggles the popup.
+function onDialogClick(event: MouseEvent): void {
+  if (event.target !== dialog.value || committing.value) return;
+  const box = button.value?.getBoundingClientRect();
+  if (box && event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom) dialog.value?.close();
+}
+
 async function commit(): Promise<void> {
   if (!canCommit.value) return;
   committing.value = true;
@@ -84,10 +93,10 @@ function onMessageKey(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <button class="git" :class="{ dirty: files.length }" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" @click="open">
+  <button ref="button" class="git" :class="{ dirty: files.length }" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" @click="open">
     Git<span v-if="files.length">&nbsp;{{ files.length }}</span>
   </button>
-  <dialog ref="dialog" class="git-pop" @cancel="committing && $event.preventDefault()" @close="emit('closed')">
+  <dialog ref="dialog" class="git-pop" @cancel="committing && $event.preventDefault()" @close="emit('closed')" @click="onDialogClick">
     <div class="git-title">Source Control: {{ tab.path }}</div>
     <textarea v-model="message" class="git-message" rows="3" spellcheck="false" autofocus placeholder="Message (Ctrl+Enter commits and pushes)" @keydown="onMessageKey"></textarea>
     <div v-if="failure" class="git-error">{{ failure }}</div>
