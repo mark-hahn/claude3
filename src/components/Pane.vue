@@ -5,7 +5,7 @@
 // export, presets (M), arrow-key navigation and the frozen pane, the restored prompt.
 // The prompt box is a Monaco editor with claude2's editing (src/monaco.ts), and has claude2's big
 // prompt editor.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
 import { post } from "../api.ts";
@@ -13,7 +13,7 @@ import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monac
 import { answerText, fillBox, renderMarkdown, withoutDetails } from "../render.ts";
 
 // active: this pane's tab is the one on show, so the page-wide keys are its.
-const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: RunningStatus | null; version: number; active: boolean }>();
+const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: RunningStatus | null; version: number; active: boolean; ceilings: number }>();
 const emit = defineEmits<{ started: [sessionId: string]; new: [] }>();
 
 const historyEl = ref<HTMLElement>();
@@ -409,15 +409,32 @@ const latest = computed(() => {
 // ./run restarts vite, which reloads the page; unlike an alert the dialog doesn't hold that off,
 // so the text waits in sessionStorage until OK and is shown again on mount.
 const runKey = (): string => `runPop:${props.tab.label}`;
-function showRun(text: string): void {
-  sessionStorage.setItem(runKey(), text);
+// The dialog follows the end of its text unless it has been scrolled up.
+function putRun(text: string): void {
+  const dialog = runPopEl.value!;
+  const following = !dialog.open || dialog.scrollHeight - dialog.scrollTop - dialog.clientHeight < 40;
   runText.value = text;
-  runPopEl.value!.showModal();
+  if (!dialog.open) dialog.showModal();
+  if (following) void nextTick(() => (dialog.scrollTop = dialog.scrollHeight));
+}
+// While a ./run goes on, the dialog shows its output so far. OK hides that (the run carries on)
+// and the result opens the dialog again. Only on the tab on show: a modal dialog in a hidden tab
+// would block the whole page with nothing to see.
+let runLive = false;
+function showRunLive(output: string): void {
+  if (runLive && props.active) putRun(`./run in ${props.tab.label} running...\n\n${output}`);
+}
+function showRun(text: string): void {
+  runLive = false;
+  sessionStorage.setItem(runKey(), text);
+  putRun(text);
   checkDeploySoon();
 }
 function runClosed(): void {
+  runLive = false;
   sessionStorage.removeItem(runKey());
 }
+const askRun = () => post<{ done: boolean; code: number; output: string }>(props.tab, "runResult", {});
 
 // Set while a ./run's answer is due, so a page reloaded meanwhile picks up the wait.
 const runWaitKey = (): string => `runWait:${props.tab.label}`;
@@ -426,31 +443,43 @@ const runWaitKey = (): string => `runWait:${props.tab.label}`;
 // takes focus, so the Enter that dismisses the result can't land on it and run ./run again.
 async function runScript(restartVite: boolean): Promise<void> {
   sessionStorage.setItem(runWaitKey(), "1");
+  runLive = true;
+  showRunLive("");
+  // A "done" here is the previous ./run's, not cleared yet: only the answer below ends this one.
+  const follow = window.setInterval(() => {
+    void askRun().then(
+      (result) => {
+        if (!result.done) showRunLive(result.output);
+      },
+      () => {}, // the backend is restarting; the next one will tell
+    );
+  }, 1000);
   try {
     const { output } = await post<{ output: string }>(props.tab, "run", { restartVite });
     sessionStorage.removeItem(runWaitKey());
-    showRun(`./run in ${props.tab.label} finished.\n\n${output.slice(-3000)}`);
+    showRun(`./run in ${props.tab.label} finished.\n\n${output}`);
   } catch (error) {
     // A network failure: a ./run that restarts this backend (claude3's own) cuts the answer off,
     // and the script runs on, so its result is fetched once the backend is back.
     if (error instanceof TypeError) return awaitRun();
     sessionStorage.removeItem(runWaitKey());
-    showRun(`./run in ${props.tab.label}: ${error instanceof Error ? error.message.slice(-3000) : String(error)}`);
+    showRun(`./run in ${props.tab.label}: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    window.clearInterval(follow);
   }
 }
 
 async function awaitRun(): Promise<void> {
   for (let tries = 0; tries < 300; tries++) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    let result: { done: boolean; code: number; output: string };
-    try {
-      result = await post<{ done: boolean; code: number; output: string }>(props.tab, "runResult", {});
-    } catch {
-      continue; // the backend is still restarting
+    const result = await askRun().catch(() => null);
+    if (!result) continue; // the backend is still restarting
+    if (!result.done) {
+      showRunLive(result.output);
+      continue;
     }
-    if (!result.done) continue;
     sessionStorage.removeItem(runWaitKey());
-    return showRun(`./run in ${props.tab.label} ${result.code === 0 ? "finished" : `failed (exit ${result.code})`}.\n\n${result.output.slice(-3000)}`);
+    return showRun(`./run in ${props.tab.label} ${result.code === 0 ? "finished" : `failed (exit ${result.code})`}.\n\n${result.output}`);
   }
   sessionStorage.removeItem(runWaitKey());
   showRun(`./run in ${props.tab.label}: no result after 5 minutes.`);
@@ -657,8 +686,8 @@ const stats = computed(() => {
   const skips = list.reduce((sum, turn) => sum + (turn.ponySkips || []).length, 0) + (live ? live.ponySkips.length : 0);
   return {
     turns: `${live ? live.turns : last?.turns ?? 0}/${live ? live.maxTurns : last?.maxTurns || 100}`,
-    cost: "$" + list.reduce((sum, turn) => sum + (turn.costUsd || 0), 0).toFixed(2),
-    pony: String(skips),
+    graftSaved: props.session?.graftSavedUsd ?? 0,
+    pony: skips,
     quiet: shortTime(live ? live.sinceEventMs + since : 0),
     duration: shortTime(spent),
   };
@@ -927,7 +956,10 @@ onMounted(() => {
   render();
   const pendingRun = sessionStorage.getItem(runKey());
   if (pendingRun !== null) showRun(pendingRun);
-  if (sessionStorage.getItem(runWaitKey()) !== null) void awaitRun();
+  if (sessionStorage.getItem(runWaitKey()) !== null) {
+    runLive = true;
+    void awaitRun();
+  }
   // Nothing arrives between API calls, so the clock ticks on its own.
   ticker = window.setInterval(() => {
     if (props.status?.active) now.value = Date.now();
@@ -990,8 +1022,8 @@ onBeforeUnmount(() => {
           <div class="status context" :class="{ over: contextUsed > compactAt }" title="Context used / where the CLI compacts it, in thousands of tokens. Click to compact now" @click="compactNow">
             {{ Math.round((contextUsed || 0) / 1000) }}/{{ inK(compactAt) }}
           </div>
-          <div class="status" title="This session's cost at API prices">{{ stats.cost }}</div>
-          <div class="status" title="Ponytail skips this session">{{ stats.pony }}</div>
+          <div v-if="stats.graftSaved > 0.25" class="status" title="What graft has saved this session">${{ stats.graftSaved.toFixed(2) }}</div>
+          <div v-if="stats.pony === 0 || ceilings === 0" class="status" title="Ponytail skips this session : ponytail comments in the project">{{ stats.pony }}:{{ ceilings }}</div>
           <div class="status" title="Time since anything new showed in the pane">{{ stats.quiet }}</div>
           <div class="status" title="Time spent responding in this session">{{ stats.duration }}</div>
         </div>
@@ -1095,7 +1127,8 @@ onBeforeUnmount(() => {
 /* The Ctx popup, opening upward from its button; placed by script. */
 .pane .ctx-pop { position: fixed; z-index: 50; overflow: auto; padding: 8px 10px; border: 1px solid #000; border-radius: 8px; background: #fff; color: #000; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
 /* The ./run result. */
-.pane .run-pop { max-width: 80vw; max-height: 80vh; padding: 12px 16px; border: 1px solid #000; border-radius: 8px; color: #000; font-size: 14px; }
+/* The top is pinned, so a growing ./run log doesn't re-centre the dialog on every line. */
+.pane .run-pop { margin-top: 10vh; max-width: 80vw; max-height: 80vh; padding: 12px 16px; border: 1px solid #000; border-radius: 8px; color: #000; font-size: 14px; }
 .pane .run-pop pre { margin: 0 0 10px; white-space: pre-wrap; font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .pane .run-pop form { text-align: right; }
 .pane .run-pop button { font-size: 14px; }

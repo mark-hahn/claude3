@@ -71,6 +71,8 @@ export interface ClaudeSession {
   updatedAt: number;
   trashed: boolean;
   turns: ClaudeTurn[];
+  // What graft has saved this session, as of its last finished turn. Absent until then.
+  graftSavedUsd?: number;
 }
 
 export interface RunningStatus {
@@ -125,4 +127,6 @@ export type ServerEvent =
   // Streamed text, spliced in at `at` of the turn's response, plus the run's latest status.
   | { type: "delta"; sessionId: string; turnId: string; at: number; delta: string; status: RunningStatus | null }
   // Sessions gone for good (empty ones swept away).
-  | { type: "removed"; ids: string[] };
+  | { type: "removed"; ids: string[] }
+  // How many "ponytail:" comments the project holds; on connect and when a turn ends.
+  | { type: "ceilings"; count: number };

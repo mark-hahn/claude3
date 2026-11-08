@@ -7,7 +7,7 @@
 //        new { keep } -> { session } (an empty "New session"; sweeps other empty ones, as discard does)
 //        discard { keep } -> {} (drop every session with no turns, except the ids in keep)
 //        run -> { output } (the project's ./run, the prompt box's "r")
-//        runResult -> { done, code, output } (the last ./run's result, for a page whose answer was cut off)
+//        runResult -> { done, code, output } (the last ./run's output so far and, when it's over, its exit code)
 //        deployNeeded -> { script, files } (project files changed since .deployed; see deployNeeded)
 //        clean -> {} (every session to the trash) | git -> { files: [{ x, y, path }] } (git status)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
@@ -182,6 +182,25 @@ async function submitPrompt(project: Project, body: Record<string, unknown>): Pr
   return { sessionId: id };
 }
 
+// From graft's cumulative per-session metrics, priced as graft prices them: at the input rate the
+// session actually paid. 0 when graft never ran in the session or no turn has been billed yet.
+function graftSavedUsd(workspacePath: string, sessionId: string): number {
+  try {
+    const metrics = JSON.parse(fs.readFileSync(path.join(workspacePath, "graft", ".cache", "session", `${sessionId}.json`), "utf8"));
+    const usd = (metrics.savedTokens * metrics.inputCostMicros) / metrics.inputTokensBilled / 1e6;
+    return Number.isFinite(usd) ? usd : 0;
+  } catch {
+    return 0;
+  }
+}
+
+// Tells the page how many "ponytail:" comments the project holds, ponytail's marks for a corner
+// deliberately cut. Git-ignored files and scratch notes don't count. git grep exits 1 for no matches, so any failure reads as none.
+async function sendCeilings(project: Project): Promise<void> {
+  const found = await git(project, "grep", "-IE", "--untracked", "(//|#|;|<!--|/\\*)[[:space:]]*ponytail:", "--", ":(exclude,glob)**/scratch.md", ":(exclude,glob)**/*.scratch.md").catch(() => "");
+  send(project, { type: "ceilings", count: found.split("\n").filter(Boolean).length });
+}
+
 // Ported from claude2's runTurn, without images, files, stats, quota or notifications.
 async function runTurn(project: Project, session: ClaudeSession, prompt: string): Promise<void> {
   const workspacePath = project.tab.path;
@@ -293,8 +312,10 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string)
       clearTimeout(timer);
     }
     session.updatedAt = Date.now();
+    session.graftSavedUsd = graftSavedUsd(workspacePath, session.id);
     save(project);
     sendSession(project, session);
+    void sendCeilings(project);
   }
 }
 
@@ -474,6 +495,7 @@ function runScript(project: Project, restartVite: boolean): Promise<string> {
   }
   const logFile = runFile(project, "log");
   const statusFile = runFile(project, "status");
+  fs.rmSync(logFile, { force: true });
   fs.rmSync(statusFile, { force: true });
   const detached = hostName === "wsl";
   const [command, ...args] = detached
@@ -483,15 +505,19 @@ function runScript(project: Project, restartVite: boolean): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, env: { ...process.env, ...(restartVite ? { RESTART_VITE: "1" } : {}) }, stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
-    const take = (chunk: Buffer): void => void (output = (output + chunk.toString()).slice(-20_000));
+    let exited = false; // something the script left running may hold the pipes and keep writing
+    const take = (chunk: Buffer): void => {
+      output = (output + chunk.toString()).slice(-20_000);
+      if (!detached && !exited) fs.appendFileSync(logFile, chunk);
+    };
     child.stdout.on("data", take);
     child.stderr.on("data", take);
     const timer = setTimeout(() => child.kill(), 300_000);
     child.on("error", (error) => (clearTimeout(timer), reject(error)));
     child.on("exit", (code, signal) => {
       clearTimeout(timer);
+      exited = true;
       if (!detached) {
-        fs.writeFileSync(logFile, output);
         fs.writeFileSync(statusFile, String(code ?? 1));
       } else if (!output && fs.existsSync(logFile)) {
         // Output from systemd-run itself would mean it failed, and that's the message to show.
@@ -507,14 +533,19 @@ function runFile(project: Project, extension: "log" | "status"): string {
   return path.join(DATA_DIR, `run-${project.tab.label.replace(/\W/g, "-")}.${extension}`);
 }
 
-// The last ./run's result, for a page that lost the answer to `run` (the backend restarted under
-// it, or the page reloaded). No exit code written yet means it's still going.
+// The last ./run's output so far, for the page's live view, and its result, for a page that lost
+// the answer to `run` (the backend restarted under it, or the page reloaded). No exit code written
+// yet means it's still going: both files are removed when a ./run starts.
 function runResult(project: Project): { done: boolean; code: number; output: string } {
-  try {
-    const status = fs.readFileSync(runFile(project, "status"), "utf8").trim();
-    if (status) return { done: true, code: Number(status), output: fs.readFileSync(runFile(project, "log"), "utf8").slice(-20_000).trim() };
-  } catch {} // no status file: it was removed when this ./run started
-  return { done: false, code: 0, output: "" };
+  const read = (extension: "log" | "status"): string => {
+    try {
+      return fs.readFileSync(runFile(project, extension), "utf8").slice(-20_000).trim();
+    } catch {
+      return "";
+    }
+  };
+  const status = read("status");
+  return { done: !!status, code: Number(status), output: read("log") };
 }
 
 // Whether the project needs a deploy before a prompt: its ./deploy (or ./run when it has none)
@@ -681,6 +712,7 @@ const server = createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
     res.write(`data: ${JSON.stringify({ type: "state", sessions: project.sessions, statuses: statuses(project) } satisfies ServerEvent)}\n\n`);
     project.clients.add(res);
+    void sendCeilings(project);
     req.on("close", () => project.clients.delete(res));
     return;
   }

@@ -111,7 +111,7 @@ on the laptop, and talks to each backend directly.
   while the same check finds files; it is re-read for the tab on show on showing, window focus,
   session events, and a ./run's result.
 - **"r".** A prompt of just `r`, or the footer's Run button (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
-  project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`), its text kept in sessionStorage until OK so a page reload doesn't lose it. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
+  project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
   (`KillMode=process`), outside claude3.service's cgroup, so claude3's own `./run` restarting
   this backend kills neither the script nor the vite it leaves running. The page's request
   dies with the backend then, so the script's output and exit code go to
@@ -130,6 +130,10 @@ on the laptop, and talks to each backend directly.
   project folders, written whole through a temp file at turn start and end and on every change.
   `~/.claude3/<host>.log` is the backend's log; `~/.claude3/debug/` holds the runner's per-session
   spawn records.
+- **Graft savings.** When a turn ends, `runTurn` prices graft's `<project>/graft/.cache/session/<id>.json`
+  metrics into `session.graftSavedUsd`; the footer shows it only above $0.25.
+- **Ponytail count.** `sendCeilings` runs `git grep` for `ponytail:` comments on connect and at each
+  turn's end and sends a `ceilings` event. The footer shows `skips:ceilings` only when either is 0.
 
 ## Gotchas
 

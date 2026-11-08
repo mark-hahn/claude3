@@ -22,6 +22,7 @@ const emit = defineEmits<{ busy: [count: number]; closeSide: [] }>();
 let sessions: ClaudeSession[] = [];
 const version = ref(0);
 const statuses = ref<Record<string, RunningStatus>>({});
+const ceilings = ref(0);
 const selectedKey = `claude3.session.${props.tab.label}`;
 // '' is the new-session draft: the pane is empty until its first prompt makes the session.
 const selectedId = ref(localStorage.getItem(selectedKey) ?? "");
@@ -82,6 +83,8 @@ function onEvent(event: ServerEvent): void {
     sessions = sessions.filter((session) => !event.ids.includes(session.id));
     if (event.ids.includes(selectedId.value)) selectedId.value = "";
     version.value++;
+  } else if (event.type === "ceilings") {
+    ceilings.value = event.count;
   }
 }
 
@@ -291,7 +294,7 @@ onBeforeUnmount(() => source?.close());
       </div>
     </aside>
     <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
-    <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" @started="select" @new="newSession" />
+    <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" @started="select" @new="newSession" />
     <Snips v-if="side === 'snips' && active" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings' && active" :tab="tab" @close="emit('closeSide')" />
   </div>
