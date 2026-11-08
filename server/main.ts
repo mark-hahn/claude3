@@ -6,12 +6,13 @@
 //        stop | rename { name } | trash { trashed } | picks { model, effort, advisor } | ctx -> { table }
 //        new { keep } -> { session } (an empty "New session"; sweeps other empty ones, as discard does)
 //        discard { keep } -> {} (drop every session with no turns, except the ids in keep)
+//        run -> { output } (the project's ./run, the prompt box's "r")
 //        clean -> {} (every session to the trash) | git -> { files: [{ x, y, path }] } (git status)
 //        commit { message } -> {} (add everything, commit, push)
 //        snips { text? } -> { text } (claude2's Snips text, kept on claude2-stats; text saves it)
 //   GET  /version              -> the deployed version, the hash ./deploy wrote ("dev" in the repo)
 //   GET  anything else         -> the built page in dist/, when there is one (the WSL backend's)
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
@@ -353,6 +354,9 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (name === "commit") {
     return await commit(project, String(body.message ?? "").trim());
   }
+  if (name === "run") {
+    return { output: await runScript(project, body.restartVite === true) };
+  }
   if (name === "snips") {
     return await snips(body.text);
   }
@@ -426,6 +430,36 @@ function errorText(error: unknown): string {
 
 // git in the tab's project folder. With no terminal prompt, a push that wants a password fails
 // instead of hanging on a question nobody can see.
+// The project's ./run, its output combined. On WSL it runs as a transient systemd unit, outside
+// claude3.service's cgroup: a restart of this backend (claude3's own ./run deploys) would
+// otherwise kill it and whatever it leaves running. KillMode=process lets those outlive it.
+// Done at the script's exit, not its pipes' close: a detached child may hold them open.
+// restartVite sets RESTART_VITE=1 for it (the page's "v" prompt); claude3's ./run then restarts vite.
+function runScript(project: Project, restartVite: boolean): Promise<string> {
+  const cwd = project.tab.path;
+  if (!fs.existsSync(path.join(cwd, "run"))) {
+    return Promise.reject(new Error(`No ./run in ${cwd}.`));
+  }
+  const [command, ...args] = hostName === "wsl"
+    ? ["systemd-run", "--quiet", "--collect", "--pipe", "--wait", "-p", "KillMode=process", "-p", `WorkingDirectory=${cwd}`, "-E", `PATH=${process.env.PATH}`, "-E", `HOME=${os.homedir()}`, ...(restartVite ? ["-E", "RESTART_VITE=1"] : []), "./run"]
+    : ["./run"];
+  log(`./run in ${cwd}`);
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd, env: { ...process.env, ...(restartVite ? { RESTART_VITE: "1" } : {}) }, stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    const take = (chunk: Buffer): void => void (output = (output + chunk.toString()).slice(-20_000));
+    child.stdout.on("data", take);
+    child.stderr.on("data", take);
+    const timer = setTimeout(() => child.kill(), 300_000);
+    child.on("error", (error) => (clearTimeout(timer), reject(error)));
+    child.on("exit", (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(output.trim());
+      else reject(new Error(`./run failed (${signal ?? `exit ${code}`}):\n${output.trim()}`));
+    });
+  });
+}
+
 function git(project: Project, ...args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const options = { cwd: project.tab.path, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }, timeout: 120_000, maxBuffer: 20_000_000 };

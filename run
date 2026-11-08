@@ -2,19 +2,25 @@
 # Start the page with hot update at http://localhost:5310 (vite.config.ts pins the port), after
 # making sure each backend runs this repo's server code: hosts whose backend is missing, stopped
 # or older get deployed and restarted (./deploy --if-stale), the rest are left alone. A host that
-# fails is reported and the page starts anyway. A vite already running from this repo is stopped
-# first, since it holds the pinned port; other projects' vites (tv's) are left alone.
+# fails is reported and the page starts anyway. A vite already running from this repo is left
+# running, since hot update covers code changes and a restart would reload the page; other
+# projects' vites (tv's) are ignored. RESTART_VITE=1 (the page's "v" prompt) stops it and starts
+# a fresh one instead, which reloads the page.
 # vite runs detached (setsid nohup) with its output in vite.log (`tail -f vite.log` to watch), so
 # it outlives this script and whatever started it: a terminal, or a Claude session that would
 # otherwise sit waiting on it as a background task. The script waits for vite's ready line, prints
 # the log so far, and exits.
 cd "$(dirname "$0")"
 vite="$PWD/node_modules/.bin/vite"
-if pkill -f "$vite"; then
+./deploy --if-stale
+if [[ $RESTART_VITE == 1 ]] && pkill -f "$vite"; then
   for _ in {1..25}; do pgrep -f "$vite" >/dev/null || break; sleep 0.2; done
 fi
-./deploy --if-stale
-# Started by its absolute path, so its command line is what the pkill above looks for.
+if pgrep -f "$vite" >/dev/null; then
+  echo "vite already running (hot update); left alone"
+  exit 0
+fi
+# Started by its absolute path, so its command line is what the pgrep and pkill above look for.
 setsid nohup "$vite" "$@" > vite.log 2>&1 < /dev/null &
 for _ in {1..100}; do
   grep -qE "Local:|rror" vite.log && break

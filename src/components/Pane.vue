@@ -14,6 +14,8 @@ const emit = defineEmits<{ started: [sessionId: string] }>();
 
 const historyEl = ref<HTMLElement>();
 const ctxPopEl = ref<HTMLElement>();
+const runPopEl = ref<HTMLDialogElement>();
+const runText = ref("");
 const ctxButtonEl = ref<HTMLButtonElement>();
 const promptEl = ref<HTMLTextAreaElement>();
 const draft = ref("");
@@ -374,7 +376,34 @@ const latest = computed(() => {
   return turns().at(-1);
 });
 
+// The prompt "r" alone runs the project's ./run on its backend instead of going to claude; "v"
+// does the same with RESTART_VITE=1, which makes claude3's ./run restart a running vite.
+// Its result shows in a <dialog> rather than window.alert so the font can be sized. claude3's own
+// ./run restarts vite, which reloads the page; unlike an alert the dialog doesn't hold that off,
+// so the text waits in sessionStorage until OK and is shown again on mount.
+const runKey = (): string => `runPop:${props.tab.label}`;
+function showRun(text: string): void {
+  sessionStorage.setItem(runKey(), text);
+  runText.value = text;
+  runPopEl.value!.showModal();
+}
+function runClosed(): void {
+  sessionStorage.removeItem(runKey());
+}
+
+async function runScript(restartVite: boolean): Promise<void> {
+  draft.value = "";
+  try {
+    const { output } = await post<{ output: string }>(props.tab, "run", { restartVite });
+    showRun(`./run in ${props.tab.label} finished.\n\n${output.slice(-3000)}`);
+  } catch (error) {
+    // A ./run that restarts this backend (claude3's own) cuts the answer off; the script runs on.
+    showRun(`./run in ${props.tab.label}: ${error instanceof Error ? error.message.slice(-3000) : String(error)}`);
+  }
+}
+
 async function submit(text = draft.value, keepDraft = false): Promise<void> {
+  if ((text.trim() === "r" || text.trim() === "v") && !keepDraft) return runScript(text.trim() === "v");
   if (!text.trim() || (props.session?.trashed ?? false)) return;
   // Sending during a run stops that run and takes this prompt instead; a run waiting on a
   // background task takes it as a follow-up.
@@ -687,6 +716,8 @@ onMounted(() => {
   switchedFrom = props.session?.id ?? "";
   loadPicks();
   render();
+  const pendingRun = sessionStorage.getItem(runKey());
+  if (pendingRun !== null) showRun(pendingRun);
   // Nothing arrives between API calls, so the clock ticks on its own.
   ticker = window.setInterval(() => {
     if (props.status?.active) now.value = Date.now();
@@ -715,6 +746,10 @@ onBeforeUnmount(() => {
   <div class="pane" @click.capture="copyCodeBlock">
     <div ref="historyEl" class="history" tabindex="-1"></div>
     <div ref="ctxPopEl" class="ctx-pop" hidden></div>
+    <dialog ref="runPopEl" class="run-pop" @close="runClosed">
+      <pre>{{ runText }}</pre>
+      <form method="dialog"><button autofocus>OK</button></form>
+    </dialog>
     <div class="dock">
       <textarea
         ref="promptEl"
@@ -835,6 +870,11 @@ onBeforeUnmount(() => {
 .pane .indicator.active.waiting { border-color: #a5d6a7; background: #e3f6e4; }
 /* The Ctx popup, opening upward from its button; placed by script. */
 .pane .ctx-pop { position: fixed; z-index: 50; overflow: auto; padding: 8px 10px; border: 1px solid #000; border-radius: 8px; background: #fff; color: #000; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
+/* The ./run result. */
+.pane .run-pop { max-width: 80vw; max-height: 80vh; padding: 12px 16px; border: 1px solid #000; border-radius: 8px; color: #000; font-size: 14px; }
+.pane .run-pop pre { margin: 0 0 10px; white-space: pre-wrap; font: inherit; }
+.pane .run-pop form { text-align: right; }
+.pane .run-pop button { font-size: 14px; }
 .pane .ctx-pop table { width: 100%; border-collapse: collapse; }
 .pane .ctx-pop th, .pane .ctx-pop td { padding: 1px 8px; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
 .pane .ctx-pop thead tr:first-child th:first-child, .pane .ctx-pop td:first-child { text-align: left; }
