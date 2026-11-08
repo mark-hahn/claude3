@@ -11,9 +11,9 @@ import Git from "./Git.vue";
 import Pane from "./Pane.vue";
 import Snips from "./Snips.vue";
 
-// active: this is the tab on show.
-const props = defineProps<{ tab: Tab; active: boolean }>();
-const emit = defineEmits<{ busy: [count: number] }>();
+// active: this is the tab on show. snips: the Snips are open (App's toggle, one for every tab).
+const props = defineProps<{ tab: Tab; active: boolean; snips: boolean }>();
+const emit = defineEmits<{ busy: [count: number]; closeSnips: [] }>();
 
 // Plain objects mutated in place as text streams in; `version` tells Vue when the shape changed.
 let sessions: ClaudeSession[] = [];
@@ -24,7 +24,6 @@ const selectedKey = `claude3.session.${props.tab.label}`;
 // '' is the new-session draft: the pane is empty until its first prompt makes the session.
 const selectedId = ref(localStorage.getItem(selectedKey) ?? "");
 const showTrash = ref(false);
-const snipsOpen = ref(false);
 const connected = ref(false);
 const editingId = ref("");
 const editName = ref("");
@@ -83,6 +82,13 @@ function select(id: string): void {
   selectedId.value = id;
 }
 
+// The pane goes back to a new-session draft; the session it showed stays in the sidebar.
+function newSession(): void {
+  showTrash.value = false;
+  selectedId.value = "";
+  focusPrompt();
+}
+
 // claude2's Clean: every session to the trash, the pane back to a new-session draft.
 function clean(): void {
   selectedId.value = "";
@@ -91,10 +97,6 @@ function clean(): void {
 
 function focusPrompt(): void {
   pane.value?.focusPrompt();
-}
-function closeSnips(): void {
-  snipsOpen.value = false;
-  focusPrompt();
 }
 
 // The divider between sidebar and pane: dragging it sets the width every tab shares (App.vue
@@ -148,7 +150,6 @@ function clickCard(session: ClaudeSession, event: MouseEvent): void {
     return;
   }
   if (renamed) return;
-  snipsOpen.value = false;
   selectedId.value = session.id;
 }
 function finishRename(session: ClaudeSession, commit: boolean): void {
@@ -173,6 +174,7 @@ watch(selectedId, (id) => localStorage.setItem(selectedKey, id));
 watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => status.active).length));
 // Picking a tab puts the cursor in its prompt box; post, so the tab is on show by then.
 watch(() => props.active, (active) => active && focusPrompt(), { flush: "post" });
+watch(() => props.snips, (open) => !open && props.active && focusPrompt(), { flush: "post" });
 
 let source: EventSource | null = null;
 onMounted(() => {
@@ -183,11 +185,13 @@ onBeforeUnmount(() => source?.close());
 </script>
 
 <template>
-  <div class="project">
+  <div class="project" :class="{ 'with-snips': snips && active }">
     <aside class="sidebar">
       <div class="top">
         <div class="row">
-          <button class="snips-toggle" :class="{ active: snipsOpen }" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2" @click="snipsOpen ? closeSnips() : (snipsOpen = true)">Snips</button>
+          <button class="new" title="New session: the pane goes empty, and its first prompt starts the session" @click="newSession">
+            <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
+          </button>
           <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" />
         </div>
         <div class="row">
@@ -238,20 +242,22 @@ onBeforeUnmount(() => source?.close());
       </div>
     </aside>
     <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
-    <Pane ref="pane" :tab="tab" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :models="models" :version="version" @started="select">
-      <Snips v-if="snipsOpen" :tab="tab" @close="closeSnips" />
-    </Pane>
+    <Pane ref="pane" :tab="tab" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :models="models" :version="version" @started="select" />
+    <Snips v-if="snips && active" :tab="tab" @close="emit('closeSnips')" />
   </div>
 </template>
 
 <style>
 /* Ported from claude2's sidebar. */
 .project { height: 100%; min-height: 0; display: grid; grid-template-columns: var(--sidebar-width, 300px) 7px minmax(0, 1fr); }
+/* The Snips column: half of what the sidebar leaves, the conversation pane keeping the rest. */
+.project.with-snips { grid-template-columns: var(--sidebar-width, 300px) 7px minmax(0, 1fr) calc((100vw - var(--sidebar-width, 300px)) / 2); }
 .sidebar { box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 10px; }
 /* The sidebar's old right border, now a wide-enough strip to grab. */
 .project > .divider { cursor: col-resize; touch-action: none; background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat; }
 .project > .divider:hover { background-image: linear-gradient(#9a9a93, #9a9a93); background-size: 3px 100%; }
-.sidebar .snips-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
+.sidebar .new { width: 42px; }
+.sidebar .new svg { display: block; margin: 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .sidebar .top { display: flex; flex-direction: column; gap: 7px; flex: none; }
 .sidebar .row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
 .sidebar .top button { height: 25px; min-height: 0; flex: none; padding: 0 8px; }

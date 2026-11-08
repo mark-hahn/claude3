@@ -21,17 +21,18 @@ on the laptop, and talks to each backend directly.
   follow-up into a background wait, titles, the model list, `contextUsage` for Ctx. Also
   `advisorFor` / `cheapestModel` from claude2's modelInfo.ts.
 - `server/contextStats.ts`: the Ctx popup's table, copied unchanged from claude2.
-- `src/App.vue`: the tab strip; every tab's `Project` stays mounted (`v-show`).
+- `src/App.vue`: the tab strip; every tab's `Project` stays mounted (`v-show`). The Snips toggle
+  is here, at the row's right end, one for every tab; the tab on show draws them (`snips` prop), and picking a tab closes them.
 - `src/components/Project.vue`: one tab. Owns its EventSource, the session list, the sidebar
-  (Snips, Git; Clean, Trash; rename by long press, trash/restore, busy clocks), the divider
+  (new session +, Git; Clean, Trash; rename by long press, trash/restore, busy clocks), the divider
   drag (`--sidebar-width` on the root, shared by every tab, in localStorage), and passes the
   selected session to the pane. Picking a tab focuses its prompt box (the `active` prop).
 - `src/components/Git.vue`: the Git button (label counts the changed files) and its `<dialog>`, a
   small VS Code Source Control: message, staged and changed files, Commit (= `add -A`, commit,
   push on the backend). Status is re-read only for the tab on show: on showing, window focus, and
   session events (a turn starting or ending).
-- `src/components/Snips.vue`: claude2's Snips as a textarea laid over the pane's history (Pane's
-  slot), so the prompt box stays usable. The one copy lives on claude2-stats (`/snips` on
+- `src/components/Snips.vue`: claude2's Snips as a textarea in a column right of the pane
+  (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude2-stats (`/snips` on
   hahnca.com:7301), reached through the backend's `snips` action; read on open and window focus,
   saved 500ms after typing stops.
 - `src/components/Pane.vue`: claude2's conversation pane. History (bars and boxes) is built

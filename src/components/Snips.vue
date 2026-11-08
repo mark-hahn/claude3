@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// claude2's Snips tab, over the pane's history so the prompt box stays in reach. One text, kept on
-// claude2's stats server (the backend's `snips` action), so claude2's windows and every claude3 tab
-// edit the same copy. Read when it opens and whenever the window gets focus back; saved half a
+// claude2's Snips tab, a column right of the conversation pane, the window's full height below the
+// tab strip. One text, kept on claude2's stats server (the backend's `snips` action), so claude2's
+// windows and every claude3 tab edit the same copy. Read when it opens and whenever the window gets focus back; saved half a
 // second after the typing stops, and at once on close. Ctrl+Enter or Esc closes it.
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import type { Tab } from "../../shared/config.ts";
@@ -89,7 +89,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.snips { position: relative; z-index: 2; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 4px; background: var(--page); }
+.snips { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-left: 1px solid var(--border); background: var(--page); }
 .snips-note { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 4px 8px; }
 .snips-text { flex: 1; min-height: 0; resize: none; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; outline: none; }
 </style>
