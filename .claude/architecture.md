@@ -32,7 +32,7 @@ on the laptop, and talks to each backend directly.
   small VS Code Source Control: message, staged and changed files, Commit (= `add -A`, commit,
   push on the backend). Status is re-read only for the tab on show: on showing, window focus, and
   session events (a turn starting or ending).
-- `src/components/Snips.vue`: claude2's Snips as a textarea in a column right of the pane
+- `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane
   (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude2-stats (`/snips` on
   hahnca.com:7301), reached through the backend's `snips` action; read on open and window focus,
   saved 500ms after typing stops. Ctrl+Enter emits `insert` with the selection; Project hands it
@@ -46,7 +46,16 @@ on the laptop, and talks to each backend directly.
   fallback files in `~/.claude3/quota-*.json`. No footer 95% alert, no reading after a turn.
 - `src/components/Pane.vue`: claude2's conversation pane. History (bars and boxes) is built
   imperatively, as claude2 builds it; the dock (prompt box, "+", pill, stop, Ctx, pickers, stats; its "+" emits `new` to Project's newSession) is a
-  template. Also the Ctx popup.
+  template. Also the Ctx popup. The prompt box is a Monaco editor whose text is mirrored into the
+  `draft` ref both ways. claude2's big prompt editor: Ctrl-Alt-click in the box or Ctrl-Alt-Z
+  (the tab on show only, via the `active` prop) puts the box full height left of the history,
+  per session in localStorage (`bigPrompt:<tab>:<session id>`); Ctrl-Alt-X there shows it
+  rendered as markdown.
+- `src/monaco.ts` (+ `monaco.css`): claude2's Monaco setup (its webviews.ts `monacoScript` /
+  `monacoStyle`), shared by the prompt box and the Snips: markdown only, the worker through Vite's
+  `?worker`, the black theme, the user's VS Code keys (Ctrl-D delete line, ...), the line dots in
+  the gutter, the list keys (Tab, Shift-Tab, Enter, Backspace, #) and untabbing. claude2's F1
+  unbinding is left out (it was for VS Code).
 - `src/render.ts`: response text to box: answer text, tool groups and details, the markdown
   renderer. `src/render.check.mjs` is its self-check (`npm test`).
 - `src/api.ts`: `post` and `listen` against a tab's backend.
@@ -134,7 +143,9 @@ on the laptop, and talks to each backend directly.
   claude2's Settings pane; the Settings pane has no Settings tab yet.
 - Not ported yet from claude2: search, fork, images/Cap, File, export, presets (M),
   Stats/Models/Instructions/Settings tabs, login/auth, the git changes check, prompt
-  suggestions, Monaco, the big prompt box, arrow-key navigation, styled tooltips.
+  suggestions, the restored prompt, arrow-key navigation, styled tooltips.
 - Snips stay read-only until the shared copy has been read, and a server answer of `null` (claude2
   never saved one there) keeps them so: nothing typed in claude3 may replace claude2's copy unseen.
+- Monaco's `addCommand` keys are page-wide and every tab has its own editor, so editor keys are
+  `addAction`s. Monaco is about 4MB of the built page.
 - Every page element follows CLAUDE.md's display rules: font sizes 14–18px only, text solid black.

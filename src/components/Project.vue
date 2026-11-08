@@ -276,7 +276,7 @@ onBeforeUnmount(() => source?.close());
       </div>
     </aside>
     <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
-    <Pane ref="pane" :tab="tab" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :models="models" :version="version" @started="select" @new="newSession" />
+    <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :models="models" :version="version" @started="select" @new="newSession" />
     <Snips v-if="side === 'snips' && active" :tab="tab" @close="emit('closeSide')" @insert="(text) => pane?.appendPrompt(text)" />
     <Settings v-if="side === 'settings' && active" :tab="tab" @close="emit('closeSide')" />
   </div>

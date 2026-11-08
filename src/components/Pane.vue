@@ -2,14 +2,18 @@
 // The conversation pane, ported from claude2's conversationHtml. The history (bars and boxes) is
 // built imperatively, as claude2 builds it, so streaming refills one box rather than re-rendering
 // the pane; the dock is an ordinary template. Left out for now: search, fork, images, Cap, File,
-// export, presets (M), arrow-key navigation and the frozen pane, Monaco, the big prompt box.
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+// export, presets (M), arrow-key navigation and the frozen pane, the restored prompt.
+// The prompt box is a Monaco editor with claude2's editing (src/monaco.ts), and has claude2's big
+// prompt editor.
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, DEFAULT_EFFORT, type ClaudeSession, type ClaudeTurn, type ModelMap, type RunningStatus } from "../../shared/types.ts";
 import { post } from "../api.ts";
-import { answerText, fillBox, withoutDetails } from "../render.ts";
+import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
+import { answerText, fillBox, renderMarkdown, withoutDetails } from "../render.ts";
 
-const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: RunningStatus | null; models: ModelMap; version: number }>();
+// active: this pane's tab is the one on show, so the page-wide keys are its.
+const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: RunningStatus | null; models: ModelMap; version: number; active: boolean }>();
 const emit = defineEmits<{ started: [sessionId: string]; new: [] }>();
 
 const historyEl = ref<HTMLElement>();
@@ -17,7 +21,10 @@ const ctxPopEl = ref<HTMLElement>();
 const runPopEl = ref<HTMLDialogElement>();
 const runText = ref("");
 const ctxButtonEl = ref<HTMLButtonElement>();
-const promptEl = ref<HTMLTextAreaElement>();
+const promptHostEl = ref<HTMLElement>();
+const promptMdEl = ref<HTMLElement>();
+let promptBox: monaco.editor.IStandaloneCodeEditor | null = null;
+// The prompt box's text, kept in step with the editor both ways.
 const draft = ref("");
 const model = ref("");
 const effort = ref("");
@@ -337,15 +344,23 @@ function applyDelta(turnId: string, next: RunningStatus | null): void {
 // Sessions holding unsent text: the sidebar's sweep of empty sessions spares them.
 const drafted = (): string[] => [...drafts].filter(([, text]) => text.trim()).map(([id]) => id).concat(draft.value.trim() && props.session ? [props.session.id] : []);
 // Text picked in the Snips joins the end of the prompt, on a line of its own, with the cursor after it.
-async function appendPrompt(text: string): Promise<void> {
-  draft.value += (draft.value && !draft.value.endsWith("\n") ? "\n" : "") + text;
-  await nextTick();
-  const el = promptEl.value;
-  el?.focus();
-  el?.setSelectionRange(draft.value.length, draft.value.length);
-  if (el) el.scrollTop = el.scrollHeight;
+// An edit through Monaco, so ctrl-z takes it back.
+function appendPrompt(text: string): void {
+  const box = promptBox;
+  if (!box || box.getOption(monaco.editor.EditorOption.readOnly)) return;
+  setPromptMarkdown(false);
+  const model = box.getModel()!;
+  const end = model.getPositionAt(model.getValueLength());
+  const value = model.getValue();
+  box.pushUndoStop();
+  box.executeEdits("claude3", [{ range: monaco.Range.fromPositions(end), text: (value && !value.endsWith("\n") ? "\n" : "") + untab(text) }]);
+  box.pushUndoStop();
+  box.focus();
+  box.setPosition(model.getPositionAt(model.getValueLength()));
+  box.revealPosition(box.getPosition()!);
 }
-defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt: () => promptEl.value?.focus() });
+const focusPrompt = (): void => (promptMarkdown.value ? promptMdEl.value : promptBox)?.focus();
+defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt });
 
 // ---- the dock ----
 
@@ -424,7 +439,10 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
   pendingTurnCount = turns().length + 1;
   try {
     const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: props.session?.id ?? "", prompt: text, model: model.value, effort: effort.value, advisor: advisorOn.value });
-    if (!props.session) emit("started", sessionId);
+    if (!props.session) {
+      storeBig(sessionId, bigPrompt.value);
+      emit("started", sessionId);
+    }
   } catch (error) {
     pendingTurnCount = 0;
     if (!keepDraft) draft.value = text;
@@ -432,24 +450,93 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
   }
 }
 
-function onPromptKey(event: KeyboardEvent): void {
-  if (event.key === "Enter" && event.ctrlKey) {
-    event.preventDefault();
-    if (!draft.value.trim() && clearedDraft) {
-      draft.value = clearedDraft;
-      clearedDraft = "";
-      return;
-    }
-    void submit();
+// Ctrl+Enter in the prompt box.
+function sendKey(): void {
+  if (!draft.value.trim() && clearedDraft) {
+    draft.value = clearedDraft;
+    clearedDraft = "";
+    return;
   }
+  void submit();
 }
 
-// The box stretches to the footer's height and grows with its text up to nine lines.
+// The frame grows with the text (--content-h), never below three lines, and the CSS caps it at
+// six. The floor is Monaco's own rounded line height.
 function fitPrompt(): void {
-  const el = promptEl.value;
-  if (!el) return;
-  el.style.height = "";
-  el.style.height = Math.min(el.scrollHeight + 2, 200) + "px";
+  const box = promptBox;
+  if (!box) return;
+  const threeLines = 3 * box.getOption(monaco.editor.EditorOption.lineHeight) + 10;
+  promptHostEl.value!.style.setProperty("--content-h", Math.max(box.getContentHeight(), threeLines) + 8 + "px");
+}
+
+// bigPromptEditor: the prompt box takes the pane's full height on the left, and the history and
+// the controls share the column to its right. Ctrl-Alt-click in the box or Ctrl-Alt-Z anywhere in
+// the tab toggles it. Each session keeps its own flag, in localStorage, so a reload comes back in
+// the same layout; a session started from the new-session draft takes the draft's.
+// ponytail: flags of deleted sessions stay in localStorage; a few bytes each.
+const bigPrompt = ref(false);
+const bigKey = (id: string): string => `bigPrompt:${props.tab.label}:${id}`;
+function storeBig(id: string, on: boolean): void {
+  if (on) localStorage.setItem(bigKey(id), "1");
+  else localStorage.removeItem(bigKey(id));
+}
+function setBigPrompt(on: boolean): void {
+  bigPrompt.value = on;
+  setPromptMarkdown(false);
+  storeBig(props.session?.id ?? "", on);
+}
+
+// promptMarkdown: the big box's text shown rendered, read-only, in the editor's place. Ctrl-Alt-X
+// toggles it while the box is big; leaving the big box leaves it too. Ctrl+Enter there sends, as
+// it would from the text.
+const promptMarkdown = ref(false);
+const promptHtml = computed(() => (promptMarkdown.value ? renderMarkdown(draft.value) : ""));
+function setPromptMarkdown(on: boolean): void {
+  if (on === promptMarkdown.value) return;
+  promptMarkdown.value = on;
+  if (!on) return;
+  requestAnimationFrame(() => {
+    promptMdEl.value!.scrollTop = 0;
+    promptMdEl.value!.focus();
+  });
+}
+function onMdKey(event: KeyboardEvent): void {
+  if (!event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || event.key !== "Enter") return;
+  event.preventDefault();
+  setPromptMarkdown(false);
+  promptBox?.focus();
+  sendKey();
+}
+// Capture phase, so Monaco never sees the press.
+function onPageKey(event: KeyboardEvent): void {
+  if (!props.active || !event.ctrlKey || !event.altKey || event.metaKey || event.shiftKey) return;
+  if (event.code === "KeyZ") {
+    event.preventDefault();
+    event.stopPropagation();
+    setBigPrompt(!bigPrompt.value);
+    promptBox?.focus();
+  } else if (event.code === "KeyX" && bigPrompt.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    const on = !promptMarkdown.value;
+    setPromptMarkdown(on);
+    if (!on) promptBox?.focus();
+  }
+}
+// Ctrl-Alt-click in the box. Capture phase, so Monaco never sees the press (its ctrl-click adds a
+// cursor). Monaco listens for pointer events; the mouse ones are only blocked, so a browser that
+// still fires them can't toggle twice.
+function onPromptPointer(event: PointerEvent): void {
+  if (!event.ctrlKey || !event.altKey) return;
+  event.preventDefault();
+  event.stopPropagation();
+  setBigPrompt(!bigPrompt.value);
+  promptBox?.focus();
+}
+function onPromptMouse(event: MouseEvent): void {
+  if (!event.ctrlKey || !event.altKey) return;
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 function stop(): void {
@@ -693,7 +780,8 @@ watch(
       openToolCalls = new Set();
       if (ctxPopEl.value) ctxPopEl.value.hidden = true;
       loadPicks();
-      void nextTick(fitPrompt);
+      bigPrompt.value = localStorage.getItem(bigKey(id)) === "1";
+      setPromptMarkdown(false);
     }
     status = props.status;
     render();
@@ -711,7 +799,13 @@ watch(
 watch(modelIds, () => {
   if (!model.value) loadPicks();
 });
-watch(draft, () => void nextTick(fitPrompt));
+watch(draft, (text) => {
+  if (promptBox && promptBox.getValue() !== text) promptBox.setValue(untab(text));
+});
+// A trashed session's box is read-only until the session is restored.
+const lockPrompt = (): void =>
+  promptBox?.updateOptions({ readOnly: props.session?.trashed ?? false, readOnlyMessage: { value: "This session is in the trash. Restore it to send a prompt." } });
+watch(() => props.session?.trashed, lockPrompt);
 
 let ticker = 0;
 let resize: ResizeObserver | null = null;
@@ -732,6 +826,20 @@ function closeCtxOutside(event: MouseEvent): void {
 onMounted(() => {
   status = props.status;
   switchedFrom = props.session?.id ?? "";
+  bigPrompt.value = localStorage.getItem(bigKey(switchedFrom)) === "1";
+  // Monaco places the caret on an all-ASCII line by counting columns instead of measuring;
+  // measuring is always right.
+  const box = (promptBox = monaco.editor.create(promptHostEl.value!.firstElementChild as HTMLElement, { ...editorOptions, disableMonospaceOptimizations: true, value: draft.value }));
+  box.onDidContentSizeChange(fitPrompt);
+  fitPrompt();
+  addLineDots(box);
+  addListKeys(box);
+  // Ctrl+Enter sends, in place of Monaco's insert-line-below. An action, not addCommand: Monaco's
+  // addCommand keys are page-wide, and every tab has its own editor.
+  box.addAction({ id: "claude3.submitPrompt", label: "Send Prompt", keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter], run: sendKey });
+  box.onDidChangeModelContent(() => (draft.value = box.getValue()));
+  lockPrompt();
+  window.addEventListener("keydown", onPageKey, true);
   loadPicks();
   render();
   const pendingRun = sessionStorage.getItem(runKey());
@@ -757,11 +865,13 @@ onBeforeUnmount(() => {
   window.clearInterval(ticker);
   resize?.disconnect();
   document.removeEventListener("mousedown", closeCtxOutside, true);
+  window.removeEventListener("keydown", onPageKey, true);
+  promptBox?.dispose();
 });
 </script>
 
 <template>
-  <div class="pane" @click.capture="copyCodeBlock">
+  <div class="pane" :class="{ 'big-prompt-editor': bigPrompt }" @click.capture="copyCodeBlock">
     <div ref="historyEl" class="history" tabindex="-1"></div>
     <div ref="ctxPopEl" class="ctx-pop" hidden></div>
     <dialog ref="runPopEl" class="run-pop" @close="runClosed">
@@ -769,17 +879,10 @@ onBeforeUnmount(() => {
       <form method="dialog"><button autofocus>OK</button></form>
     </dialog>
     <div class="dock">
-      <textarea
-        ref="promptEl"
-        v-model="draft"
-        class="prompt"
-        spellcheck="false"
-        writingsuggestions="false"
-        data-gramm="false"
-        data-enable-grammarly="false"
-        :disabled="session?.trashed"
-        @keydown="onPromptKey"
-      ></textarea>
+      <div ref="promptHostEl" class="prompt" @pointerdown.capture="onPromptPointer" @mousedown.capture="onPromptMouse">
+        <div v-show="!promptMarkdown"></div>
+        <div v-show="promptMarkdown" ref="promptMdEl" class="prompt-md response markdown" tabindex="-1" @keydown="onMdKey" v-html="promptHtml"></div>
+      </div>
       <div class="dock-controls">
         <div class="footer">
           <button class="new" title="New session" @click="emit('new')">
@@ -865,9 +968,26 @@ onBeforeUnmount(() => {
 .pane .error-note { margin-top: 10px; background: #fdecec; border: 1px solid #f0bcbc; border-radius: 6px; padding: 8px 10px; color: #731b1b; }
 .pane .run-arrow { font-weight: 700; margin-right: 6px; animation: run-blink 0.6s steps(1) infinite; }
 @keyframes run-blink { 50% { visibility: hidden; } }
-.pane .prompt { flex: 1 1 260px; min-width: 180px; max-height: 200px; resize: none; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: 14px/1.45 Aptos, "Segoe UI", sans-serif; padding: 6px 10px; }
-.pane .prompt::placeholder { color: var(--ink); }
-.pane .prompt:focus { outline: 2px solid var(--ink); outline-offset: -1px; border-color: transparent; }
+/* The prompt box: a frame around a Monaco editor. It grows with the text (--content-h, set by the
+   script) from three lines to six, and still stretches to the controls' height beside it. */
+.pane .prompt { position: relative; flex: 1 1 260px; min-width: 180px; min-height: max(64px, min(var(--content-h, 0px), 144px)); max-height: 144px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.pane .prompt:focus-within { outline: 2px solid var(--ink); outline-offset: -1px; border-color: transparent; }
+/* Inset just past the rounded corners, so the editor's square ones stay inside the border. */
+.pane .prompt > div { position: absolute; inset: 3px; }
+/* promptMarkdown: the big box's text rendered as a markdown box, read-only, in the editor's place. */
+.pane .prompt > .prompt-md { margin: 0; border-left: none; padding: 7px 10px 3px 14px; background: transparent; overflow-y: auto; outline: none; }
+/* bigPromptEditor: the editor runs the pane's full height on the left, and the history and the
+   controls share the column to its right, the controls at their own three-row height. The dock
+   dissolves so its two children can sit in the pane's grid beside the history. The right column
+   takes at least half the pane, more only if the controls need it. */
+.pane.big-prompt-editor { grid-template-columns: minmax(0, 1fr) minmax(max-content, 1fr); }
+.pane.big-prompt-editor .dock { display: contents; }
+.pane.big-prompt-editor .prompt { grid-column: 1; grid-row: 1 / 3; align-self: stretch; max-height: none; margin: 8px 0 8px 12px; }
+/* Sized by the column, never by its own content, or a long line would widen the column. */
+.pane.big-prompt-editor > .history { grid-area: 1 / 2; contain: inline-size; }
+.pane.big-prompt-editor .dock-controls { grid-column: 2; grid-row: 2; margin: 0; padding: 8px 16px 8px 12px; border-top: 1px solid var(--border); }
+.pane.big-prompt-editor .footer, .pane.big-prompt-editor .bar, .pane.big-prompt-editor .stats { justify-content: center; }
+.pane.big-prompt-editor .stats { margin-right: 0; }
 .pane .bar, .pane .footer { display: flex; gap: 8px; align-items: center; }
 .pane .group { display: flex; gap: 6px; align-items: center; min-width: 0; flex-wrap: wrap; }
 /* Every digit one width, so a ticking stat does not resize the column. */

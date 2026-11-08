@@ -3,20 +3,23 @@
 // tab strip. One text, kept on claude2's stats server (the backend's `snips` action), so claude2's
 // windows and every claude3 tab edit the same copy. Read when it opens and whenever the window gets focus back; saved half a
 // second after the typing stops, and at once on close. Esc closes it; Ctrl+Enter adds the selected text
-// to the end of the prompt and moves the cursor there, leaving the Snips open.
-import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+// to the end of the prompt and moves the cursor there, leaving the Snips open. A Monaco editor with
+// claude2's editing (src/monaco.ts).
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
+import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
 
 const props = defineProps<{ tab: Tab }>();
 const emit = defineEmits<{ close: []; insert: [text: string] }>();
 
-const text = ref("");
 // Editable only once the shared copy has been read, so nothing typed early can replace it.
-const ready = ref(false);
+let ready = false;
 // Why it can't be read or saved; empty while all is well.
 const note = ref("");
-const box = ref<HTMLTextAreaElement>();
+const host = ref<HTMLElement>();
+let editor: monaco.editor.IStandaloneCodeEditor | null = null;
+const text = (): string => editor?.getValue() ?? "";
 // Typing since a read started makes its answer stale.
 let edits = 0;
 let saveTimer = 0;
@@ -33,17 +36,17 @@ async function load(): Promise<void> {
       note.value = "claude2 hasn't shared its Snips yet: open them once in claude2.";
       return;
     }
-    // A textarea hands back \n line ends whatever it was given, so compare and keep them that way.
-    const next = reply.text.replace(/\r\n?/g, "\n");
+    // \n line ends only, so the comparison holds whatever line ends claude2 saved.
+    const next = untab(reply.text.replace(/\r\n?/g, "\n"));
     note.value = "";
-    ready.value = true;
-    if (next === text.value) return;
-    const el = box.value;
-    const [start, end, top] = [el?.selectionStart ?? 0, el?.selectionEnd ?? 0, el?.scrollTop ?? 0];
-    text.value = next;
-    await nextTick();
-    el?.setSelectionRange(start, end);
-    if (el) el.scrollTop = top;
+    if (!ready) {
+      ready = true;
+      editor?.updateOptions({ readOnly: false });
+    }
+    if (!editor || next === text()) return;
+    const view = editor.saveViewState();
+    editor.setValue(next);
+    editor.restoreViewState(view);
   } catch (error) {
     note.value = `The Snips couldn't be read: ${messageOf(error)}`;
   }
@@ -52,7 +55,7 @@ async function load(): Promise<void> {
 function save(): void {
   window.clearTimeout(saveTimer);
   saveTimer = 0;
-  post(props.tab, "snips", { text: text.value }).then(
+  post(props.tab, "snips", { text: text() }).then(
     () => (note.value = ""),
     (error) => (note.value = `Not saved: ${messageOf(error)}`),
   );
@@ -64,38 +67,46 @@ function typed(): void {
   saveTimer = window.setTimeout(save, 500);
 }
 
-function onKey(event: KeyboardEvent): void {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    emit("close");
-  } else if (event.key === "Enter" && event.ctrlKey) {
-    event.preventDefault();
-    const el = event.target as HTMLTextAreaElement;
-    const picked = el.value.slice(el.selectionStart, el.selectionEnd);
-    if (picked) emit("insert", picked);
-  }
-}
-
 onMounted(() => {
-  box.value?.focus();
+  editor = monaco.editor.create(host.value!, { ...editorOptions, readOnly: true, readOnlyMessage: { value: "The Snips can't be edited until claude2's copy has been read." } });
+  addLineDots(editor);
+  addListKeys(editor);
+  // A load's setValue is an edit too, but not typing: only user edits count and get saved.
+  editor.onDidChangeModelContent((event) => !event.isFlush && typed());
+  // Esc is left to Monaco while it has something of its own up to close.
+  editor.addAction({ id: "claude3.closeSnips", label: "Close Snips", keybindings: [monaco.KeyCode.Escape], keybindingContext: "editorTextFocus && !findWidgetVisible && !suggestWidgetVisible && !editorHasMultipleSelections && !inSnippetMode", run: () => emit("close") });
+  editor.addAction({
+    id: "claude3.insertSnip",
+    label: "Add Selection to Prompt",
+    keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+    run: (ed) => {
+      const picked = ed.getSelections()!.map((s) => ed.getModel()!.getValueInRange(s)).filter(Boolean).join("\n");
+      if (picked) emit("insert", picked);
+    },
+  });
+  editor.focus();
   void load();
   window.addEventListener("focus", load);
 });
 onBeforeUnmount(() => {
   window.removeEventListener("focus", load);
   if (saveTimer) save();
+  editor?.dispose();
 });
 </script>
 
 <template>
   <div class="snips">
     <div v-if="note" class="snips-note">{{ note }}</div>
-    <textarea ref="box" v-model="text" class="snips-text" spellcheck="false" :readonly="!ready" @input="typed" @keydown="onKey"></textarea>
+    <div class="snips-text"><div ref="host"></div></div>
   </div>
 </template>
 
 <style scoped>
 .snips { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-left: 1px solid var(--border); background: var(--page); }
 .snips-note { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 4px 8px; }
-.snips-text { flex: 1; min-height: 0; resize: none; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; outline: none; }
+.snips-text { position: relative; flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.snips-text:focus-within { outline: 2px solid var(--ink); outline-offset: -1px; border-color: transparent; }
+/* Inset just past the rounded corners, so the editor's square ones stay inside the border. */
+.snips-text > div { position: absolute; inset: 3px; }
 </style>
