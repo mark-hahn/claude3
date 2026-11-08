@@ -120,7 +120,7 @@ function renderAge(): void {
   const age = document.getElementById("q-age");
   if (!age) return;
   age.textContent = payload.readAt ? elapsed(payload.readAt) : "";
-  age.style.color = payload.state && payload.state.pausedUntil > Date.now() ? "#c62828" : "";
+  age.style.background = payload.state && payload.state.pausedUntil > Date.now() ? "#ffd0d0" : "";
   const asrAge = document.getElementById("q-asr-age");
   if (asrAge) asrAge.textContent = elapsed(Number(asrAge.dataset.at));
 }
@@ -330,7 +330,7 @@ function figuresHtml(period: any): string {
   const parts: string[] = [];
   for (const series of period.series) {
     const points = carriedPoints(series.points, period);
-    if (points.length) parts.push('<span style="color:' + series.color + '">' + escapeHtml(series.name + " " + axisLabel(points[points.length - 1]!.v)) + "</span>");
+    if (points.length) parts.push("<span>" + escapeHtml(series.name + " " + axisLabel(points[points.length - 1]!.v)) + "</span>");
   }
   const done = Math.max(0, Math.min(1, (Date.now() - period.start) / (period.end - period.start)));
   parts.push("<span>" + Math.round(done * 100) + "%</span>");
@@ -448,7 +448,7 @@ onBeforeUnmount(() => {
 .settings svg text { font-size: 14px; fill: var(--ink); text-anchor: end; }
 .settings .figures { margin-top: 8px; font-size: 14px; font-variant-numeric: tabular-nums; display: flex; gap: 10px; flex-wrap: wrap; }
 .settings .empty, .settings .error { border: 1px dashed var(--border); border-radius: 8px; padding: 18px; }
-.settings .error { background: #fdecec; color: #731b1b; border-style: solid; }
+.settings .error { background: #fdecec; border-style: solid; }
 .settings .error[hidden] { display: none; }
 /* claude2's webview-width breakpoints, measured on this column. */
 .settings { container-type: inline-size; }

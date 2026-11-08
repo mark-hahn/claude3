@@ -1,6 +1,7 @@
-// Self-check for the markdown renderer and answer text ported from claude2: `node src/render.check.mjs`.
+// Self-check for the markdown renderer, answer text and trash-list picking ported from claude2: `node src/render.check.mjs`.
 // The ports un-doubled every backslash of claude2's template-literal source, so a missed one shows here.
 import assert from "node:assert/strict";
+import { pick } from "./pick.ts";
 import { answerText, renderMarkdown } from "./render.ts";
 
 const T = "⁣"; // TOOL_LINE_MARK
@@ -20,4 +21,28 @@ const response = `${T}10:00:00 **Started:** Sat\nworking prose\n\n${A}\n\nThe an
 assert.equal(answerText(response), "The answer.");
 // A run with no mark (stopped, still streaming) keeps its prose.
 assert.equal(answerText(`${T}10:00:00 **Started:** Sat\npartial text\n`), "partial text");
+
+const ids = ["a", "b", "c", "d"];
+const plain = { ctrlKey: false, shiftKey: false };
+const ctrl = { ctrlKey: true, shiftKey: false };
+const shift = { ctrlKey: false, shiftKey: true };
+const picked = new Set();
+let anchor = pick(picked, ids, "b", "", plain);
+assert.deepEqual([...picked], ["b"]);
+// A plain click on the only picked card keeps it picked.
+assert.equal(pick(picked, ids, "b", anchor, plain), "b");
+assert.deepEqual([...picked], ["b"]);
+anchor = pick(picked, ids, "d", anchor, ctrl);
+assert.deepEqual([...picked].sort(), ["b", "d"]);
+anchor = pick(picked, ids, "d", anchor, ctrl);
+assert.deepEqual([...picked], ["b"]);
+// Shift adds the run, from either side of the anchor, and keeps the anchor.
+assert.equal(pick(picked, ids, "c", "a", shift), "a");
+assert.deepEqual([...picked].sort(), ["a", "b", "c"]);
+pick(picked, ids, "d", anchor, plain);
+assert.equal(pick(picked, ids, "b", "d", shift), "d");
+assert.deepEqual([...picked].sort(), ["b", "c", "d"]);
+// A shift-click with no anchor on show picks just that card.
+assert.equal(pick(picked, ids, "a", "gone", shift), "a");
+assert.deepEqual([...picked], ["a"]);
 console.log("render checks passed");

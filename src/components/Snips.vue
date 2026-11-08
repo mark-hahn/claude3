@@ -3,7 +3,8 @@
 // tab strip. One text, kept on claude2's stats server (the backend's `snips` action), so claude2's
 // windows and every claude3 tab edit the same copy. Read when it opens and whenever the window gets focus back; saved half a
 // second after the typing stops, and at once on close. Esc closes it; Ctrl+Enter adds the selected text
-// to the end of the prompt and moves the cursor there, leaving the Snips open. A Monaco editor with
+// to the end of the prompt and moves the cursor there, leaving the Snips open; with nothing selected
+// it just closes them. A Monaco editor with
 // claude2's editing (src/monaco.ts).
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { Tab } from "../../shared/config.ts";
@@ -82,6 +83,7 @@ onMounted(() => {
     run: (ed) => {
       const picked = ed.getSelections()!.map((s) => ed.getModel()!.getValueInRange(s)).filter(Boolean).join("\n");
       if (picked) emit("insert", picked);
+      else emit("close");
     },
   });
   editor.focus();

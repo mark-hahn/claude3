@@ -25,7 +25,8 @@ on the laptop, and talks to each backend directly.
   gear (Settings) toggles are here, at the row's right end, one each for every tab; they share one
   column (`side`: "", "snips" or "settings"), the tab on show draws it, and picking a tab closes it.
 - `src/components/Project.vue`: one tab. Owns its EventSource, the session list, the sidebar
-  (new session +, Git; Clean, Trash; rename by long press, trash/restore, busy clocks), the divider
+  (new session +, Git; Clean, Trash; rename by long press, trash/restore, busy clocks; on the trash
+  list Clean turns into a delete for good of the picked cards, picking in `src/pick.ts`), the divider
   drag (`--sidebar-width` on the root, shared by every tab, in localStorage), and passes the
   selected session to the pane. Picking a tab focuses its prompt box (the `active` prop).
 - `src/components/Git.vue`: the Git button (label counts the changed files) and its `<dialog>`, a
@@ -38,7 +39,8 @@ on the laptop, and talks to each backend directly.
   (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude2-stats (`/snips` on
   hahnca.com:7301), reached through the backend's `snips` action; read on open and window focus,
   saved 500ms after typing stops. Ctrl+Enter emits `insert` with the selection; Project hands it
-  to Pane's exposed `appendPrompt`, which appends it to the draft and focuses the prompt box.
+  to Pane's exposed `appendPrompt`, which appends it to the draft and focuses the prompt box. With
+  no selection it closes the Snips instead.
 - `src/components/Settings.vue`: claude2's management pane in the Snips' column. Only its Quotas
   tab (the tab button does nothing yet), ported from claude2's `quotaHtml` nearly verbatim: graphs
   built by script, global styles under `.settings`, element ids `q-*` (one instance at a time).
@@ -103,7 +105,7 @@ on the laptop, and talks to each backend directly.
   any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Continue or
   Cancel. No script or no stamp yet means no warning. The touch lines live in each project's own
   script (claude3, claude2, tv, finance on hahnca.com).
-- **"r".** A prompt of just `r` goes to `POST /api/run` instead of claude: the backend runs the
+- **"r".** A prompt of just `r`, or the footer's Run button (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
   project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`), its text kept in sessionStorage until OK so a page reload doesn't lose it. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
   (`KillMode=process`), outside claude3.service's cgroup, so claude3's own `./run` restarting
   this backend kills neither the script nor the vite it leaves running. The page's request
@@ -112,6 +114,10 @@ on the laptop, and talks to each backend directly.
   `runResult` once a second until they're there (resuming after a reload, via sessionStorage).
   `deploy` sends its own output through `tee`, so a caller's pipe vanishing can't fail an echo
   under its `set -e`.
+- **Delete for good.** Picked trashed cards → `POST /api/delete`, after a `window.confirm`. The
+  backend takes only trashed ids, stops and awaits any run still going (its settling would post
+  the session back), removes them and their debug records, and posts `removed`. The CLI's
+  transcripts stay, as in claude2.
 - **Session ↔ transcript.** A session id is the CLI session id; `--resume` or `--session-id` is
   picked by whether the transcript exists (claude2's rule). `/clear` swaps transcript files so the
   session keeps its id.
@@ -167,4 +173,6 @@ on the laptop, and talks to each backend directly.
   never saved one there) keeps them so: nothing typed in claude3 may replace claude2's copy unseen.
 - Monaco's `addCommand` keys are page-wide and every tab has its own editor, so editor keys are
   `addAction`s. Monaco is about 4MB of the built page.
-- Every page element follows CLAUDE.md's display rules: font sizes 14–18px only, text solid black.
+- Every page element follows CLAUDE.md's display rules: font sizes 14–18px only, text solid black,
+  Monaco's token colours included (`monaco.css`). A disabled button shows by its dashed grey
+  border, a paused quota age by its background; only status icons (tab dot, card clocks) keep colour.

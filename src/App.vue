@@ -41,7 +41,7 @@ watch(current, (label) => {
 .app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .tabs .tab { min-height: 0; padding: 3px 12px; }
-.tabs .tab.selected { background: #fbf3c4; border-color: #ddd08a; font-weight: 600; }
+.tabs .tab.selected { background: #fbf3c4; border-color: #ddd08a; }
 .tabs .snips-toggle { margin-left: auto; }
 .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
 .tabs .tab-busy { color: #1a8f2e; margin-right: 6px; }

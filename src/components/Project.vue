@@ -1,12 +1,13 @@
 <script setup lang="ts">
 // One tab: claude2's sidebar column (ported from sidebarHtml) beside one conversation pane. The
 // sessions come down the tab's event stream; picking a card shows that session in the pane, and
-// the others keep running and show their clocks here. Left out for now: search, delete for good,
-// multi-pick, management, Close, Re-Auth.
+// the others keep running and show their clocks here. Left out for now: search, management,
+// Close, Re-Auth.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { HOSTS, type Tab } from "../../shared/config.ts";
 import type { ClaudeSession, RunningStatus, ServerEvent } from "../../shared/types.ts";
 import { listen, post } from "../api.ts";
+import { pick } from "../pick.ts";
 import Git from "./Git.vue";
 import Pane from "./Pane.vue";
 import Settings from "./Settings.vue";
@@ -25,6 +26,9 @@ const selectedKey = `claude3.session.${props.tab.label}`;
 // '' is the new-session draft: the pane is empty until its first prompt makes the session.
 const selectedId = ref(localStorage.getItem(selectedKey) ?? "");
 const showTrash = ref(false);
+// The trashed cards the trash list's delete button takes, and the card a shift-click runs from.
+const picked = ref(new Set<string>());
+let pickAnchor = "";
 const connected = ref(false);
 const editingId = ref("");
 const editName = ref("");
@@ -118,6 +122,14 @@ function toggleTrash(): void {
   showTrash.value = !showTrash.value;
 }
 
+// claude2's delete for good: one question for the whole pick.
+function deletePicked(): void {
+  const ids = [...picked.value];
+  const question = ids.length === 1 ? `Permanently delete "${sessions.find((session) => session.id === ids[0])?.name || "this session"}"?` : `Permanently delete the ${ids.length} selected sessions?`;
+  if (!window.confirm(`${question}\n\nThis cannot be undone.`)) return;
+  void post(props.tab, "delete", { sessionIds: ids }).catch(report);
+}
+
 function focusPrompt(): void {
   pane.value?.focusPrompt();
 }
@@ -180,6 +192,10 @@ function clickCard(session: ClaudeSession, event: MouseEvent): void {
   }
   sweep(session.id);
   if (renamed) return;
+  if (showTrash.value) {
+    pickAnchor = pick(picked.value, visible.value.map((entry) => entry.id), session.id, pickAnchor, event);
+    if (event.ctrlKey || event.shiftKey) return;
+  }
   selectedId.value = session.id;
 }
 function finishRename(session: ClaudeSession, commit: boolean): void {
@@ -201,6 +217,8 @@ function firstPrompt(session: ClaudeSession): string {
 }
 
 watch(selectedId, (id) => localStorage.setItem(selectedKey, id));
+// Only a trashed card on show can stay picked, so the delete button never reaches one out of sight.
+watch(visible, (list) => (picked.value = new Set(list.filter((session) => session.trashed && picked.value.has(session.id)).map((session) => session.id))));
 watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => status.active).length));
 // Picking a tab puts the cursor in its prompt box; post, so the tab is on show by then.
 watch(() => props.active, (active) => active && focusPrompt(), { flush: "post" });
@@ -225,7 +243,8 @@ onBeforeUnmount(() => source?.close());
           <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" />
         </div>
         <div class="row">
-          <button class="clean" title="Move every session to the trash" :disabled="showTrash || !counts.active" @click="clean">Clean</button>
+          <button v-if="showTrash" class="delete" title="Permanently delete the selected trashed sessions. Ctrl-click or shift-click a card to select more" :disabled="!picked.size" @click="deletePicked">&#x1F5D1;{{ picked.size ? ` ${picked.size}` : "" }}</button>
+          <button v-else class="clean" title="Move every session to the trash" :disabled="!counts.active" @click="clean">Clean</button>
           <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="toggleTrash">Trash</button>
           <span class="counts" title="Active sessions / trashed sessions">{{ counts.active }}/{{ counts.trashed }}</span>
         </div>
@@ -237,7 +256,7 @@ onBeforeUnmount(() => source?.close());
           v-for="session in visible"
           :key="session.id"
           class="card"
-          :class="{ selected: session.id === selectedId, trashed: session.trashed }"
+          :class="{ selected: showTrash ? picked.has(session.id) : session.id === selectedId, trashed: session.trashed }"
           :title="firstPrompt(session)"
           role="button"
           tabindex="0"
@@ -283,7 +302,7 @@ onBeforeUnmount(() => source?.close());
 .project { height: 100%; min-height: 0; display: grid; grid-template-columns: var(--sidebar-width, 300px) 7px minmax(0, 1fr); }
 /* The Snips (or Settings) column: half of what the sidebar leaves, the conversation pane keeping the rest. */
 .project.with-snips { grid-template-columns: var(--sidebar-width, 300px) 7px minmax(0, 1fr) calc((100vw - var(--sidebar-width, 300px)) / 2); }
-.sidebar { box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 10px; }
+.sidebar { box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 10px; line-height: 1.5; }
 /* The sidebar's old right border, now a wide-enough strip to grab. */
 .project > .divider { cursor: col-resize; touch-action: none; background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat; }
 .project > .divider:hover { background-image: linear-gradient(#9a9a93, #9a9a93); background-size: 3px 100%; }
@@ -308,8 +327,8 @@ onBeforeUnmount(() => source?.close());
 .sidebar .card-clock { display: flex; }
 .sidebar .card-clock.running { color: #1a8f2e; }
 .sidebar .card-clock.background { color: #d11a1a; }
-.sidebar .card-name { display: block; font-weight: 600; overflow-wrap: anywhere; padding-right: 24px; }
-.sidebar .card-rename { display: block; width: 100%; font: inherit; font-weight: 600; color: var(--ink); background: #fff; border: 1px solid #9a9a93; border-radius: 6px; padding: 1px 4px; }
-.sidebar .card-meta { display: block; margin-top: 3px; }
+.sidebar .card-name { display: block; overflow-wrap: anywhere; padding-right: 24px; }
+.sidebar .card-rename { display: block; width: 100%; font: inherit; color: var(--ink); background: #fff; border: 1px solid #9a9a93; border-radius: 6px; padding: 1px 4px; }
+.sidebar .card-meta { display: block; }
 .sidebar .empty { border: 1px dashed var(--border); border-radius: 8px; padding: 14px 10px; text-align: center; }
 </style>

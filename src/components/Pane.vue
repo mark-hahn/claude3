@@ -420,9 +420,9 @@ function runClosed(): void {
 // Set while a ./run's answer is due, so a page reloaded meanwhile picks up the wait.
 const runWaitKey = (): string => `runWait:${props.tab.label}`;
 
+// Also the footer's Run button (ctrl-click: "v"). It leaves the prompt box's text alone and never
+// takes focus, so the Enter that dismisses the result can't land on it and run ./run again.
 async function runScript(restartVite: boolean): Promise<void> {
-  draft.value = "";
-  localStorage.removeItem(lostKey());
   sessionStorage.setItem(runWaitKey(), "1");
   try {
     const { output } = await post<{ output: string }>(props.tab, "run", { restartVite });
@@ -476,7 +476,11 @@ async function deployOk(): Promise<boolean> {
 }
 
 async function submit(text = draft.value, keepDraft = false): Promise<void> {
-  if ((text.trim() === "r" || text.trim() === "v") && !keepDraft) return runScript(text.trim() === "v");
+  if ((text.trim() === "r" || text.trim() === "v") && !keepDraft) {
+    draft.value = "";
+    localStorage.removeItem(lostKey());
+    return runScript(text.trim() === "v");
+  }
   if (!text.trim() || (props.session?.trashed ?? false)) return;
   if (!keepDraft && !(await deployOk())) return;
   // Sending during a run stops that run and takes this prompt instead; a run waiting on a
@@ -955,6 +959,7 @@ onBeforeUnmount(() => {
           <div class="indicator finish" :class="pill.cls" :title="pill.title">{{ pill.text }}</div>
           <div class="group">
             <button class="stop" :class="{ stopping: stopping && active }" title="Stop" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
+            <button title="Run the project's ./run, the same as the prompt r. Ctrl-click: the same as the prompt v" @mousedown.prevent @click="runScript($event.ctrlKey)">Run</button>
             <button ref="ctxButtonEl" title="Tokens by source, for the last prompt and the whole conversation, in and out" :disabled="!session?.turns.length" @click="toggleCtx">Ctx</button>
           </div>
         </div>
@@ -984,14 +989,14 @@ onBeforeUnmount(() => {
 .pane .history { overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 10px 12px 4px; outline: none; }
 .pane .turn { margin-bottom: 4px; }
 .pane .turn.selected .prompt-bar { outline: 2px solid #f28b82; outline-offset: -2px; }
-.pane .prompt-bar { width: 100%; height: 1.65em; border: 1px solid #eadf90; background: var(--yellow); color: #14120a; display: block; text-align: left; padding: 1px 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; cursor: pointer; min-height: 0; font: inherit; }
+.pane .prompt-bar { width: 100%; height: 1.65em; border: 1px solid #eadf90; background: var(--yellow); color: var(--ink); display: block; text-align: left; padding: 1px 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; cursor: pointer; min-height: 0; font: inherit; }
 .pane .prompt-bar:hover { background: linear-gradient(var(--wash), var(--wash)), var(--yellow); }
 .pane .prompt-bar.prompt-expanded { height: auto; min-height: 1.65em; overflow: visible; text-overflow: clip; white-space: pre-wrap; }
 .pane .response { margin: 4px 0 8px; border-left: 3px solid var(--border); padding: 8px 10px; background: var(--surface); overflow-wrap: anywhere; overflow-x: hidden; }
 .pane .response.error { border-left-color: #c62828; }
 .pane .response.markdown { font: 14px/1.5 Aptos, "Segoe UI", sans-serif; white-space: normal; }
 .pane .response.markdown > :first-child { margin-top: 0; }
-.pane .response.markdown h1, .pane .response.markdown h2 { font-size: 16px; font-weight: 700; margin: 14px 0 6px; padding-bottom: 3px; border-bottom: 1px solid var(--border); }
+.pane .response.markdown h1, .pane .response.markdown h2 { font-size: 14px; font-weight: 700; margin: 14px 0 6px; padding-bottom: 3px; border-bottom: 1px solid var(--border); }
 .pane .response.markdown h3, .pane .response.markdown h4, .pane .response.markdown h5, .pane .response.markdown h6 { font-size: 14px; font-weight: 700; margin: 12px 0 5px; }
 .pane .response.markdown p { margin: 0 0 8px; }
 .pane .response.markdown ul, .pane .response.markdown ol { margin: 0 0 8px; padding-left: 24px; }
@@ -1001,7 +1006,7 @@ onBeforeUnmount(() => {
 .pane .response.markdown hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
 /* Above the closing answer: heavier than a markdown rule so the two never get confused. */
 .pane .response.markdown hr.answer-rule { border-top: 2px solid #000; }
-.pane .response.markdown a { color: #0b4f9c; }
+.pane .response.markdown a { color: var(--ink); }
 .pane .response.markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; background: rgba(0,0,0,0.05); border-radius: 4px; padding: 1px 4px; }
 .pane .response.markdown pre { background: #f2f1ec; border: 1px solid var(--border); border-radius: 8px; margin: 0 0 10px; padding: 8px 10px; overflow: auto; }
 .pane .response.markdown pre code { background: none; padding: 0; white-space: pre; }
@@ -1014,7 +1019,7 @@ onBeforeUnmount(() => {
 .pane .response.markdown .tool-call:not(.open) > .tool-long, .pane .response.markdown .tool-call.has-detail.open > .tool-short { display: none; }
 .pane .response.markdown .tool-call.has-detail { cursor: pointer; }
 .pane .response.markdown .tool-call.has-detail:hover { background: var(--wash); }
-.pane .error-note { margin-top: 10px; background: #fdecec; border: 1px solid #f0bcbc; border-radius: 6px; padding: 8px 10px; color: #731b1b; }
+.pane .error-note { margin-top: 10px; background: #fdecec; border: 1px solid #f0bcbc; border-radius: 6px; padding: 8px 10px; }
 .pane .run-arrow { font-weight: 700; margin-right: 6px; animation: run-blink 0.6s steps(1) infinite; }
 @keyframes run-blink { 50% { visibility: hidden; } }
 /* The prompt box: a frame around a Monaco editor. It grows with the text (--content-h, set by the
@@ -1044,15 +1049,15 @@ onBeforeUnmount(() => {
 .pane .status { white-space: nowrap; }
 .pane .context { cursor: pointer; }
 .pane .context.over { background: #ffd0d0; border-radius: 4px; padding: 0 5px; margin: 0 -5px; }
-/* Every dock control keeps a white fill and says "unavailable" by greying glyph and border together. */
+/* Every dock control keeps a white fill and says "unavailable" by a dashed grey border (style.css). */
 .pane .dock-controls button { background: #fff; }
 .pane .dock-controls button:hover:not(:disabled) { background: #fff; border-color: #000; }
-.pane .dock-controls button:disabled { background: #fff; color: #bfbfbf; border-color: #bfbfbf; }
+.pane .dock-controls button:disabled { background: #fff; border-color: #bfbfbf; }
 /* The sidebar's "+" button, copied. */
 .pane .dock-controls button.new { width: 42px; height: 25px; padding: 0 8px; background: var(--surface); }
 .pane .dock-controls button.new:hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), var(--surface); border-color: var(--border); }
 .pane .dock-controls .new svg { display: block; margin: 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
-.pane .stop { display: inline-flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1; }
+.pane .stop { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
 .pane .stop:not(:disabled) { color: #000; border-color: #000; }
 /* Stop asks the CLI to finish the message it is on, so the run keeps streaming for a moment. */
 .pane .stop.stopping:not(:disabled) { background: #ffd4d4; }

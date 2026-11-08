@@ -10,6 +10,7 @@
 //        runResult -> { done, code, output } (the last ./run's result, for a page whose answer was cut off)
 //        deployNeeded -> { script, files } (project files changed since .deployed; see deployNeeded)
 //        clean -> {} (every session to the trash) | git -> { files: [{ x, y, path }] } (git status)
+//        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
 //        commit { message } -> {} (add everything, commit, push)
 //        describeChanges -> { text } (Opus 5.5's commit message for the uncommitted changes)
 //        snips { text? } -> { text } (claude2's Snips text, kept on claude2-stats; text saves it)
@@ -331,7 +332,10 @@ async function ctxTable(project: Project, session: ClaudeSession): Promise<unkno
 // attention moves elsewhere. The page keeps the one it opens and any holding unsent text.
 // ponytail: another page showing an empty session can lose it; per-client keeps if that matters.
 function discardEmpty(project: Project, keep: string[]): void {
-  const ids = project.sessions.filter((session) => !session.turns.length && !keep.includes(session.id) && !runs.has(session.id)).map((session) => session.id);
+  removeSessions(project, project.sessions.filter((session) => !session.turns.length && !keep.includes(session.id) && !runs.has(session.id)).map((session) => session.id));
+}
+
+function removeSessions(project: Project, ids: string[]): void {
   if (!ids.length) {
     return;
   }
@@ -397,6 +401,16 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
       sendSession(project, entry);
     }
     save(project);
+    return {};
+  }
+  if (name === "delete") {
+    // claude2's delete for good. Trashed sessions only, so a stale list from the page can't reach a live one.
+    const asked = Array.isArray(body.sessionIds) ? body.sessionIds.map(String) : [];
+    const ids = project.sessions.filter((session) => session.trashed && asked.includes(session.id)).map((session) => session.id);
+    // A run still going would post its session back as it settled.
+    await Promise.all(ids.map((id) => (runner.stop(id), runs.get(id))));
+    removeSessions(project, ids);
+    await Promise.all(ids.map((id) => fs.promises.rm(path.join(DATA_DIR, "debug", `${id}.jsonl`), { force: true })));
     return {};
   }
   const session = project.sessions.find((entry) => entry.id === body.sessionId);

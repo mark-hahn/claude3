@@ -157,12 +157,7 @@ function onMessageKey(event: KeyboardEvent): void {
 .git-name { flex: none; }
 .git-folder { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .git-letter { flex: none; width: 1.2em; text-align: center; font-weight: 600; }
-/* VS Code's light-theme decoration colours. */
-.git-M .git-letter, .git-T .git-letter { color: #895503; }
-.git-A .git-letter, .git-U .git-letter { color: #587c0c; }
-.git-D .git-letter { color: #ad0707; }
 .git-D .git-name { text-decoration: line-through; }
-.git-R .git-letter, .git-C .git-letter { color: #007100; }
 .git-none { padding: 4px 0; }
 .git-buttons { display: flex; gap: 8px; }
 .git-commit { flex: 1; background: #cfe8ff; border-color: #8fb8e0; }
