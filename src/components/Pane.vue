@@ -60,11 +60,18 @@ let expandedPrompts = new Set<string>();
 // Tool lines showing their detail, as turn id + ':' + the line's place among the box's tool calls.
 let openToolCalls = new Set<string>();
 let programmaticScroll = false;
-// Unsent text per session; '' is the new-session draft.
+// Unsent text per session; '' is the new-session draft. Every edit is saved in localStorage, as
+// claude2 keeps its drafts beside the sessions, so a reload puts each one back in its session's box.
+// ponytail: drafts of deleted sessions stay in localStorage; prune them if the 5MB quota ever matters.
+const draftKey = (id: string): string => `draft:${props.tab.label}:${id}`;
 const drafts = new Map<string, string>();
-// The prompt box's text when something other than sending emptied it (a session switch); Ctrl+Enter
-// in an empty box puts it back.
-let clearedDraft = "";
+for (const key of Object.keys(localStorage)) {
+  if (key.startsWith(draftKey(""))) drafts.set(key.slice(draftKey("").length), localStorage.getItem(key)!);
+}
+// The prompt box's text when something other than sending emptied it (a session switch, a page
+// reload); Ctrl+Enter in an empty box puts it back. Every edit is saved under lostKey for the reload.
+const lostKey = (): string => `lostPrompt:${props.tab.label}`;
+let clearedDraft = localStorage.getItem(lostKey()) ?? "";
 
 const turns = (): ClaudeTurn[] => props.session?.turns ?? [];
 const typedText = (turn: ClaudeTurn): string => turn.prompt;
@@ -447,6 +454,7 @@ const runWaitKey = (): string => `runWait:${props.tab.label}`;
 
 async function runScript(restartVite: boolean): Promise<void> {
   draft.value = "";
+  localStorage.removeItem(lostKey());
   sessionStorage.setItem(runWaitKey(), "1");
   try {
     const { output } = await post<{ output: string }>(props.tab, "run", { restartVite });
@@ -506,7 +514,11 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
   // Sending during a run stops that run and takes this prompt instead; a run waiting on a
   // background task takes it as a follow-up.
   if (props.status?.active && props.status.phase !== "background" && !window.confirm("Stop the running response and send this prompt instead?")) return;
-  if (!keepDraft) draft.value = "";
+  if (!keepDraft) {
+    draft.value = "";
+    localStorage.removeItem(lostKey());
+    if (clearedDraft === text) clearedDraft = "";
+  }
   pendingTurnCount = turns().length + 1;
   try {
     const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: props.session?.id ?? "", prompt: text, model: model.value, effort: effort.value, advisor: advisorOn.value });
@@ -845,7 +857,10 @@ watch(
       if (draft.value.trim()) clearedDraft = draft.value;
       draft.value = drafts.get(id) ?? "";
       // A session just started from the new-session draft keeps nothing of it.
-      if (switchedFrom === "") drafts.delete("");
+      if (switchedFrom === "") {
+        drafts.delete("");
+        localStorage.removeItem(draftKey(""));
+      }
       switchedFrom = id;
       anchorIndex = 0;
       boxOpen = true;
@@ -878,6 +893,10 @@ watch(modelIds, () => {
 });
 watch(draft, (text) => {
   if (promptBox && promptBox.getValue() !== text) promptBox.setValue(untab(text));
+  if (text.trim()) localStorage.setItem(lostKey(), text);
+  const key = draftKey(props.session?.id ?? "");
+  if (text) localStorage.setItem(key, text);
+  else localStorage.removeItem(key);
 });
 // A trashed session's box is read-only until the session is restored.
 const lockPrompt = (): void =>
@@ -903,6 +922,7 @@ function closeCtxOutside(event: MouseEvent): void {
 onMounted(() => {
   status = props.status;
   switchedFrom = props.session?.id ?? "";
+  draft.value = drafts.get(switchedFrom) ?? "";
   bigPrompt.value = localStorage.getItem(bigKey(switchedFrom)) === "1";
   // Monaco places the caret on an all-ASCII line by counting columns instead of measuring;
   // measuring is always right.

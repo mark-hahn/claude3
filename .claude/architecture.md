@@ -31,8 +31,8 @@ on the laptop, and talks to each backend directly.
 - `src/components/Git.vue`: the Git button (label counts the changed files) and its `<dialog>`, a
   small VS Code Source Control: message, staged and changed files, Commit (= `add -A`, commit,
   push on the backend). "Describe changes" in its header (`describeChanges` action) sends the
-  uncommitted diff and untracked files' text to `claude -p` on Opus 5.5 and puts the few
-  sentences in the message box. Status is re-read only for the tab on show: on showing, window focus, and
+  uncommitted diff and untracked files' text to `claude -p` on Opus 5.5 and puts its reply (at most
+  2 short sentences) in the message box. Status is re-read only for the tab on show: on showing, window focus, and
   session events (a turn starting or ending).
 - `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane
   (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude2-stats (`/snips` on
@@ -93,8 +93,11 @@ on the laptop, and talks to each backend directly.
   prompt can follow up a background wait) → `runTurn` stores the turn, posts `session`, names the
   session on its first prompt, and runs the CLI. Text and status go out as `delta` every 80ms.
   The result settles the turn (`markAnswer` puts the answer mark in), saves, posts `session`.
-  Text a session switch takes out of the prompt box is kept (`clearedDraft`); Ctrl+Enter in an
-  empty box puts it back.
+  Each session's unsent text is saved on every edit in localStorage (`draft:<tab>:<session id>`,
+  '' for the new-session draft, removed on send), so it is back in its box after a reload and
+  `Pane.drafted` still spares its session from the sweep. Separately, text a session switch or
+  reload takes out of the box is kept (`clearedDraft`, `lostPrompt:<tab>`, one per tab, removed
+  on send); Ctrl+Enter in an empty box puts it back.
 - **Deploy warning.** Before sending a prompt the pane asks `deployNeeded`: the project's
   `./deploy` (or `./run` when it has none) touches `.deployed` (gitignored) when it finishes, and
   any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Continue or
