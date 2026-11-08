@@ -41,6 +41,7 @@
 - **win** backend: port 7311, deployed to C:\Users\mark\apps\claude3Win.
 - **srv** backend: port 7312 on hahnca.com, deployed to /root/dev/apps/claude3Srv.
 - The tabs and which host each runs on are in `shared/config.ts`.
+- The page's browser console is mirrored to `vite-console.log` in the repo while vite runs.
 
 ## Page terminology
 

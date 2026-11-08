@@ -1,0 +1,140 @@
+<script setup lang="ts">
+// The sidebar's Git button and its popup, a small copy of VS Code's Source Control view for the
+// tab's project: the commit message, then the staged and the changed files. Commit stages
+// everything, commits, and pushes (the backend's `commit`). The label counts the files waiting
+// for a commit. It's re-read only while the tab is up: when it comes up, when the window gets
+// focus back, and when a session changes (a turn starting or ending), since turns change files.
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import type { Tab } from "../../shared/config.ts";
+import { post } from "../api.ts";
+
+const props = defineProps<{ tab: Tab; active: boolean; version: number }>();
+const emit = defineEmits<{ closed: [] }>();
+
+// One `git status --porcelain` entry: x is the index's letter, y the work tree's.
+interface GitFile {
+  x: string;
+  y: string;
+  path: string;
+}
+const files = ref<GitFile[]>([]);
+// Why the status couldn't be read (not a repo, no git); empty when it could.
+const failure = ref("");
+const message = ref("");
+const error = ref("");
+const committing = ref(false);
+const dialog = ref<HTMLDialogElement>();
+
+const staged = computed(() => files.value.filter((file) => !" ?".includes(file.x)).map((file) => ({ ...file, letter: file.x })));
+const changed = computed(() => files.value.filter((file) => file.y !== " ").map((file) => ({ ...file, letter: file.y === "?" ? "U" : file.y })));
+const canCommit = computed(() => !committing.value && !!message.value.trim() && files.value.length > 0);
+
+const messageOf = (problem: unknown): string => (problem instanceof Error ? problem.message : String(problem));
+const nameOf = (path: string): string => path.slice(path.lastIndexOf("/") + 1);
+const folderOf = (path: string): string => path.slice(0, Math.max(path.lastIndexOf("/"), 0));
+
+async function refresh(): Promise<void> {
+  try {
+    files.value = (await post<{ files: GitFile[] }>(props.tab, "git", {})).files;
+    failure.value = "";
+  } catch (problem) {
+    files.value = [];
+    failure.value = messageOf(problem);
+  }
+}
+
+// Session events come in bursts (a Clean sends one per session), so they're gathered first.
+let timer = 0;
+function refreshSoon(): void {
+  if (!props.active) return;
+  window.clearTimeout(timer);
+  timer = window.setTimeout(refresh, 300);
+}
+watch(() => [props.active, props.version], refreshSoon, { immediate: true });
+onMounted(() => window.addEventListener("focus", refreshSoon));
+onBeforeUnmount(() => window.removeEventListener("focus", refreshSoon));
+
+function open(): void {
+  error.value = "";
+  void refresh();
+  dialog.value?.showModal();
+}
+
+async function commit(): Promise<void> {
+  if (!canCommit.value) return;
+  committing.value = true;
+  error.value = "";
+  try {
+    await post(props.tab, "commit", { message: message.value });
+    message.value = "";
+    dialog.value?.close();
+  } catch (problem) {
+    error.value = messageOf(problem);
+  }
+  committing.value = false;
+  void refresh();
+}
+
+function onMessageKey(event: KeyboardEvent): void {
+  if (event.key === "Enter" && event.ctrlKey) {
+    event.preventDefault();
+    void commit();
+  }
+}
+</script>
+
+<template>
+  <button class="git" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" @click="open">
+    Git<span v-if="files.length">&nbsp;{{ files.length }}</span>
+  </button>
+  <dialog ref="dialog" class="git-pop" @cancel="committing && $event.preventDefault()" @close="emit('closed')">
+    <div class="git-title">Source Control: {{ tab.path }}</div>
+    <textarea v-model="message" class="git-message" rows="3" spellcheck="false" autofocus placeholder="Message (Ctrl+Enter commits and pushes)" @keydown="onMessageKey"></textarea>
+    <div v-if="failure" class="git-error">{{ failure }}</div>
+    <div v-if="error" class="git-error">{{ error }}</div>
+    <div class="git-files">
+      <template v-for="group in [{ title: 'Staged Changes', list: staged }, { title: 'Changes', list: changed }]" :key="group.title">
+        <div v-if="group.list.length" class="git-group">{{ group.title }}<span class="git-count">{{ group.list.length }}</span></div>
+        <div v-for="file in group.list" :key="group.title + file.path" class="git-file" :class="`git-${file.letter}`" :title="file.path">
+          <span class="git-name">{{ nameOf(file.path) }}</span>
+          <span class="git-folder">{{ folderOf(file.path) }}</span>
+          <span class="git-letter">{{ file.letter }}</span>
+        </div>
+      </template>
+      <div v-if="!files.length && !failure" class="git-none">No changes.</div>
+    </div>
+    <div class="git-buttons">
+      <button class="git-commit" :disabled="!canCommit" @click="commit">{{ committing ? "Committing…" : "Commit" }}</button>
+      <button :disabled="committing" @click="dialog?.close()">Cancel</button>
+    </div>
+  </dialog>
+</template>
+
+<style scoped>
+.git-pop { width: min(560px, 92vw); max-height: 86vh; padding: 12px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: var(--ink); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2); }
+.git-pop[open] { display: flex; flex-direction: column; gap: 8px; }
+.git-pop::backdrop { background: rgba(0, 0, 0, 0.15); }
+.git-title { font-weight: 600; overflow-wrap: anywhere; }
+.git-message { resize: vertical; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--ink); font: inherit; }
+.git-message::placeholder { color: var(--ink); opacity: 1; }
+.git-error { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 6px; padding: 4px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.git-files { overflow: auto; min-height: 0; }
+.git-group { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; font-weight: 600; }
+.git-count { padding: 0 7px; border-radius: 9px; background: #cfe8ff; font-weight: 400; }
+.git-file { display: flex; align-items: baseline; gap: 8px; padding: 1px 4px 1px 14px; border-radius: 4px; white-space: nowrap; }
+.git-file:hover { background: var(--wash); }
+.git-name { flex: none; }
+.git-folder { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.git-letter { flex: none; width: 1.2em; text-align: center; font-weight: 600; }
+/* VS Code's light-theme decoration colours. */
+.git-M .git-letter, .git-T .git-letter { color: #895503; }
+.git-A .git-letter, .git-U .git-letter { color: #587c0c; }
+.git-D .git-letter { color: #ad0707; }
+.git-D .git-name { text-decoration: line-through; }
+.git-R .git-letter, .git-C .git-letter { color: #007100; }
+.git-none { padding: 4px 0; }
+.git-buttons { display: flex; gap: 8px; }
+.git-commit { flex: 1; background: #cfe8ff; border-color: #8fb8e0; }
+.git-commit:hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), #cfe8ff; }
+.git-commit:disabled { background: var(--surface); border-color: #bfbfbf; }
+</style>

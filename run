@@ -2,7 +2,23 @@
 # Start the page with hot update at http://localhost:5310 (vite.config.ts pins the port), after
 # making sure each backend runs this repo's server code: hosts whose backend is missing, stopped
 # or older get deployed and restarted (./deploy --if-stale), the rest are left alone. A host that
-# fails is reported and the page starts anyway.
+# fails is reported and the page starts anyway. A vite already running from this repo is stopped
+# first, since it holds the pinned port; other projects' vites (tv's) are left alone.
+# vite runs detached (setsid nohup) with its output in vite.log (`tail -f vite.log` to watch), so
+# it outlives this script and whatever started it: a terminal, or a Claude session that would
+# otherwise sit waiting on it as a background task. The script waits for vite's ready line, prints
+# the log so far, and exits.
 cd "$(dirname "$0")"
+vite="$PWD/node_modules/.bin/vite"
+if pkill -f "$vite"; then
+  for _ in {1..25}; do pgrep -f "$vite" >/dev/null || break; sleep 0.2; done
+fi
 ./deploy --if-stale
-exec npx vite "$@"
+# Started by its absolute path, so its command line is what the pkill above looks for.
+setsid nohup "$vite" "$@" > vite.log 2>&1 < /dev/null &
+for _ in {1..100}; do
+  grep -qE "Local:|rror" vite.log && break
+  kill -0 $! 2>/dev/null || break
+  sleep 0.2
+done
+cat vite.log

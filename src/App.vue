@@ -9,6 +9,8 @@ const saved = localStorage.getItem("claude3.tab");
 const current = ref(TABS.some((tab) => tab.label === saved) ? saved! : TABS[0]!.label);
 // Sessions responding per tab, so a tab out of sight still shows it is working.
 const busy = reactive<Record<string, number>>({});
+// The sidebar width every tab shares; Project's divider drag sets it.
+document.documentElement.style.setProperty("--sidebar-width", `${Number(localStorage.getItem("claude3.sidebarWidth")) || 300}px`);
 
 watch(current, (label) => {
   localStorage.setItem("claude3.tab", label);
@@ -23,7 +25,7 @@ watch(current, (label) => {
         <span v-if="busy[tab.label]" class="tab-busy" title="Responding">&#x25CF;</span>{{ tab.label }}
       </button>
     </nav>
-    <Project v-for="tab in TABS" v-show="tab.label === current" :key="tab.label" :tab="tab" @busy="(count) => (busy[tab.label] = count)" />
+    <Project v-for="tab in TABS" v-show="tab.label === current" :key="tab.label" :tab="tab" :active="tab.label === current" @busy="(count) => (busy[tab.label] = count)" />
   </div>
 </template>
 

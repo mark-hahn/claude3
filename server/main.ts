@@ -4,8 +4,12 @@
 //   POST /api/<action>         body: { tab, sessionId?, ... } -> JSON
 //        prompt  { prompt, model, effort, advisor } -> { sessionId } (an empty sessionId starts a session)
 //        stop | rename { name } | trash { trashed } | picks { model, effort, advisor } | ctx -> { table }
+//        clean -> {} (every session to the trash) | git -> { files: [{ x, y, path }] } (git status)
+//        commit { message } -> {} (add everything, commit, push)
+//        snips { text? } -> { text } (claude2's Snips text, kept on claude2-stats; text saves it)
 //   GET  /version              -> the deployed version, the hash ./deploy wrote ("dev" in the repo)
 //   GET  anything else         -> the built page in dist/, when there is one (the WSL backend's)
+import { execFile } from "child_process";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
@@ -325,6 +329,24 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (name === "prompt") {
     return await submitPrompt(project, body);
   }
+  if (name === "git") {
+    return { files: parseStatus(await git(project, "status", "--porcelain", "-z", "--untracked-files=all")) };
+  }
+  if (name === "commit") {
+    return await commit(project, String(body.message ?? "").trim());
+  }
+  if (name === "snips") {
+    return await snips(body.text);
+  }
+  if (name === "clean") {
+    for (const entry of project.sessions.filter((session) => !session.trashed)) {
+      runner.stop(entry.id);
+      entry.trashed = true;
+      sendSession(project, entry);
+    }
+    save(project);
+    return {};
+  }
   const session = project.sessions.find((entry) => entry.id === body.sessionId);
   if (!session) {
     throw new Error("No such session.");
@@ -370,6 +392,62 @@ function firstWords(text: string): string {
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+// git in the tab's project folder. With no terminal prompt, a push that wants a password fails
+// instead of hanging on a question nobody can see.
+function git(project: Project, ...args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const options = { cwd: project.tab.path, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }, timeout: 120_000, maxBuffer: 20_000_000 };
+    execFile("git", args, options, (error, stdout, stderr) => {
+      if (error) reject(new Error(`git ${args[0]}: ${(stderr || stdout || error.message).trim()}`));
+      else resolve(stdout);
+    });
+  });
+}
+
+// `git status --porcelain -z`: "XY path" entries split by NULs (X the index, Y the work tree), a
+// rename's or copy's entry followed by its old path.
+function parseStatus(out: string): { x: string; y: string; path: string }[] {
+  const files: { x: string; y: string; path: string }[] = [];
+  const parts = out.split("\0");
+  for (let at = 0; at < parts.length; at++) {
+    const entry = parts[at] ?? "";
+    if (entry.length < 4) continue;
+    files.push({ x: entry.charAt(0), y: entry.charAt(1), path: entry.slice(3) });
+    if ("RC".includes(entry.charAt(0))) at++;
+  }
+  return files;
+}
+
+// The Git popup's Commit: everything staged, committed, and pushed.
+async function commit(project: Project, message: string): Promise<object> {
+  if (!message) throw new Error("A commit message is needed.");
+  await git(project, "add", "-A");
+  await git(project, "commit", "-m", message);
+  try {
+    await git(project, "push");
+  } catch (error) {
+    throw new Error(`Committed, but the push failed. ${errorText(error)}`);
+  }
+  return {};
+}
+
+// claude2's Snips text lives on its stats server, so every claude2 window and every claude3 tab
+// share one copy. null: claude2 hasn't moved its copy there yet, so nothing may be saved over it.
+const SNIPS_URL = "http://hahnca.com:7301/snips";
+async function snips(text: unknown): Promise<{ text: string | null }> {
+  const saving = typeof text === "string";
+  const res = await fetch(SNIPS_URL, {
+    method: saving ? "POST" : "GET",
+    headers: { "content-type": "application/json" },
+    body: saving ? JSON.stringify({ text }) : undefined,
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!res.ok) throw new Error(`claude2-stats ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (saving) return { text };
+  const stored = ((await res.json()) as { text?: unknown }).text;
+  return { text: typeof stored === "string" ? stored : null };
 }
 
 const MIME: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json" };

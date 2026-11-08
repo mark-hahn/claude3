@@ -329,7 +329,7 @@ function applyDelta(turnId: string, next: RunningStatus | null): void {
   fillResponse(response, turn, true);
   if (Number(node.dataset.index) === anchorIndex) requestAnimationFrame(() => syncSelectedBlock(pinned ? "bottom" : top));
 }
-defineExpose({ applyDelta });
+defineExpose({ applyDelta, focusPrompt: () => promptEl.value?.focus() });
 
 // ---- the dock ----
 
@@ -712,6 +712,8 @@ onBeforeUnmount(() => {
 <template>
   <div class="pane" @click.capture="copyCodeBlock">
     <div ref="historyEl" class="history" tabindex="-1"></div>
+    <!-- Project's Snips, laid over the history so the prompt box stays in reach. -->
+    <slot />
     <div ref="ctxPopEl" class="ctx-pop" hidden></div>
     <div class="dock">
       <textarea
@@ -764,6 +766,8 @@ onBeforeUnmount(() => {
 /* Ported from claude2's conversation pane. Not scoped: the history is built by script, and its
    elements carry no scope attribute. Font sizes stay in 14-18px and text is solid black (CLAUDE.md). */
 .pane { height: 100%; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; background: var(--page); }
+/* The history and whatever the slot lays over it share the first row. */
+.pane > .history, .pane > .snips { grid-area: 1 / 1; }
 .pane .dock { display: flex; align-items: stretch; gap: 10px; border-top: 1px solid var(--border); background: var(--page); padding: 8px 12px; }
 .pane .dock-controls { display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 4px; flex: 0 1 auto; min-width: 0; margin-left: auto; }
 .pane .dock-controls button, .pane .dock-controls select { min-height: 0; padding: 3px 8px; }

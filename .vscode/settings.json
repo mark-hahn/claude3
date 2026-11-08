@@ -1,0 +1,6 @@
+{
+  // ./run's vite: forward the port without the "Your application running on port 5310" toast.
+  "remote.portsAttributes": {
+    "5310": { "label": "claude3 vite", "onAutoForward": "silent" }
+  }
+}

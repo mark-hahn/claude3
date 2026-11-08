@@ -1,15 +1,18 @@
 <script setup lang="ts">
 // One tab: claude2's sidebar column (ported from sidebarHtml) beside one conversation pane. The
 // sessions come down the tab's event stream; picking a card shows that session in the pane, and
-// the others keep running and show their clocks here. Left out for now: search, Clean, delete
-// for good, multi-pick, management, Snips, Close, Re-Auth.
+// the others keep running and show their clocks here. Left out for now: search, delete for good,
+// multi-pick, management, Close, Re-Auth.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { HOSTS, type Tab } from "../../shared/config.ts";
 import type { ClaudeSession, ModelMap, RunningStatus, ServerEvent } from "../../shared/types.ts";
 import { listen, post } from "../api.ts";
+import Git from "./Git.vue";
 import Pane from "./Pane.vue";
+import Snips from "./Snips.vue";
 
-const props = defineProps<{ tab: Tab }>();
+// active: this is the tab on show.
+const props = defineProps<{ tab: Tab; active: boolean }>();
 const emit = defineEmits<{ busy: [count: number] }>();
 
 // Plain objects mutated in place as text streams in; `version` tells Vue when the shape changed.
@@ -21,6 +24,7 @@ const selectedKey = `claude3.session.${props.tab.label}`;
 // '' is the new-session draft: the pane is empty until its first prompt makes the session.
 const selectedId = ref(localStorage.getItem(selectedKey) ?? "");
 const showTrash = ref(false);
+const snipsOpen = ref(false);
 const connected = ref(false);
 const editingId = ref("");
 const editName = ref("");
@@ -37,7 +41,7 @@ const visible = computed(() => {
 const counts = computed(() => {
   void version.value;
   const trashed = sessions.filter((session) => session.trashed).length;
-  return `${sessions.length - trashed}/${trashed}`;
+  return { active: sessions.length - trashed, trashed };
 });
 const busy = (session: ClaudeSession): string => {
   const status = statuses.value[session.id];
@@ -81,7 +85,40 @@ function select(id: string): void {
 
 function newSession(): void {
   showTrash.value = false;
+  snipsOpen.value = false;
   selectedId.value = "";
+}
+
+// claude2's Clean: every session to the trash, the pane back to a new-session draft.
+function clean(): void {
+  selectedId.value = "";
+  void post(props.tab, "clean", {}).catch(report);
+}
+
+function focusPrompt(): void {
+  pane.value?.focusPrompt();
+}
+function closeSnips(): void {
+  snipsOpen.value = false;
+  focusPrompt();
+}
+
+// The divider between sidebar and pane: dragging it sets the width every tab shares (App.vue
+// reads it back at load). The sidebar starts at the page's left edge, so the pointer's x is it.
+function dragDivider(event: PointerEvent): void {
+  const divider = event.currentTarget as HTMLElement;
+  event.preventDefault();
+  divider.setPointerCapture(event.pointerId);
+  let width = 0;
+  const move = (step: PointerEvent): void => {
+    width = Math.round(Math.max(180, Math.min(step.clientX, window.innerWidth - 300)));
+    document.documentElement.style.setProperty("--sidebar-width", `${width}px`);
+  };
+  divider.addEventListener("pointermove", move);
+  divider.addEventListener("lostpointercapture", () => {
+    divider.removeEventListener("pointermove", move);
+    if (width) localStorage.setItem("claude3.sidebarWidth", String(width));
+  }, { once: true });
 }
 
 function trash(session: ClaudeSession, trashed: boolean): void {
@@ -117,6 +154,7 @@ function clickCard(session: ClaudeSession, event: MouseEvent): void {
     return;
   }
   if (renamed) return;
+  snipsOpen.value = false;
   selectedId.value = session.id;
 }
 function finishRename(session: ClaudeSession, commit: boolean): void {
@@ -139,10 +177,13 @@ function firstPrompt(session: ClaudeSession): string {
 
 watch(selectedId, (id) => localStorage.setItem(selectedKey, id));
 watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => status.active).length));
+// Picking a tab puts the cursor in its prompt box; post, so the tab is on show by then.
+watch(() => props.active, (active) => active && focusPrompt(), { flush: "post" });
 
 let source: EventSource | null = null;
 onMounted(() => {
   source = listen(props.tab, onEvent, (up) => (connected.value = up));
+  if (props.active) focusPrompt();
 });
 onBeforeUnmount(() => source?.close());
 </script>
@@ -152,11 +193,16 @@ onBeforeUnmount(() => source?.close());
     <aside class="sidebar">
       <div class="top">
         <div class="row">
+          <button class="snips-toggle" :class="{ active: snipsOpen }" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2" @click="snipsOpen ? closeSnips() : (snipsOpen = true)">Snips</button>
           <button class="new" title="New session: the first prompt in the empty pane starts it" @click="newSession">
             <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
           </button>
+          <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" />
+        </div>
+        <div class="row">
+          <button class="clean" title="Move every session to the trash" :disabled="showTrash || !counts.active" @click="clean">Clean</button>
           <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="showTrash = !showTrash">Trash</button>
-          <span class="counts" title="Active sessions / trashed sessions">{{ counts }}</span>
+          <span class="counts" title="Active sessions / trashed sessions">{{ counts.active }}/{{ counts.trashed }}</span>
         </div>
         <div v-if="!connected" class="offline">No answer from the {{ tab.host }} backend at {{ HOSTS[tab.host].url }}. Retrying.</div>
       </div>
@@ -200,14 +246,21 @@ onBeforeUnmount(() => source?.close());
         </div>
       </div>
     </aside>
-    <Pane ref="pane" :tab="tab" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :models="models" :version="version" @started="select" />
+    <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
+    <Pane ref="pane" :tab="tab" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :models="models" :version="version" @started="select">
+      <Snips v-if="snipsOpen" :tab="tab" @close="closeSnips" />
+    </Pane>
   </div>
 </template>
 
 <style>
 /* Ported from claude2's sidebar. */
-.project { height: 100%; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); }
-.sidebar { box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 10px; border-right: 1px solid var(--border); }
+.project { height: 100%; min-height: 0; display: grid; grid-template-columns: var(--sidebar-width, 300px) 7px minmax(0, 1fr); }
+.sidebar { box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 10px; }
+/* The sidebar's old right border, now a wide-enough strip to grab. */
+.project > .divider { cursor: col-resize; touch-action: none; background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat; }
+.project > .divider:hover { background-image: linear-gradient(#9a9a93, #9a9a93); background-size: 3px 100%; }
+.sidebar .snips-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
 .sidebar .top { display: flex; flex-direction: column; gap: 7px; flex: none; }
 .sidebar .row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
 .sidebar .top button { height: 25px; min-height: 0; flex: none; padding: 0 8px; }

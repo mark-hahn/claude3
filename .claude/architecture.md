@@ -23,19 +23,34 @@ on the laptop, and talks to each backend directly.
 - `server/contextStats.ts`: the Ctx popup's table, copied unchanged from claude2.
 - `src/App.vue`: the tab strip; every tab's `Project` stays mounted (`v-show`).
 - `src/components/Project.vue`: one tab. Owns its EventSource, the session list, the sidebar
-  (new, rename by long press, trash/restore, busy clocks), and passes the selected session to the pane.
+  (Snips, new, Git; Clean, Trash; rename by long press, trash/restore, busy clocks), the divider
+  drag (`--sidebar-width` on the root, shared by every tab, in localStorage), and passes the
+  selected session to the pane. Picking a tab focuses its prompt box (the `active` prop).
+- `src/components/Git.vue`: the Git button (label counts the changed files) and its `<dialog>`, a
+  small VS Code Source Control: message, staged and changed files, Commit (= `add -A`, commit,
+  push on the backend). Status is re-read only for the tab on show: on showing, window focus, and
+  session events (a turn starting or ending).
+- `src/components/Snips.vue`: claude2's Snips as a textarea laid over the pane's history (Pane's
+  slot), so the prompt box stays usable. The one copy lives on claude2-stats (`/snips` on
+  hahnca.com:7301), reached through the backend's `snips` action; read on open and window focus,
+  saved 500ms after typing stops.
 - `src/components/Pane.vue`: claude2's conversation pane. History (bars and boxes) is built
   imperatively, as claude2 builds it; the dock (prompt box, pill, stop, Ctx, pickers, stats) is a
   template. Also the Ctx popup.
 - `src/render.ts`: response text to box: answer text, tool groups and details, the markdown
   renderer. `src/render.check.mjs` is its self-check (`npm test`).
 - `src/api.ts`: `post` and `listen` against a tab's backend.
+- `vite.config.ts`: besides the pinned ports, a dev-only plugin (copied from tv) that mirrors the
+  page's console and uncaught errors to `vite-console.log` in the repo, emptied at each vite start.
+- `.vscode/settings.json`: forwards vite's 5310 silently, without VS Code's "Your application
+  running on port 5310" toast.
 - `deploy`: builds and copies `package.json server shared` (+ `dist` for WSL) to each host and
-  sets up the service: systemd `claude3` on WSL, the `claude3` value of the HKCU Run key at logon on Windows (a logon scheduled task needs admin),
-  pm2 `claude3` on hahnca.com. It stamps each copy with a `version` file, the hash of `server/`
+  sets up what keeps it running: systemd `claude3` on WSL, the `claude3` value of the HKCU Run
+  key on Windows (at logon), pm2 `claude3` on hahnca.com. It stamps each copy with a `version` file, the hash of `server/`
   and `shared/`, which the backend answers at `GET /version`; `deploy --if-stale` redeploys only
   the hosts that don't answer with the repo's hash.
-- `run`: `deploy --if-stale`, then vite. So starting the page also restarts any backend whose
+- `run`: stops this repo's vite if one is running (it holds port 5310), `deploy --if-stale`, then
+  starts vite detached (`setsid nohup`, output in `vite.log`), waits for its ready line, and exits. So starting the page also restarts any backend whose
   server code changed, cutting that backend's running turns. Page-only changes never restart one.
 
 ## Main flows
@@ -74,6 +89,14 @@ on the laptop, and talks to each backend directly.
   practice VS Code's WSL window keeps it up.
 - The CLI processes are children of the backend: restarting a backend cuts its running turns,
   which keep their text so far and are marked "The backend stopped during this response."
+- Windows backend start-up: a logon-triggered scheduled task needs an admin prompt, so logon goes
+  through the HKCU Run key instead. The deploy starts it with `powershell Start-Process conhost.exe
+  --headless node.exe ...`, which outlives the deploy and WSL's interop, and shows no window.
+  ponytail: `conhost --headless` is undocumented.
+- `deploy` runs under `set -e`, and `powershell.exe -Command` exits 1 whenever its last command
+  left an error, even one silenced with `-ErrorAction SilentlyContinue` (e.g.
+  `Get-NetTCPConnection` on a free port). That aborted the Windows step before the start; such
+  calls end with `; exit 0`.
 - Windows writes the env key as `Path`; `childEnv` finds it case-insensitively before prepending
   `~/.local/bin`, where the CLI's installer puts it and where pm2/systemd shells leave it off.
 - Pane history elements are built by script, so they get no Vue scope attribute: the pane's and
@@ -84,6 +107,8 @@ on the laptop, and talks to each backend directly.
 - Run settings are fixed in `server/main.ts` `LIMITS` (100 turns, bypassPermissions), copied from
   claude2's Settings pane; there is no Settings pane yet.
 - Not ported yet from claude2: search, fork, images/Cap, File, export, presets (M), Settings,
-  Quota/Stats/Models/Instructions panes, Snips, login/auth, the git changes check, prompt
+  Quota/Stats/Models/Instructions panes, login/auth, the git changes check, prompt
   suggestions, Monaco, the big prompt box, arrow-key navigation, styled tooltips.
+- Snips stay read-only until the shared copy has been read, and a server answer of `null` (claude2
+  never saved one there) keeps them so: nothing typed in claude3 may replace claude2's copy unseen.
 - Every page element follows CLAUDE.md's display rules: font sizes 14–18px only, text solid black.
