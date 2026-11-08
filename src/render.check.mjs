@@ -1,6 +1,7 @@
 // Self-check for the markdown renderer, answer text and trash-list picking ported from claude2: `node src/render.check.mjs`.
 // The ports un-doubled every backslash of claude2's template-literal source, so a missed one shows here.
 import assert from "node:assert/strict";
+import { extraBlankLines } from "./blankLines.ts";
 import { pick } from "./pick.ts";
 import { answerText, renderMarkdown } from "./render.ts";
 
@@ -45,4 +46,14 @@ assert.deepEqual([...picked].sort(), ["b", "c", "d"]);
 // A shift-click with no anchor on show picks just that card.
 assert.equal(pick(picked, ids, "a", "gone", shift), "a");
 assert.deepEqual([...picked], ["a"]);
+
+// The Snips' blank lines after a removal: only those at or beside it come down to one.
+const extras = (lines, removedAt) => extraBlankLines(lines.length, (line) => !lines[line - 1].trim(), removedAt);
+assert.deepEqual(extras(["a", "", "", "", "b"], [3]), [3, 4]);
+assert.deepEqual(extras(["a", "", "", "b", "", "", "c"], [2]), [3]);
+assert.deepEqual(extras(["a", "", "b"], [2]), []);
+// A removal that left text on its line: the runs on each side of that line.
+assert.deepEqual(extras(["", "", "x", " ", ""], [3]), [2, 5]);
+// Two removals in one run name each line once, or Monaco throws on the overlap.
+assert.deepEqual(extras(["a", "", "", "b"], [2, 3]), [3]);
 console.log("render checks passed");

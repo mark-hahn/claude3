@@ -38,9 +38,11 @@ on the laptop, and talks to each backend directly.
 - `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane
   (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude2-stats (`/snips` on
   hahnca.com:7301), reached through the backend's `snips` action; read on open and window focus,
-  saved 500ms after typing stops. Ctrl+Enter emits `insert` with the selection; Project hands it
-  to Pane's exposed `appendPrompt`, which appends it to the draft and focuses the prompt box. With
-  no selection it closes the Snips instead.
+  saved 500ms after typing stops. Ctrl+Enter hands the selection to the `addToPrompt` prop, Pane's
+  exposed `appendPrompt`, which appends it to the draft and focuses the prompt box; if that took
+  it, the selection is deleted from the Snips and the blank lines at or beside it come down to one
+  (`src/blankLines.ts`; a trashed session's prompt takes nothing, so nothing is deleted and they stay open), then the
+  Snips close, which saves at once. With no selection they just close.
 - `src/components/Settings.vue`: claude2's management pane in the Snips' column. Only its Quotas
   tab (the tab button does nothing yet), ported from claude2's `quotaHtml` nearly verbatim: graphs
   built by script, global styles under `.settings`, element ids `q-*` (one instance at a time).
@@ -102,8 +104,9 @@ on the laptop, and talks to each backend directly.
   on send); Ctrl+Enter in an empty box puts it back.
 - **Deploy warning.** Before sending a prompt the pane asks `deployNeeded`: the project's
   `./deploy` (or `./run` when it has none) touches `.deployed` (gitignored) when it finishes, and
-  any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Continue or
-  Cancel. No script or no stamp yet means no warning. The touch lines live in each project's own
+  any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Deploy
+  (same as "r" below, the prompt stays unsent in the box), Continue or Cancel. No script or no
+  stamp yet means no warning. The touch lines live in each project's own
   script (claude3, claude2, tv, finance on hahnca.com).
 - **"r".** A prompt of just `r`, or the footer's Run button (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
   project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`), its text kept in sessionStorage until OK so a page reload doesn't lose it. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`

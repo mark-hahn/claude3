@@ -2,17 +2,19 @@
 // claude2's Snips tab, a column right of the conversation pane, the window's full height below the
 // tab strip. One text, kept on claude2's stats server (the backend's `snips` action), so claude2's
 // windows and every claude3 tab edit the same copy. Read when it opens and whenever the window gets focus back; saved half a
-// second after the typing stops, and at once on close. Esc closes it; Ctrl+Enter adds the selected text
-// to the end of the prompt and moves the cursor there, leaving the Snips open; with nothing selected
-// it just closes them. A Monaco editor with
+// second after the typing stops, and at once on close. Esc closes it; Ctrl+Enter moves the selected text
+// to the end of the prompt and the cursor there, takes the blank lines around the removed text
+// down to one and closes the Snips; with nothing selected it just closes them. A Monaco editor with
 // claude2's editing (src/monaco.ts).
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
+import { extraBlankLines } from "../blankLines.ts";
 import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
 
-const props = defineProps<{ tab: Tab }>();
-const emit = defineEmits<{ close: []; insert: [text: string] }>();
+// addToPrompt answers whether the prompt took the text: a trashed session's doesn't.
+const props = defineProps<{ tab: Tab; addToPrompt: (text: string) => boolean }>();
+const emit = defineEmits<{ close: [] }>();
 
 // Editable only once the shared copy has been read, so nothing typed early can replace it.
 let ready = false;
@@ -81,9 +83,19 @@ onMounted(() => {
     label: "Add Selection to Prompt",
     keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
     run: (ed) => {
-      const picked = ed.getSelections()!.map((s) => ed.getModel()!.getValueInRange(s)).filter(Boolean).join("\n");
-      if (picked) emit("insert", picked);
-      else emit("close");
+      const model = ed.getModel()!;
+      const picked = ed.getSelections()!.filter((s) => !s.isEmpty());
+      if (!picked.length) return emit("close");
+      if (!props.addToPrompt(picked.map((s) => model.getValueInRange(s)).join("\n"))) return;
+      let removedAt: number[] = [];
+      // The inverse edits' ranges say where the text was, in the text as it is after the removal.
+      ed.executeEdits("claude3", picked.map((range) => ({ range, text: null })), (inverse) => {
+        removedAt = inverse.map((edit) => edit.range.startLineNumber);
+        return null;
+      });
+      const blank = (line: number): boolean => !model.getLineContent(line).trim();
+      ed.executeEdits("claude3", extraBlankLines(model.getLineCount(), blank, removedAt).map((line) => ({ range: new monaco.Range(line - 1, 1, line, 1), text: null })));
+      emit("close");
     },
   });
   editor.focus();

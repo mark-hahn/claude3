@@ -372,10 +372,10 @@ function applyDelta(turnId: string, next: RunningStatus | null): void {
 // Sessions holding unsent text: the sidebar's sweep of empty sessions spares them.
 const drafted = (): string[] => [...drafts].filter(([, text]) => text.trim()).map(([id]) => id).concat(draft.value.trim() && props.session ? [props.session.id] : []);
 // Text picked in the Snips joins the end of the prompt, on a line of its own, with the cursor after it.
-// An edit through Monaco, so ctrl-z takes it back.
-function appendPrompt(text: string): void {
+// An edit through Monaco, so ctrl-z takes it back. False when the box couldn't take it.
+function appendPrompt(text: string): boolean {
   const box = promptBox;
-  if (!box || box.getOption(monaco.editor.EditorOption.readOnly)) return;
+  if (!box || box.getOption(monaco.editor.EditorOption.readOnly)) return false;
   setPromptMarkdown(false);
   const model = box.getModel()!;
   const end = model.getPositionAt(model.getValueLength());
@@ -386,8 +386,9 @@ function appendPrompt(text: string): void {
   box.focus();
   box.setPosition(model.getPositionAt(model.getValueLength()));
   box.revealPosition(box.getPosition()!);
+  return true;
 }
-const focusPrompt = (): void => (promptMarkdown.value ? promptMdEl.value : promptBox)?.focus();
+const focusPrompt =(): void => (promptMarkdown.value ? promptMdEl.value : promptBox)?.focus();
 defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt });
 
 // ---- the dock ----
@@ -455,7 +456,8 @@ async function awaitRun(): Promise<void> {
 }
 
 // Before a prompt: when files changed since the project's ./deploy (or ./run) last finished, a
-// dialog asks Continue or Cancel. A failed check doesn't hold the prompt up.
+// dialog asks Deploy, Continue or Cancel. Deploy does what the prompt "r" does and leaves the
+// prompt unsent in the box. A failed check doesn't hold the prompt up.
 async function deployOk(): Promise<boolean> {
   let check: { script: string; files: string[] };
   try {
@@ -472,6 +474,7 @@ async function deployOk(): Promise<boolean> {
   dialog.returnValue = "";
   dialog.showModal();
   await new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
+  if (dialog.returnValue === "deploy") void runScript(false);
   return dialog.returnValue === "continue";
 }
 
@@ -944,7 +947,7 @@ onBeforeUnmount(() => {
     </dialog>
     <dialog ref="deployPopEl" class="run-pop">
       <pre>{{ deployText }}</pre>
-      <form method="dialog"><button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
+      <form method="dialog"><button value="deploy">Deploy</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
     </dialog>
     <div class="dock">
       <div ref="promptHostEl" class="prompt" @pointerdown.capture="onPromptPointer" @mousedown.capture="onPromptMouse">
