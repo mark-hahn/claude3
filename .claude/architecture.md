@@ -107,7 +107,9 @@ on the laptop, and talks to each backend directly.
   any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Deploy
   (same as "r" below, the prompt stays unsent in the box), Continue or Cancel. No script or no
   stamp yet means no warning. The touch lines live in each project's own
-  script (claude3, claude2, tv, finance on hahnca.com).
+  script (claude3, claude2, tv, finance on hahnca.com). The footer's Run button is highlighted
+  while the same check finds files; it is re-read for the tab on show on showing, window focus,
+  session events, and a ./run's result.
 - **"r".** A prompt of just `r`, or the footer's Run button (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
   project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`), its text kept in sessionStorage until OK so a page reload doesn't lose it. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
   (`KillMode=process`), outside claude3.service's cgroup, so claude3's own `./run` restarting

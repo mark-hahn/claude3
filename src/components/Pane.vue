@@ -413,6 +413,7 @@ function showRun(text: string): void {
   sessionStorage.setItem(runKey(), text);
   runText.value = text;
   runPopEl.value!.showModal();
+  checkDeploySoon();
 }
 function runClosed(): void {
   sessionStorage.removeItem(runKey());
@@ -477,6 +478,22 @@ async function deployOk(): Promise<boolean> {
   if (dialog.returnValue === "deploy") void runScript(false);
   return dialog.returnValue === "continue";
 }
+
+// The Run button is highlighted while that same check finds changed files. Re-read like the Git
+// button's count, only while the tab is up, and after a ./run, which resets the check.
+const deployDue = ref(false);
+let deployTimer = 0;
+function checkDeploySoon(): void {
+  if (!props.active) return;
+  window.clearTimeout(deployTimer);
+  deployTimer = window.setTimeout(() => {
+    post<{ files: string[] }>(props.tab, "deployNeeded", {}).then(
+      ({ files }) => (deployDue.value = files.length > 0),
+      () => (deployDue.value = false),
+    );
+  }, 300);
+}
+watch(() => [props.active, props.version], checkDeploySoon, { immediate: true });
 
 async function submit(text = draft.value, keepDraft = false): Promise<void> {
   if ((text.trim() === "r" || text.trim() === "v") && !keepDraft) {
@@ -927,8 +944,10 @@ onMounted(() => {
     if (clamped !== historyEl.value!.scrollTop) historyEl.value!.scrollTop = clamped;
   });
   document.addEventListener("mousedown", closeCtxOutside, true);
+  window.addEventListener("focus", checkDeploySoon);
 });
 onBeforeUnmount(() => {
+  window.removeEventListener("focus", checkDeploySoon);
   window.clearInterval(ticker);
   resize?.disconnect();
   document.removeEventListener("mousedown", closeCtxOutside, true);
@@ -962,7 +981,7 @@ onBeforeUnmount(() => {
           <div class="indicator finish" :class="pill.cls" :title="pill.title">{{ pill.text }}</div>
           <div class="group">
             <button class="stop" :class="{ stopping: stopping && active }" title="Stop" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
-            <button title="Run the project's ./run, the same as the prompt r. Ctrl-click: the same as the prompt v" @mousedown.prevent @click="runScript($event.ctrlKey)">Run</button>
+            <button :class="{ 'deploy-due': deployDue }" title="Run the project's ./run, the same as the prompt r. Ctrl-click: the same as the prompt v" @mousedown.prevent @click="runScript($event.ctrlKey)">Run</button>
             <button ref="ctxButtonEl" title="Tokens by source, for the last prompt and the whole conversation, in and out" :disabled="!session?.turns.length" @click="toggleCtx">Ctx</button>
           </div>
         </div>
@@ -1056,6 +1075,9 @@ onBeforeUnmount(() => {
 .pane .dock-controls button { background: #fff; }
 .pane .dock-controls button:hover:not(:disabled) { background: #fff; border-color: #000; }
 .pane .dock-controls button:disabled { background: #fff; border-color: #bfbfbf; }
+/* The Git button's dirty colours (Git.vue). After the hover rule and as specific, so its border stays. */
+.pane .dock-controls button.deploy-due:not(:disabled) { background: #fbd9d9; border-color: #e4a7a7; }
+.pane .dock-controls button.deploy-due:hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), #fbd9d9; }
 /* The sidebar's "+" button, copied. */
 .pane .dock-controls button.new { width: 42px; height: 25px; padding: 0 8px; background: var(--surface); }
 .pane .dock-controls button.new:hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), var(--surface); border-color: var(--border); }
