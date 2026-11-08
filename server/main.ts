@@ -2,7 +2,9 @@
 // claude CLI for the tabs whose host is this one, keeps their sessions, and streams them to the page.
 //   GET  /events?tab=<label>   -> server-sent events (ServerEvent), the full state first
 //   POST /api/<action>         body: { tab, sessionId?, ... } -> JSON
-//        prompt  { prompt } -> { sessionId } (an empty sessionId starts a session)
+//        prompt  { prompt, images? } -> { sessionId } (an empty sessionId starts a session; images are PNG data URIs)
+//        capture { hideWindow } -> { dataUri } (a shot of the desktop; laptop backends only)
+//        image { turnId, index } -> { dataUri } | deleteImage { turnId, index } -> {} (a sent picture)
 //        stop | rename { name } | trash { trashed } | ctx -> { table }
 //        new { keep } -> { session } (an empty "New session"; sweeps other empty ones, as discard does)
 //        discard { keep } -> {} (drop every session with no turns, except the ids in keep)
@@ -27,7 +29,8 @@ import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { HOSTS, ORIGINS, TABS, type HostName, type Tab } from "../shared/config.ts";
-import { ANSWER_MARK, DEFAULT_CONTEXT_WINDOW, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent } from "../shared/types.ts";
+import { ANSWER_MARK, DEFAULT_CONTEXT_WINDOW, imageNote, typedPrompt, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent } from "../shared/types.ts";
+import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, swapSessionTranscripts, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
 import { checkCosts, QuotaService, speechmaticsCost } from "./quota.ts";
@@ -150,8 +153,12 @@ const quota = new QuotaService(DATA_DIR, DATA_DIR, () => models, log);
 
 async function submitPrompt(project: Project, body: Record<string, unknown>): Promise<{ sessionId: string }> {
   const prompt = String(body.prompt ?? "");
-  if (!prompt.trim()) {
+  const images = Array.isArray(body.images) ? body.images.map(String) : [];
+  if (!prompt.trim() && !images.length) {
     throw new Error("Empty prompt.");
+  }
+  if (!images.every((image) => image.startsWith(PNG_DATA_URI))) {
+    throw new Error("An attached image is not a PNG.");
   }
   let session = project.sessions.find((entry) => entry.id === body.sessionId);
   if (!session) {
@@ -172,7 +179,8 @@ async function submitPrompt(project: Project, body: Record<string, unknown>): Pr
     runner.stop(id);
     await runs.get(id);
   }
-  const run = runTurn(project, session, prompt).catch((error) => log(`Turn failed: ${errorText(error)}`));
+  const files = keepImages(id, images);
+  const run = runTurn(project, session, files.length ? `${prompt}\n\n${files.map(imageNote).join("\n\n")}` : prompt, files).catch((error) => log(`Turn failed: ${errorText(error)}`));
   runs.set(id, run);
   void run.finally(() => {
     if (runs.get(id) === run) {
@@ -180,6 +188,18 @@ async function submitPrompt(project: Project, body: Record<string, unknown>): Pr
     }
   });
   return { sessionId: id };
+}
+
+// A prompt's pictures, as files the CLI can read on this host, kept with the session until it is
+// deleted for good.
+function keepImages(sessionId: string, images: string[]): string[] {
+  const directory = path.join(DATA_DIR, "images", sessionId);
+  return images.map((image) => {
+    fs.mkdirSync(directory, { recursive: true });
+    const file = path.join(directory, `${randomUUID()}.png`);
+    fs.writeFileSync(file, Buffer.from(image.slice(PNG_DATA_URI.length), "base64"));
+    return file;
+  });
 }
 
 // From graft's cumulative per-session metrics, priced as graft prices them: at the input rate the
@@ -201,8 +221,8 @@ async function sendCeilings(project: Project): Promise<void> {
   send(project, { type: "ceilings", count: found.split("\n").filter(Boolean).length });
 }
 
-// Ported from claude2's runTurn, without images, files, stats, quota or notifications.
-async function runTurn(project: Project, session: ClaudeSession, prompt: string): Promise<void> {
+// Ported from claude2's runTurn, without files, stats, quota or notifications.
+async function runTurn(project: Project, session: ClaudeSession, prompt: string, images: string[]): Promise<void> {
   const workspacePath = project.tab.path;
   const wasFirstPrompt = session.turns.length === 0;
   // Context is a level: a run inherits where the last one that recorded one left off.
@@ -212,14 +232,14 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string)
     id: randomUUID(), prompt, response: "", createdAt: Date.now(), completedAt: null, model: MODEL, modelId: "", effort: EFFORT, advisor: ADVISOR,
     tokensIn: 0, tokensOut: 0, contextWindow: windows[MODEL] ?? DEFAULT_CONTEXT_WINDOW, contextUsed: priorContext, cleared: false,
     finished: false, stopped: false, error: null, costUsd: null, cliCostTotal: null, stopReason: null, turns: 0,
-    maxTurns: LIMITS.maxTurns, durationMs: 0, ponySkips: [],
+    maxTurns: LIMITS.maxTurns, durationMs: 0, ponySkips: [], ...(images.length ? { images } : {}),
   };
   session.updatedAt = Date.now();
   session.turns.push(turn);
   save(project);
   sendSession(project, session);
   if (wasFirstPrompt) {
-    void nameSession(project, session, prompt);
+    void nameSession(project, session, typedPrompt(prompt) || prompt);
   }
 
   // Streaming is throttled: text collects for 80ms and goes out as one small delta, not a
@@ -373,6 +393,9 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (name === "prompt") {
     return await submitPrompt(project, body);
   }
+  if (name === "capture") {
+    return { dataUri: await captureScreen(body.hideWindow === true) };
+  }
   if (name === "git") {
     return { files: parseStatus(await git(project, "status", "--porcelain", "-z", "--untracked-files=all")) };
   }
@@ -431,7 +454,10 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     // A run still going would post its session back as it settled.
     await Promise.all(ids.map((id) => (runner.stop(id), runs.get(id))));
     removeSessions(project, ids);
-    await Promise.all(ids.map((id) => fs.promises.rm(path.join(DATA_DIR, "debug", `${id}.jsonl`), { force: true })));
+    await Promise.all(ids.flatMap((id) => [
+      fs.promises.rm(path.join(DATA_DIR, "debug", `${id}.jsonl`), { force: true }),
+      fs.promises.rm(path.join(DATA_DIR, "images", id), { recursive: true, force: true }),
+    ]));
     return {};
   }
   const session = project.sessions.find((entry) => entry.id === body.sessionId);
@@ -443,6 +469,24 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
       return { stopped: runner.stop(session.id) };
     case "ctx":
       return await ctxTable(project, session);
+    case "image": {
+      const file = session.turns.find((turn) => turn.id === body.turnId)?.images?.[Number(body.index)];
+      if (!file) {
+        throw new Error("No such image.");
+      }
+      return { dataUri: PNG_DATA_URI + (await fs.promises.readFile(file)).toString("base64") };
+    }
+    case "deleteImage": {
+      // Not while its turn runs: the CLI may still be about to read the file.
+      const turn = session.turns.find((entry) => entry.id === body.turnId && entry.finished);
+      const file = turn?.images?.splice(Number(body.index), 1)[0];
+      if (!turn || !file) {
+        throw new Error("No such image, or its turn is still running.");
+      }
+      turn.prompt = turn.prompt.replace(`\n\n${imageNote(file)}`, "");
+      await fs.promises.rm(file, { force: true });
+      break;
+    }
     case "rename":
       session.name = String(body.name ?? "").trim() || session.name;
       break;
@@ -666,7 +710,8 @@ function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
     req.setEncoding("utf8");
     req.on("data", (chunk: string) => {
       text += chunk;
-      if (text.length > 5_000_000) {
+      // A prompt carries its screenshots: a full multi-monitor PNG is tens of MB as base64.
+      if (text.length > 200_000_000) {
         req.destroy(new Error("Body too large."));
       }
     });

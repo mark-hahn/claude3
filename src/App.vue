@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The tab strip. Every tab's Project stays mounted (v-show), so its stream and its pane's state
 // carry on while another tab is up.
-import { reactive, ref, watch } from "vue";
+import { provide, reactive, ref, watch } from "vue";
 import { TABS } from "../shared/config.ts";
 import Project from "./components/Project.vue";
 
@@ -17,11 +17,29 @@ const toggle = (name: string): void => void (side.value = side.value === name ? 
 // The sidebar width every tab shares; Project's divider drag sets it.
 document.documentElement.style.setProperty("--sidebar-width", `${Number(localStorage.getItem("claude3.sidebarWidth")) || 300}px`);
 
-watch(current, (label) => {
+// The tab on show before this one, for Alt-Cap: it comes up for the length of the shot, then the
+// tab that asked is back, holding the picture.
+let previous = "";
+watch(current, (label, old) => {
+  previous = old ?? previous;
   side.value = "";
   localStorage.setItem("claude3.tab", label);
   document.title = `${label} - claude3`;
 }, { immediate: true });
+
+async function onPreviousTab<T>(shot: () => Promise<T>): Promise<T> {
+  if (!previous) return await shot();
+  const back = current.value;
+  current.value = previous;
+  // claude2's tabSettleMs: the tab has to lay out and paint before the screen is worth copying.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  try {
+    return await shot();
+  } finally {
+    current.value = back;
+  }
+}
+provide("onPreviousTab", onPreviousTab);
 </script>
 
 <template>

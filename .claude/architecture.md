@@ -51,13 +51,16 @@ on the laptop, and talks to each backend directly.
   and the poll lease live on claude2-stats (hahnca.com:7301), shared with claude2's windows; local
   fallback files in `~/.claude3/quota-*.json`. No footer 95% alert, no reading after a turn.
 - `src/components/Pane.vue`: claude2's conversation pane. History (bars and boxes) is built
-  imperatively, as claude2 builds it; the dock (prompt box, "+", pill, stop, Ctx, stats; its "+" emits `new` to Project's newSession) is a
-  template. Also the Ctx popup. The prompt box is a Monaco editor whose text is mirrored into the
+  imperatively, as claude2 builds it; the dock (prompt box, pill, stop, Run, Cap, Ctx, stats) is a
+  template. Also the Ctx popup and the image popup. The prompt box is a Monaco editor whose text is mirrored into the
   `draft` ref both ways. claude2's big prompt editor: Ctrl-Alt-click in the box or Ctrl-Alt-Z
   (the tab on show only, via the `active` prop) puts the box full height left of the history,
   per session in localStorage (`bigPrompt:<tab>:<session id>`); Ctrl-Alt-X there shows it
   rendered as markdown. A plain Enter outside the prompt box and the controls (claude2's
   `selectBottomBlock`) selects and opens the last block; pressed again it toggles that box.
+- `server/capture.ts`: claude2's PowerShell screen shot, returned as a PNG data URI.
+- `src/waitingImages.ts`: unsent pictures per tab in IndexedDB. `src/cropRect.ts`: the crop's
+  arithmetic, checked by `npm test`.
 - `src/monaco.ts` (+ `monaco.css`): claude2's Monaco setup (its webviews.ts `monacoScript` /
   `monacoStyle`), shared by the prompt box and the Snips: markdown only, the worker through Vite's
   `?worker`, the black theme, the user's VS Code keys (Ctrl-D delete line, ...), the line dots in
@@ -102,6 +105,18 @@ on the laptop, and talks to each backend directly.
   `Pane.drafted` still spares its session from the sweep. Separately, text a session switch or
   reload takes out of the box is kept (`clearedDraft`, `lostPrompt:<tab>`, one per tab, removed
   on send); Ctrl+Enter in an empty box puts it back.
+- **Screen capture.** The footer's Cap → `POST /api/capture`, always on a laptop backend (a tab on
+  srv asks WSL's), which runs PowerShell and answers a PNG data URI. Plain click minimizes the
+  foreground window (the page's) for the shot; ctrl-click leaves it up; alt-click calls App's
+  `onPreviousTab` (provide/inject) to show the previously shown claude3 tab for the shot and come
+  back. Each picture waits on its session's next prompt as a stack of data URIs (the last is the
+  picture, the rest its crops' undo), saved in IndexedDB, so a reload keeps it and the sweep
+  spares its session (`Pane.drafted`). The icons are injected text in Monaco, kept out of the
+  draft. On send the images go with `POST /api/prompt`; the tab's backend writes them to
+  `~/.claude3/images/<session id>/`, appends a sentence per picture telling the CLI to read that
+  file (`imageNote`, stripped for display by `typedPrompt`), and records the paths in `turn.images`.
+  A bar's icon asks `image` for the file, read-only. Ctrl-click removes one (`deleteImage` on a
+  sent one), and deleting a session for good removes its folder.
 - **Deploy warning.** Before sending a prompt the pane asks `deployNeeded`: the project's
   `./deploy` (or `./run` when it has none) touches `.deployed` (gitignored) when it finishes, and
   any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Deploy
@@ -175,7 +190,10 @@ on the laptop, and talks to each backend directly.
 - Run settings are fixed in `server/main.ts` `LIMITS` (100 turns, bypassPermissions), copied from
   claude2's Settings pane; the Settings pane has no Settings tab yet. `MODEL`, `EFFORT` and
   `ADVISOR` beside it hard-wire every run; the page has no pickers and sends none of them.
-- Not ported yet from claude2: search, fork, images/Cap, File, export, presets (M),
+- Chromium hands focus back after a mouse-closed `<dialog>` without the text box's caret, so
+  typing goes nowhere; `src/main.ts` blurs and refocuses on every dialog's close. Monaco's own
+  focus call doesn't help, since the textarea already has focus.
+- Not ported yet from claude2: search, fork, pasted images, File, export, presets (M),
   Stats/Models/Instructions/Settings tabs, login/auth, the git changes check, prompt
   suggestions, the restored prompt, arrow-key navigation, styled tooltips.
 - Snips stay read-only until the shared copy has been read, and a server answer of `null` (claude2

@@ -5,7 +5,7 @@
 // Close, Re-Auth.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { HOSTS, type Tab } from "../../shared/config.ts";
-import type { ClaudeSession, RunningStatus, ServerEvent } from "../../shared/types.ts";
+import { typedPrompt, type ClaudeSession, type RunningStatus, type ServerEvent } from "../../shared/types.ts";
 import { listen, post } from "../api.ts";
 import { pick } from "../pick.ts";
 import Git from "./Git.vue";
@@ -215,7 +215,7 @@ function timeLabel(ms: number): string {
 }
 // The first prompt, which the name was made from; capped so a long one can't fill the screen.
 function firstPrompt(session: ClaudeSession): string {
-  const prompt = session.turns[0]?.prompt || "No prompt.";
+  const prompt = typedPrompt(session.turns[0]?.prompt ?? "") || "No prompt.";
   return prompt.length > 800 ? prompt.slice(0, 800) + "…" : prompt;
 }
 
@@ -294,7 +294,7 @@ onBeforeUnmount(() => source?.close());
       </div>
     </aside>
     <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
-    <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" @started="select" @new="newSession" />
+    <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" @started="select" />
     <Snips v-if="side === 'snips' && active" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings' && active" :tab="tab" @close="emit('closeSide')" />
   </div>

@@ -21,6 +21,11 @@ export const TOOL_DETAIL_MARK = "⁢";
 // draws a rule there. Zero width like the tool mark, and a different character.
 export const ANSWER_MARK = "⁤";
 
+// The sentence each attached picture adds to the prompt, which is what gets the CLI to read it.
+export const imageNote = (file: string): string => `[A screenshot of the user's desktop is attached. Read the image file ${file} to view it.]`;
+// A stored prompt as it was typed, without those sentences: a prompt bar draws icons for them.
+export const typedPrompt = (prompt: string): string => prompt.replace(/\n\n\[A screenshot of the user's desktop is attached\. Read the image file [^\]]* to view it\.\]/g, "");
+
 // One ponytail skip line out of a response: "skipped: <x>, add when <y>".
 export interface PonySkip {
   x: string;
@@ -62,6 +67,8 @@ export interface ClaudeTurn {
   maxTurns: number;
   durationMs: number;
   ponySkips: PonySkip[];
+  // The pictures sent with this prompt: PNG files on the session's host, under ~/.claude3/images.
+  images?: string[];
 }
 
 export interface ClaudeSession {

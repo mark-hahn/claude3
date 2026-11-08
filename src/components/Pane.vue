@@ -1,20 +1,22 @@
 <script setup lang="ts">
 // The conversation pane, ported from claude2's conversationHtml. The history (bars and boxes) is
 // built imperatively, as claude2 builds it, so streaming refills one box rather than re-rendering
-// the pane; the dock is an ordinary template. Left out for now: search, fork, images, Cap, File,
+// the pane; the dock is an ordinary template. Left out for now: search, fork, pasted images, File,
 // export, presets (M), arrow-key navigation and the frozen pane, the restored prompt.
 // The prompt box is a Monaco editor with claude2's editing (src/monaco.ts), and has claude2's big
 // prompt editor.
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import type { Tab } from "../../shared/config.ts";
-import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { TABS, type Tab } from "../../shared/config.ts";
+import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, typedPrompt, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
 import { post } from "../api.ts";
+import { cropRect } from "../cropRect.ts";
 import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
 import { answerText, fillBox, renderMarkdown, withoutDetails } from "../render.ts";
+import { loadWaiting, saveWaiting, type Waiting } from "../waitingImages.ts";
 
 // active: this pane's tab is the one on show, so the page-wide keys are its.
 const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: RunningStatus | null; version: number; active: boolean; ceilings: number }>();
-const emit = defineEmits<{ started: [sessionId: string]; new: [] }>();
+const emit = defineEmits<{ started: [sessionId: string] }>();
 
 const historyEl = ref<HTMLElement>();
 const ctxPopEl = ref<HTMLElement>();
@@ -71,7 +73,7 @@ const lostKey = (): string => `lostPrompt:${props.tab.label}`;
 let clearedDraft = localStorage.getItem(lostKey()) ?? "";
 
 const turns = (): ClaudeTurn[] => props.session?.turns ?? [];
-const typedText = (turn: ClaudeTurn): string => turn.prompt;
+const typedText = (turn: ClaudeTurn): string => typedPrompt(turn.prompt);
 const flash = (el: HTMLElement): void => void el.animate([{ backgroundColor: "#ffc9c9" }, { backgroundColor: "#ffc9c9" }], 200);
 const copy = (text: string, el: HTMLElement): void => {
   void navigator.clipboard.writeText(text);
@@ -154,9 +156,19 @@ function render(): void {
       arrow.style.animationDelay = -(Date.now() % 600) + "ms";
       bar.appendChild(arrow);
     }
-    bar.appendChild(document.createTextNode(typed || "(empty prompt)"));
+    // One icon per picture sent with this prompt, as in the prompt box.
+    (turn.images ?? []).forEach((_, at) => {
+      const icon = document.createElement("span");
+      icon.className = "img-char";
+      icon.dataset.image = String(at);
+      icon.textContent = IMG;
+      bar.appendChild(icon);
+    });
+    bar.appendChild(document.createTextNode(typed || (turn.images?.length ? "" : "(empty prompt)")));
     bar.addEventListener("click", (event) => {
       if (event.altKey) return copy(typed, bar);
+      const icon = (event.target as HTMLElement).closest<HTMLElement>(".img-char");
+      if (icon) return event.ctrlKey ? deleteSentImage(turn, Number(icon.dataset.image)) : showSentImage(turn, Number(icon.dataset.image));
       if (event.ctrlKey) {
         if (!expandedPrompts.delete(turn.id)) expandedPrompts.add(turn.id);
         if (index === anchorIndex) render();
@@ -370,7 +382,7 @@ function applyDelta(turnId: string, next: RunningStatus | null): void {
   if (Number(node.dataset.index) === anchorIndex) requestAnimationFrame(() => syncSelectedBlock(pinned ? "bottom" : top));
 }
 // Sessions holding unsent text: the sidebar's sweep of empty sessions spares them.
-const drafted = (): string[] => [...drafts].filter(([, text]) => text.trim()).map(([id]) => id).concat(draft.value.trim() && props.session ? [props.session.id] : []);
+const drafted = (): string[] => [...drafts].filter(([, text]) => text.trim()).map(([id]) => id).concat(draft.value.trim() && props.session ? [props.session.id] : [], Object.keys(waiting));
 // Text picked in the Snips joins the end of the prompt, on a line of its own, with the cursor after it.
 // An edit through Monaco, so ctrl-z takes it back. False when the box couldn't take it.
 function appendPrompt(text: string): boolean {
@@ -540,7 +552,8 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
     localStorage.removeItem(lostKey());
     return runScript(text.trim() === "v");
   }
-  if (!text.trim() || (props.session?.trashed ?? false)) return;
+  // Pictures alone are a prompt, not an empty box.
+  if ((!text.trim() && (keepDraft || !images().length)) || (props.session?.trashed ?? false)) return;
   if (!keepDraft && !(await deployOk())) return;
   // Sending during a run stops that run and takes this prompt instead; a run waiting on a
   // background task takes it as a follow-up.
@@ -550,9 +563,16 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
     localStorage.removeItem(lostKey());
     if (clearedDraft === text) clearedDraft = "";
   }
+  // Every waiting picture rides with this prompt; a failed send puts them back.
+  const key = sessionKey();
+  const sending = keepDraft ? [] : images();
+  if (sending.length) {
+    delete waiting[key];
+    storeImages();
+  }
   pendingTurnCount = turns().length + 1;
   try {
-    const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: props.session?.id ?? "", prompt: text });
+    const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: props.session?.id ?? "", prompt: text, images: sending.map((stack) => stack.at(-1)) });
     if (!props.session) {
       storeBig(sessionId, bigPrompt.value);
       emit("started", sessionId);
@@ -560,13 +580,17 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
   } catch (error) {
     pendingTurnCount = 0;
     if (!keepDraft) draft.value = text;
+    if (sending.length) {
+      waiting[key] = [...sending, ...(waiting[key] ?? [])];
+      storeImages();
+    }
     report(new Error(`Prompt not sent: ${error instanceof Error ? error.message : String(error)}`));
   }
 }
 
 // Ctrl+Enter in the prompt box.
 function sendKey(): void {
-  if (!draft.value.trim() && clearedDraft) {
+  if (!draft.value.trim() && !images().length && clearedDraft) {
     draft.value = clearedDraft;
     clearedDraft = "";
     return;
@@ -647,16 +671,183 @@ function onPageKey(event: KeyboardEvent): void {
 // cursor). Monaco listens for pointer events; the mouse ones are only blocked, so a browser that
 // still fires them can't toggle twice.
 function onPromptPointer(event: PointerEvent): void {
-  if (!event.ctrlKey || !event.altKey) return;
+  const index = event.ctrlKey && event.altKey ? -1 : imageCharAt(event);
+  if (index < 0 && (!event.ctrlKey || !event.altKey)) return;
   event.preventDefault();
   event.stopPropagation();
+  if (index >= 0) return event.ctrlKey ? deleteWaitingImage(index) : showWaitingImage(index);
   setBigPrompt(!bigPrompt.value);
   promptBox?.focus();
 }
 function onPromptMouse(event: MouseEvent): void {
-  if (!event.ctrlKey || !event.altKey) return;
+  if ((!event.ctrlKey || !event.altKey) && imageCharAt(event) < 0) return;
   event.preventDefault();
   event.stopPropagation();
+}
+
+// ---- pictures: the Cap button, the icons, and the image popup ----
+
+const IMG = "\u{1F5BC}️";
+const sessionKey = (): string => props.session?.id ?? "";
+// Waiting on each session's next prompt, as drafts wait ('' is the new-session draft).
+// ponytail: pictures of a session deleted before sending stay in IndexedDB; prune them if the space matters.
+let waiting: Waiting = {};
+void loadWaiting(props.tab.label).then((stored) => {
+  waiting = stored;
+  showImageChars();
+}, report);
+const images = (): string[][] => waiting[sessionKey()] ?? [];
+function storeImages(): void {
+  showImageChars();
+  saveWaiting(props.tab.label, waiting).catch(report);
+}
+
+// The icons lead the box's first line as injected text: drawn there but not part of the text, so
+// typing, the caret and the draft never touch them. Set again on every edit, or one at the very
+// start would carry them along with the text it moved.
+let imageChars: monaco.editor.IEditorDecorationsCollection | null = null;
+function showImageChars(): void {
+  const count = images().length;
+  // An empty range: without showIfCollapsed Monaco keeps the decoration but never draws it.
+  imageChars?.set(count ? [{ range: new monaco.Range(1, 1, 1, 1), options: { showIfCollapsed: true, before: { content: IMG.repeat(count), inlineClassName: "img-char", cursorStops: monaco.editor.InjectedTextCursorStops.Right } } }] : []);
+}
+// Which icon an event in the prompt box is on, or -1. They are one injected span, all one width.
+function imageCharAt(event: MouseEvent): number {
+  const span = (event.target as HTMLElement).closest?.(".img-char");
+  const count = images().length;
+  if (!span || !count || event.button) return -1;
+  const box = span.getBoundingClientRect();
+  const index = Math.floor((event.clientX - box.left) / (box.width / count));
+  return index >= 0 && index < count ? index : -1;
+}
+
+// The screen is the laptop's, so a tab on the server asks a laptop backend for the shot.
+const captureTab = (): Tab => (props.tab.host === "srv" ? TABS.find((tab) => tab.host === "wsl")! : props.tab);
+const onPreviousTab = inject("onPreviousTab") as <T>(shot: () => Promise<T>) => Promise<T>;
+const capturing = ref(false);
+// A plain click hides this window for the shot, a ctrl-click leaves it up, and an alt-click leaves
+// it up with the previously shown tab brought forward. Every click adds another picture.
+async function capture(event: MouseEvent): Promise<void> {
+  const key = sessionKey();
+  const take = (hideWindow: boolean) => post<{ dataUri: string }>(captureTab(), "capture", { hideWindow });
+  capturing.value = true;
+  try {
+    const { dataUri } = await (event.altKey ? onPreviousTab(() => take(false)) : take(!event.ctrlKey));
+    (waiting[key] ??= []).push([dataUri]);
+    storeImages();
+    // After Alt-Cap's return to this tab has drawn: a modal dialog in a hidden tab would block the page.
+    await nextTick();
+    // Set before the dialog opens, which hands focus back to whatever had it. The flip took it away.
+    if (event.altKey) focusPrompt();
+    if (key === sessionKey()) showWaitingImage(images().length - 1);
+  } catch (error) {
+    report(new Error(`Screen capture failed: ${error instanceof Error ? error.message : String(error)}`));
+  } finally {
+    capturing.value = false;
+  }
+}
+
+function deleteWaitingImage(index: number): void {
+  const key = sessionKey();
+  waiting[key]!.splice(index, 1);
+  if (!waiting[key]!.length) delete waiting[key];
+  storeImages();
+}
+
+const imagePopEl = ref<HTMLDialogElement>();
+const popImageEl = ref<HTMLImageElement>();
+const popFrameEl = ref<HTMLElement>();
+const popSelEl = ref<HTMLElement>();
+const popSrc = ref("");
+const popLabel = ref("");
+// False for a picture already sent with a prompt: it is shown and nothing more.
+const popEditable = ref(false);
+const popDepth = ref(0);
+// The shown waiting picture's own stack, the one in `waiting`.
+let popStack: string[] = [];
+function drawPop(): void {
+  popSrc.value = popStack.at(-1)!;
+  popDepth.value = popStack.length - 1;
+}
+function openPop(label: string, editable: boolean): void {
+  popLabel.value = label;
+  popEditable.value = editable;
+  if (props.active && !imagePopEl.value!.open) imagePopEl.value!.showModal();
+}
+function showWaitingImage(index: number): void {
+  popStack = images()[index]!;
+  drawPop();
+  openPop(`Screen capture ${index + 1} of ${images().length}`, true);
+}
+async function showSentImage(turn: ClaudeTurn, index: number): Promise<void> {
+  try {
+    const { dataUri } = await post<{ dataUri: string }>(props.tab, "image", { sessionId: props.session?.id, turnId: turn.id, index });
+    popSrc.value = dataUri;
+    openPop(`Screen capture ${index + 1} of ${turn.images!.length}`, false);
+  } catch (error) {
+    report(error);
+  }
+}
+// A sent picture goes for good, so unlike one still waiting it asks first.
+function deleteSentImage(turn: ClaudeTurn, index: number): void {
+  if (!window.confirm(`Delete image ${index + 1} of ${turn.images!.length} from this sent prompt? This cannot be undone.`)) return;
+  void post(props.tab, "deleteImage", { sessionId: props.session?.id, turnId: turn.id, index }).catch(report);
+}
+
+// claude2's crop. A drag cuts the rectangle out on a canvas and the crop is the picture from then
+// on; a click that never moved pops back to what the last crop replaced. Pointer capture on the
+// frame, not the image, so a drag can start off the picture and end outside the window.
+let cropDrag: { x: number; y: number; moved: boolean } | null = null;
+function cropTo(from: { x: number; y: number }, to: PointerEvent) {
+  const image = popImageEl.value!;
+  return cropRect(image.getBoundingClientRect(), { width: image.naturalWidth, height: image.naturalHeight }, from, { x: to.clientX, y: to.clientY });
+}
+function cropDown(event: PointerEvent): void {
+  if (event.button !== 0 || !popEditable.value) return;
+  event.preventDefault();
+  popFrameEl.value!.setPointerCapture(event.pointerId);
+  cropDrag = { x: event.clientX, y: event.clientY, moved: false };
+  popSelEl.value!.hidden = true;
+}
+function cropMove(event: PointerEvent): void {
+  if (!cropDrag) return;
+  // The button is already up: a release went somewhere that swallowed it.
+  if (!(event.buttons & 1)) return cropUp(event);
+  if (!cropDrag.moved && Math.abs(event.clientX - cropDrag.x) < 4 && Math.abs(event.clientY - cropDrag.y) < 4) return;
+  cropDrag.moved = true;
+  const rect = cropTo(cropDrag, event);
+  // Placed against the frame's padding box, which is what it scrolls within.
+  const frame = popFrameEl.value!;
+  const frameBox = frame.getBoundingClientRect();
+  const sel = popSelEl.value!;
+  sel.style.left = rect.left - frameBox.left + frame.scrollLeft + rect.x * rect.scale + "px";
+  sel.style.top = rect.top - frameBox.top + frame.scrollTop + rect.y * rect.scale + "px";
+  sel.style.width = rect.w * rect.scale + "px";
+  sel.style.height = rect.h * rect.scale + "px";
+  sel.hidden = false;
+}
+function cropCancel(): void {
+  cropDrag = null;
+  popSelEl.value!.hidden = true;
+}
+function cropUp(event: PointerEvent): void {
+  const started = cropDrag;
+  if (!started) return;
+  cropCancel();
+  if (!started.moved) {
+    if (popStack.length <= 1) return;
+    popStack.pop();
+  } else {
+    const rect = cropTo(started, event);
+    if (rect.w < 2 || rect.h < 2) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = rect.w;
+    canvas.height = rect.h;
+    canvas.getContext("2d")!.drawImage(popImageEl.value!, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
+    popStack.push(canvas.toDataURL("image/png"));
+  }
+  drawPop();
+  storeImages();
 }
 
 function stop(): void {
@@ -904,6 +1095,7 @@ watch(
       if (ctxPopEl.value) ctxPopEl.value.hidden = true;
       bigPrompt.value = localStorage.getItem(bigKey(id)) === "1";
       setPromptMarkdown(false);
+      showImageChars();
     }
     status = props.status;
     render();
@@ -960,7 +1152,12 @@ onMounted(() => {
   // Ctrl+Enter sends, in place of Monaco's insert-line-below. An action, not addCommand: Monaco's
   // addCommand keys are page-wide, and every tab has its own editor.
   box.addAction({ id: "claude3.submitPrompt", label: "Send Prompt", keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter], run: sendKey });
-  box.onDidChangeModelContent(() => (draft.value = box.getValue()));
+  imageChars = box.createDecorationsCollection();
+  showImageChars();
+  box.onDidChangeModelContent(() => {
+    draft.value = box.getValue();
+    showImageChars();
+  });
   lockPrompt();
   window.addEventListener("keydown", onPageKey, true);
   render();
@@ -1010,6 +1207,17 @@ onBeforeUnmount(() => {
       <pre>{{ deployText }}</pre>
       <form method="dialog"><button value="deploy">Deploy</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
     </dialog>
+    <dialog ref="imagePopEl" class="img-pop" @close="popSrc = ''">
+      <div class="img-title">
+        <strong>{{ popLabel }}</strong>
+        <span>{{ !popEditable ? "already sent, shown only" : popDepth ? "drag to crop, click to undo a crop" : "drag to crop" }}</span>
+        <form method="dialog"><button autofocus>Close</button></form>
+      </div>
+      <div ref="popFrameEl" class="img-frame" :class="{ readonly: !popEditable }" @pointerdown="cropDown" @pointermove="cropMove" @pointerup="cropUp" @pointercancel="cropCancel">
+        <img ref="popImageEl" :src="popSrc" alt="" draggable="false" />
+        <div ref="popSelEl" class="img-sel" hidden></div>
+      </div>
+    </dialog>
     <div class="dock">
       <div ref="promptHostEl" class="prompt" @pointerdown.capture="onPromptPointer" @mousedown.capture="onPromptMouse">
         <div v-show="!promptMarkdown"></div>
@@ -1017,13 +1225,11 @@ onBeforeUnmount(() => {
       </div>
       <div class="dock-controls">
         <div class="footer">
-          <button class="new" title="New session" @click="emit('new')">
-            <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
-          </button>
           <div class="indicator finish" :class="pill.cls" :title="pill.title">{{ pill.text }}</div>
           <div class="group">
             <button class="stop" :class="{ stopping: stopping && active }" title="Stop" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
             <button :class="{ 'deploy-due': deployDue }" title="Run the project's ./run, the same as the prompt r. Ctrl-click: the same as the prompt v" @mousedown.prevent @click="runScript($event.ctrlKey)">Run</button>
+            <button title="Capture the screen for this prompt, hiding this window for the shot. Ctrl-click: this window stays up. Alt-click: the previous tab is shown for the shot" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
             <button ref="ctxButtonEl" title="Tokens by source, for the last prompt and the whole conversation, in and out" :disabled="!session?.turns.length" @click="toggleCtx">Ctx</button>
           </div>
         </div>
@@ -1120,10 +1326,6 @@ onBeforeUnmount(() => {
 /* The Git button's dirty colours (Git.vue). After the hover rule and as specific, so its border stays. */
 .pane .dock-controls button.deploy-due:not(:disabled) { background: #fbd9d9; border-color: #e4a7a7; }
 .pane .dock-controls button.deploy-due:hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), #fbd9d9; }
-/* The sidebar's "+" button, copied. */
-.pane .dock-controls button.new { width: 42px; height: 25px; padding: 0 8px; background: var(--surface); }
-.pane .dock-controls button.new:hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), var(--surface); border-color: var(--border); }
-.pane .dock-controls .new svg { display: block; margin: 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .pane .stop { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
 .pane .stop:not(:disabled) { color: #000; border-color: #000; }
 /* Stop asks the CLI to finish the message it is on, so the run keeps streaming for a moment. */
@@ -1142,6 +1344,20 @@ onBeforeUnmount(() => {
 .pane .run-pop pre { margin: 0 0 10px; white-space: pre-wrap; font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .pane .run-pop form { text-align: right; }
 .pane .run-pop button { font-size: 14px; }
+/* The icons leading a prompt, one per picture, in the prompt box and on a bar. */
+.pane .img-char { cursor: pointer; }
+/* The image popup, claude2's Image pane as a dialog. Flex only while open, or it would show closed. */
+.pane .img-pop { width: 96vw; height: 94vh; max-width: none; max-height: none; padding: 12px 16px; border: 1px solid #000; border-radius: 8px; color: #000; font-size: 14px; }
+.pane .img-pop[open] { display: flex; flex-direction: column; }
+.pane .img-title { flex: none; display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.pane .img-title form { margin-left: auto; }
+.pane .img-title button { font-size: 14px; }
+/* position: relative so the crop rectangle can be laid over the picture; the image stays a direct
+   grid item, which is what lets its max-height resolve against the frame. */
+.pane .img-frame { position: relative; flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); display: grid; place-items: center; overflow: auto; padding: 8px; cursor: crosshair; user-select: none; }
+.pane .img-frame.readonly { cursor: default; }
+.pane .img-frame img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; touch-action: none; }
+.pane .img-sel { position: absolute; border: 2px solid #1a6fd4; background: rgba(26,111,212,0.16); pointer-events: none; }
 .pane .ctx-pop table { width: 100%; border-collapse: collapse; }
 .pane .ctx-pop th, .pane .ctx-pop td { padding: 1px 8px; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
 .pane .ctx-pop thead tr:first-child th:first-child, .pane .ctx-pop td:first-child { text-align: left; }

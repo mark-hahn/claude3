@@ -1,12 +1,33 @@
 // Self-check for the markdown renderer, answer text and trash-list picking ported from claude2: `node src/render.check.mjs`.
 // The ports un-doubled every backslash of claude2's template-literal source, so a missed one shows here.
 import assert from "node:assert/strict";
+import { imageNote, typedPrompt } from "../shared/types.ts";
 import { extraBlankLines } from "./blankLines.ts";
+import { cropRect } from "./cropRect.ts";
 import { pick } from "./pick.ts";
 import { answerText, renderMarkdown } from "./render.ts";
 
 const T = "⁣"; // TOOL_LINE_MARK
 const A = "⁤"; // ANSWER_MARK
+
+// A picture's sentence comes back off what the prompt bar shows, on either host's paths.
+const notes = `\n\n${imageNote("/root/.claude3/images/s/a.png")}\n\n${imageNote("C:\\Users\\mark\\.claude3\\images\\s\\b.png")}`;
+assert.equal(typedPrompt(`look at this${notes}`), "look at this");
+assert.equal(typedPrompt(notes), "");
+assert.equal(typedPrompt("no pictures\n\n[but brackets]"), "no pictures\n\n[but brackets]");
+
+// A 200x100 picture letterboxed in a 400x400 box sits at y 100-300, twice its size.
+const box = { left: 0, top: 0, width: 400, height: 400 };
+const natural = { width: 200, height: 100 };
+const crop = (fromX, fromY, toX, toY) => {
+  const { x, y, w, h } = cropRect(box, natural, { x: fromX, y: fromY }, { x: toX, y: toY });
+  return [x, y, w, h];
+};
+assert.deepEqual(crop(40, 120, 240, 220), [20, 10, 100, 50]);
+// Dragged backwards, the same rectangle.
+assert.deepEqual(crop(240, 220, 40, 120), [20, 10, 100, 50]);
+// Both ends clamp onto the picture, off the letterbox bands and past the box.
+assert.deepEqual(crop(-50, 0, 900, 900), [0, 0, 200, 100]);
 
 assert.equal(renderMarkdown("# Title ##"), "<h1>Title</h1>");
 assert.equal(renderMarkdown("a **b** *c* `<d>` [e](https://x.y)"), '<p>a <strong>b</strong> <em>c</em> <code>&lt;d&gt;</code> <a href="https://x.y" target="_blank" rel="noreferrer">e</a></p>');
