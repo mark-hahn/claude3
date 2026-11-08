@@ -1,0 +1,6 @@
+{
+  "name": "claude3",
+  "start_url": "/",
+  "display": "standalone",
+  "launch_handler": { "client_mode": "focus-existing" }
+}

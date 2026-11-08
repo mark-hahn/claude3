@@ -42,6 +42,9 @@ on the laptop, and talks to each backend directly.
 - `src/api.ts`: `post` and `listen` against a tab's backend.
 - `vite.config.ts`: besides the pinned ports, a dev-only plugin (copied from tv) that mirrors the
   page's console and uncaught errors to `vite-console.log` in the repo, emptied at each vite start.
+- `public/manifest.webmanifest`: for the page installed as an Edge app (taskbar pin).
+  `launch_handler` `focus-existing` makes a second launch focus the open window instead of
+  opening another. Edge reads it at install: after changing it, uninstall and reinstall the app.
 - `.vscode/settings.json`: forwards vite's 5310 silently, without VS Code's "Your application
   running on port 5310" toast.
 - `deploy`: builds and copies `package.json server shared` (+ `dist` for WSL) to each host and
