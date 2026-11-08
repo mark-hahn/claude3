@@ -4,7 +4,7 @@
 //   POST /api/<action>         body: { tab, sessionId?, ... } -> JSON
 //        prompt  { prompt, images? } -> { sessionId } (an empty sessionId starts a session; images are PNG data URIs)
 //        capture { hideWindow } -> { dataUri } (a shot of the desktop; laptop backends only)
-//        image { turnId, index } -> { dataUri } | deleteImage { turnId, index } -> {} (a sent picture)
+//        image { turnId, index } -> { dataUri } (a sent picture)
 //        stop | rename { name } | trash { trashed } | ctx -> { table }
 //        new { keep } -> { session } (an empty "New session"; sweeps other empty ones, as discard does)
 //        discard { keep } -> {} (drop every session with no turns, except the ids in keep)
@@ -475,17 +475,6 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
         throw new Error("No such image.");
       }
       return { dataUri: PNG_DATA_URI + (await fs.promises.readFile(file)).toString("base64") };
-    }
-    case "deleteImage": {
-      // Not while its turn runs: the CLI may still be about to read the file.
-      const turn = session.turns.find((entry) => entry.id === body.turnId && entry.finished);
-      const file = turn?.images?.splice(Number(body.index), 1)[0];
-      if (!turn || !file) {
-        throw new Error("No such image, or its turn is still running.");
-      }
-      turn.prompt = turn.prompt.replace(`\n\n${imageNote(file)}`, "");
-      await fs.promises.rm(file, { force: true });
-      break;
     }
     case "rename":
       session.name = String(body.name ?? "").trim() || session.name;

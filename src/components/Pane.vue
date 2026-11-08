@@ -168,7 +168,7 @@ function render(): void {
     bar.addEventListener("click", (event) => {
       if (event.altKey) return copy(typed, bar);
       const icon = (event.target as HTMLElement).closest<HTMLElement>(".img-char");
-      if (icon) return event.ctrlKey ? deleteSentImage(turn, Number(icon.dataset.image)) : showSentImage(turn, Number(icon.dataset.image));
+      if (icon) return void showSentImage(turn, Number(icon.dataset.image));
       if (event.ctrlKey) {
         if (!expandedPrompts.delete(turn.id)) expandedPrompts.add(turn.id);
         if (index === anchorIndex) render();
@@ -787,11 +787,6 @@ async function showSentImage(turn: ClaudeTurn, index: number): Promise<void> {
   } catch (error) {
     report(error);
   }
-}
-// A sent picture goes for good, so unlike one still waiting it asks first.
-function deleteSentImage(turn: ClaudeTurn, index: number): void {
-  if (!window.confirm(`Delete image ${index + 1} of ${turn.images!.length} from this sent prompt? This cannot be undone.`)) return;
-  void post(props.tab, "deleteImage", { sessionId: props.session?.id, turnId: turn.id, index }).catch(report);
 }
 
 // claude2's crop. A drag cuts the rectangle out on a canvas and the crop is the picture from then

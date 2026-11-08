@@ -115,8 +115,9 @@ on the laptop, and talks to each backend directly.
   draft. On send the images go with `POST /api/prompt`; the tab's backend writes them to
   `~/.claude3/images/<session id>/`, appends a sentence per picture telling the CLI to read that
   file (`imageNote`, stripped for display by `typedPrompt`), and records the paths in `turn.images`.
-  A bar's icon asks `image` for the file, read-only. Ctrl-click removes one (`deleteImage` on a
-  sent one), and deleting a session for good removes its folder.
+  A bar's icon asks `image` for the file, read-only. Ctrl-click on an icon in the prompt box
+  removes that waiting picture. A sent one is permanent in its session: no way to remove it
+  short of deleting the session for good, which removes the folder.
 - **Deploy warning.** Before sending a prompt the pane asks `deployNeeded`: the project's
   `./deploy` (or `./run` when it has none) touches `.deployed` (gitignored) when it finishes, and
   any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Deploy
