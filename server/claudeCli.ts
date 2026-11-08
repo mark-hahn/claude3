@@ -925,7 +925,7 @@ function claude3SystemPrompt(contextWindow: number, advisor: string): string {
   ].join("\n");
 }
 
-function childEnv(autoCompactWindow: number | null = null): NodeJS.ProcessEnv {
+export function childEnv(autoCompactWindow: number | null = null): NodeJS.ProcessEnv {
   const env = { ...process.env };
   // A stray key would divert billing from the subscription to the API.
   delete env.ANTHROPIC_API_KEY;

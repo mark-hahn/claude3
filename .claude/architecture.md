@@ -21,8 +21,9 @@ on the laptop, and talks to each backend directly.
   follow-up into a background wait, titles, the model list, `contextUsage` for Ctx. Also
   `advisorFor` / `cheapestModel` from claude2's modelInfo.ts.
 - `server/contextStats.ts`: the Ctx popup's table, copied unchanged from claude2.
-- `src/App.vue`: the tab strip; every tab's `Project` stays mounted (`v-show`). The Snips toggle
-  is here, at the row's right end, one for every tab; the tab on show draws them (`snips` prop), and picking a tab closes them.
+- `src/App.vue`: the tab strip; every tab's `Project` stays mounted (`v-show`). The Snips and
+  gear (Settings) toggles are here, at the row's right end, one each for every tab; they share one
+  column (`side`: "", "snips" or "settings"), the tab on show draws it, and picking a tab closes it.
 - `src/components/Project.vue`: one tab. Owns its EventSource, the session list, the sidebar
   (new session +, Git; Clean, Trash; rename by long press, trash/restore, busy clocks), the divider
   drag (`--sidebar-width` on the root, shared by every tab, in localStorage), and passes the
@@ -35,6 +36,13 @@ on the laptop, and talks to each backend directly.
   (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude2-stats (`/snips` on
   hahnca.com:7301), reached through the backend's `snips` action; read on open and window focus,
   saved 500ms after typing stops.
+- `src/components/Settings.vue`: claude2's management pane in the Snips' column. Only its Quotas
+  tab (the tab button does nothing yet), ported from claude2's `quotaHtml` nearly verbatim: graphs
+  built by script, global styles under `.settings`, element ids `q-*` (one instance at a time).
+  Asks the backend's `quota` (Update = force), `quotaSync` every 30s, `speechmatics` per month.
+- `server/quota.ts`: claude2's QuotaService and its stats-server calls. The account's one history
+  and the poll lease live on claude2-stats (hahnca.com:7301), shared with claude2's windows; local
+  fallback files in `~/.claude3/quota-*.json`. No footer 95% alert, no reading after a turn.
 - `src/components/Pane.vue`: claude2's conversation pane. History (bars and boxes) is built
   imperatively, as claude2 builds it; the dock (prompt box, "+", pill, stop, Ctx, pickers, stats; its "+" emits `new` to Project's newSession) is a
   template. Also the Ctx popup.
@@ -112,6 +120,8 @@ on the laptop, and talks to each backend directly.
   left an error, even one silenced with `-ErrorAction SilentlyContinue` (e.g.
   `Get-NetTCPConnection` on a free port). That aborted the Windows step before the start; such
   calls end with `; exit 0`.
+- The WSL backend's systemd PATH has no Windows directories, and "r" runs `./deploy` under it, so
+  `deploy` appends System32 and PowerShell's folder to PATH itself.
 - Windows writes the env key as `Path`; `childEnv` finds it case-insensitively before prepending
   `~/.local/bin`, where the CLI's installer puts it and where pm2/systemd shells leave it off.
 - Pane history elements are built by script, so they get no Vue scope attribute: the pane's and
@@ -120,9 +130,9 @@ on the laptop, and talks to each backend directly.
   tells Vue the shape changed. A delta goes to `Pane.applyDelta`, which refills only the growing
   box, as claude2 does.
 - Run settings are fixed in `server/main.ts` `LIMITS` (100 turns, bypassPermissions), copied from
-  claude2's Settings pane; there is no Settings pane yet.
-- Not ported yet from claude2: search, fork, images/Cap, File, export, presets (M), Settings,
-  Quota/Stats/Models/Instructions panes, login/auth, the git changes check, prompt
+  claude2's Settings pane; the Settings pane has no Settings tab yet.
+- Not ported yet from claude2: search, fork, images/Cap, File, export, presets (M),
+  Stats/Models/Instructions/Settings tabs, login/auth, the git changes check, prompt
   suggestions, Monaco, the big prompt box, arrow-key navigation, styled tooltips.
 - Snips stay read-only until the shared copy has been read, and a server answer of `null` (claude2
   never saved one there) keeps them so: nothing typed in claude3 may replace claude2's copy unseen.

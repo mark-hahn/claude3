@@ -9,11 +9,13 @@ import type { ClaudeSession, ModelMap, RunningStatus, ServerEvent } from "../../
 import { listen, post } from "../api.ts";
 import Git from "./Git.vue";
 import Pane from "./Pane.vue";
+import Settings from "./Settings.vue";
 import Snips from "./Snips.vue";
 
-// active: this is the tab on show. snips: the Snips are open (App's toggle, one for every tab).
-const props = defineProps<{ tab: Tab; active: boolean; snips: boolean }>();
-const emit = defineEmits<{ busy: [count: number]; closeSnips: [] }>();
+// active: this is the tab on show. side: what App's column toggles have open right of the pane
+// ("", "snips" or "settings"; one for every tab).
+const props = defineProps<{ tab: Tab; active: boolean; side: string }>();
+const emit = defineEmits<{ busy: [count: number]; closeSide: [] }>();
 
 // Plain objects mutated in place as text streams in; `version` tells Vue when the shape changed.
 let sessions: ClaudeSession[] = [];
@@ -201,7 +203,7 @@ watch(selectedId, (id) => localStorage.setItem(selectedKey, id));
 watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => status.active).length));
 // Picking a tab puts the cursor in its prompt box; post, so the tab is on show by then.
 watch(() => props.active, (active) => active && focusPrompt(), { flush: "post" });
-watch(() => props.snips, (open) => !open && props.active && focusPrompt(), { flush: "post" });
+watch(() => props.side, (open) => !open && props.active && focusPrompt(), { flush: "post" });
 
 let source: EventSource | null = null;
 onMounted(() => {
@@ -212,7 +214,7 @@ onBeforeUnmount(() => source?.close());
 </script>
 
 <template>
-  <div class="project" :class="{ 'with-snips': snips && active }">
+  <div class="project" :class="{ 'with-snips': side && active }">
     <aside class="sidebar">
       <div class="top">
         <div class="row">
@@ -270,14 +272,15 @@ onBeforeUnmount(() => source?.close());
     </aside>
     <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
     <Pane ref="pane" :tab="tab" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :models="models" :version="version" @started="select" @new="newSession" />
-    <Snips v-if="snips && active" :tab="tab" @close="emit('closeSnips')" />
+    <Snips v-if="side === 'snips' && active" :tab="tab" @close="emit('closeSide')" />
+    <Settings v-if="side === 'settings' && active" :tab="tab" @close="emit('closeSide')" />
   </div>
 </template>
 
 <style>
 /* Ported from claude2's sidebar. */
 .project { height: 100%; min-height: 0; display: grid; grid-template-columns: var(--sidebar-width, 300px) 7px minmax(0, 1fr); }
-/* The Snips column: half of what the sidebar leaves, the conversation pane keeping the rest. */
+/* The Snips (or Settings) column: half of what the sidebar leaves, the conversation pane keeping the rest. */
 .project.with-snips { grid-template-columns: var(--sidebar-width, 300px) 7px minmax(0, 1fr) calc((100vw - var(--sidebar-width, 300px)) / 2); }
 .sidebar { box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 10px; }
 /* The sidebar's old right border, now a wide-enough strip to grab. */

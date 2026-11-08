@@ -10,6 +10,9 @@
 //        clean -> {} (every session to the trash) | git -> { files: [{ x, y, path }] } (git status)
 //        commit { message } -> {} (add everything, commit, push)
 //        snips { text? } -> { text } (claude2's Snips text, kept on claude2-stats; text saves it)
+//        quota { force } -> { readAt, rows, state, apiCosts } (the Quotas pane; force is its Update)
+//        quotaSync { readAt, error } -> { payload } (null when the pane already shows the newest)
+//        speechmatics { month, rescan } -> { payload } (the tv project's Speechmatics spend)
 //   GET  /version              -> the deployed version, the hash ./deploy wrote ("dev" in the repo)
 //   GET  anything else         -> the built page in dist/, when there is one (the WSL backend's)
 import { execFile, spawn } from "child_process";
@@ -23,6 +26,7 @@ import { HOSTS, ORIGINS, TABS, type HostName, type Tab } from "../shared/config.
 import { ANSWER_MARK, DEFAULT_CONTEXT_WINDOW, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent } from "../shared/types.ts";
 import { advisorFor, cheapestModel, ClaudeCliRunner, effortArgs, sanitizeModel, swapSessionTranscripts, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
+import { checkCosts, QuotaService, speechmaticsCost } from "./quota.ts";
 
 const hostName = process.argv[2] as HostName;
 const host = HOSTS[hostName];
@@ -136,6 +140,8 @@ async function loadModels(): Promise<void> {
 const windows: Record<string, number> = {};
 // The run in progress per session, so a new prompt can wait for a stopped one to settle.
 const runs = new Map<string, Promise<void>>();
+// One per backend; its token-refresh probe runs in DATA_DIR so no project gets its transcript.
+const quota = new QuotaService(DATA_DIR, DATA_DIR, () => models, log);
 
 async function submitPrompt(project: Project, body: Record<string, unknown>): Promise<{ sessionId: string }> {
   const prompt = String(body.prompt ?? "");
@@ -359,6 +365,16 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "snips") {
     return await snips(body.text);
+  }
+  if (name === "quota") {
+    const [history, apiCosts] = await Promise.all([quota.history(body.force === true), checkCosts(log)]);
+    return { ...history, apiCosts };
+  }
+  if (name === "quotaSync") {
+    return { payload: await quota.shared(Number(body.readAt) || 0, String(body.error ?? "")) };
+  }
+  if (name === "speechmatics") {
+    return { payload: await speechmaticsCost(String(body.month ?? ""), body.rescan === true, log) };
   }
   if (name === "new" || name === "discard") {
     discardEmpty(project, Array.isArray(body.keep) ? body.keep.map(String) : []);
