@@ -86,7 +86,9 @@ onMounted(() => {
       const model = ed.getModel()!;
       const picked = ed.getSelections()!.filter((s) => !s.isEmpty());
       if (!picked.length) return emit("close");
-      if (!props.addToPrompt(picked.map((s) => model.getValueInRange(s)).join("\n"))) return;
+      const added = props.addToPrompt(picked.map((s) => model.getValueInRange(s)).join("\n"));
+      console.log("snips ctrl+enter: prompt took the text:", added);
+      if (!added) return;
       let removedAt: number[] = [];
       // The inverse edits' ranges say where the text was, in the text as it is after the removal.
       ed.executeEdits("claude3", picked.map((range) => ({ range, text: null })), (inverse) => {
@@ -95,6 +97,7 @@ onMounted(() => {
       });
       const blank = (line: number): boolean => !model.getLineContent(line).trim();
       ed.executeEdits("claude3", extraBlankLines(model.getLineCount(), blank, removedAt).map((line) => ({ range: new monaco.Range(line - 1, 1, line, 1), text: null })));
+      console.log("snips ctrl+enter: removed at lines", removedAt, "- closing");
       emit("close");
     },
   });
@@ -103,6 +106,7 @@ onMounted(() => {
   window.addEventListener("focus", load);
 });
 onBeforeUnmount(() => {
+  console.log("snips closing: column is unmounting");
   window.removeEventListener("focus", load);
   if (saveTimer) save();
   editor?.dispose();
