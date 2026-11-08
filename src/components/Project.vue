@@ -83,12 +83,6 @@ function select(id: string): void {
   selectedId.value = id;
 }
 
-function newSession(): void {
-  showTrash.value = false;
-  snipsOpen.value = false;
-  selectedId.value = "";
-}
-
 // claude2's Clean: every session to the trash, the pane back to a new-session draft.
 function clean(): void {
   selectedId.value = "";
@@ -194,9 +188,6 @@ onBeforeUnmount(() => source?.close());
       <div class="top">
         <div class="row">
           <button class="snips-toggle" :class="{ active: snipsOpen }" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2" @click="snipsOpen ? closeSnips() : (snipsOpen = true)">Snips</button>
-          <button class="new" title="New session: the first prompt in the empty pane starts it" @click="newSession">
-            <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
-          </button>
           <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" />
         </div>
         <div class="row">
@@ -264,8 +255,6 @@ onBeforeUnmount(() => source?.close());
 .sidebar .top { display: flex; flex-direction: column; gap: 7px; flex: none; }
 .sidebar .row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
 .sidebar .top button { height: 25px; min-height: 0; flex: none; padding: 0 8px; }
-.sidebar .new { width: 42px; }
-.sidebar .new svg { display: block; margin: 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .sidebar .trash-toggle.active { background: #fbd9d9; border-color: #e4a7a7; }
 .sidebar .counts { margin-left: 8px; font-size: 15px; }
 .sidebar .offline { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 6px 8px; }

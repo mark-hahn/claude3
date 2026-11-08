@@ -23,7 +23,7 @@ on the laptop, and talks to each backend directly.
 - `server/contextStats.ts`: the Ctx popup's table, copied unchanged from claude2.
 - `src/App.vue`: the tab strip; every tab's `Project` stays mounted (`v-show`).
 - `src/components/Project.vue`: one tab. Owns its EventSource, the session list, the sidebar
-  (Snips, new, Git; Clean, Trash; rename by long press, trash/restore, busy clocks), the divider
+  (Snips, Git; Clean, Trash; rename by long press, trash/restore, busy clocks), the divider
   drag (`--sidebar-width` on the root, shared by every tab, in localStorage), and passes the
   selected session to the pane. Picking a tab focuses its prompt box (the `active` prop).
 - `src/components/Git.vue`: the Git button (label counts the changed files) and its `<dialog>`, a
