@@ -146,7 +146,12 @@ function dragDivider(event: PointerEvent): void {
 
 function trash(session: ClaudeSession, trashed: boolean): void {
   sweep(session.turns.length ? "" : session.id);
-  if (trashed && session.id === selectedId.value) selectedId.value = "";
+  // Trashing the open card opens the one below it (or above, if it was the last).
+  if (trashed && session.id === selectedId.value) {
+    const list = visible.value;
+    const at = list.findIndex((entry) => entry.id === session.id);
+    selectedId.value = (list[at + 1] ?? list[at - 1])?.id ?? "";
+  }
   void post(props.tab, "trash", { sessionId: session.id, trashed }).catch(report);
 }
 
