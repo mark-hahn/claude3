@@ -62,6 +62,7 @@ if [ "${1:-}" = "--if-stale" ]; then
     # Its own process, so set -e stops that host's steps and the other hosts still get theirs.
     "$0" "$host" || echo "!! $host deploy failed" >&2
   done
+  touch .deployed # claude3's page warns before a prompt when files are newer than this
   exit 0
 fi
 
@@ -124,7 +125,7 @@ EOF
     ssh "$REMOTE" "echo $VERSION > $SRV_DIR/version"
     # node itself is the pm2 script (interpreter none), as tv-api runs xvfb-run: pm2's own
     # wrapper would not load a .ts file.
-    ssh "$REMOTE" "cd $SRV_DIR && if pm2 describe claude3 >/dev/null 2>&1; then pm2 restart claude3; else pm2 start \$(which node) --name claude3 --interpreter none --cwd $SRV_DIR -- server/main.ts srv && pm2 save; fi" | tail -4
+    ssh "$REMOTE" "cd $SRV_DIR && if pm2 describe claude3 >/dev/null 2>&1; then pm2 restart claude3; else pm2 start \$(which node) --name claude3 --interpreter none --cwd $SRV_DIR -- server/main.ts srv && pm2 save; fi" | { grep -E '│ name |│ claude3 ' || true; }
     wait_up srv || { ssh "$REMOTE" "pm2 logs claude3 --nostream --lines 10"; exit 1; }
     ;;
   *)
@@ -134,3 +135,4 @@ EOF
   esac
 done
 echo "== done =="
+touch .deployed # claude3's page warns before a prompt when files are newer than this

@@ -26,3 +26,6 @@ dist-ssr
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# stamped by ./deploy; claude3 warns before a prompt when files are newer
+.deployed

@@ -7,6 +7,7 @@
 //        new { keep } -> { session } (an empty "New session"; sweeps other empty ones, as discard does)
 //        discard { keep } -> {} (drop every session with no turns, except the ids in keep)
 //        run -> { output } (the project's ./run, the prompt box's "r")
+//        deployNeeded -> { script, files } (project files changed since .deployed; see deployNeeded)
 //        clean -> {} (every session to the trash) | git -> { files: [{ x, y, path }] } (git status)
 //        commit { message } -> {} (add everything, commit, push)
 //        snips { text? } -> { text } (claude2's Snips text, kept on claude2-stats; text saves it)
@@ -363,6 +364,9 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (name === "run") {
     return { output: await runScript(project, body.restartVite === true) };
   }
+  if (name === "deployNeeded") {
+    return await deployNeeded(project);
+  }
   if (name === "snips") {
     return await snips(body.text);
   }
@@ -474,6 +478,30 @@ function runScript(project: Project, restartVite: boolean): Promise<string> {
       else reject(new Error(`./run failed (${signal ?? `exit ${code}`}):\n${output.trim()}`));
     });
   });
+}
+
+// Whether the project needs a deploy before a prompt: its ./deploy (or ./run when it has none)
+// touches .deployed when it finishes, and any git-visible file newer than that is undeployed.
+// A project with neither script, or no stamp yet, never needs one. ponytail: every file counts, docs included.
+async function deployNeeded(project: Project): Promise<{ script: string; files: string[] }> {
+  const cwd = project.tab.path;
+  const script = ["deploy", "run"].find((name) => fs.existsSync(path.join(cwd, name))) ?? "";
+  if (!script) return { script, files: [] };
+  let stamp: number;
+  try {
+    stamp = fs.statSync(path.join(cwd, ".deployed")).mtimeMs;
+  } catch {
+    return { script, files: [] }; // never stamped: unknown, so no warning
+  }
+  const listed = (await git(project, "ls-files", "-z", "--cached", "--others", "--exclude-standard")).split("\0").filter(Boolean);
+  const files = [...new Set(listed)].filter((file) => {
+    try {
+      return fs.statSync(path.join(cwd, file)).mtimeMs > stamp;
+    } catch {
+      return false;
+    }
+  });
+  return { script, files };
 }
 
 function git(project: Project, ...args: string[]): Promise<string> {

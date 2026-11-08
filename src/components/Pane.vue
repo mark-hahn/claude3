@@ -20,6 +20,8 @@ const historyEl = ref<HTMLElement>();
 const ctxPopEl = ref<HTMLElement>();
 const runPopEl = ref<HTMLDialogElement>();
 const runText = ref("");
+const deployPopEl = ref<HTMLDialogElement>();
+const deployText = ref("");
 const ctxButtonEl = ref<HTMLButtonElement>();
 const promptHostEl = ref<HTMLElement>();
 const promptMdEl = ref<HTMLElement>();
@@ -429,9 +431,31 @@ async function runScript(restartVite: boolean): Promise<void> {
   }
 }
 
+// Before a prompt: when files changed since the project's ./deploy (or ./run) last finished, a
+// dialog asks Continue or Cancel. A failed check doesn't hold the prompt up.
+async function deployOk(): Promise<boolean> {
+  let check: { script: string; files: string[] };
+  try {
+    check = await post<{ script: string; files: string[] }>(props.tab, "deployNeeded", {});
+  } catch (error) {
+    // An older backend answers this unknown action with "No such session."; nothing to stop for.
+    console.warn("deployNeeded check failed:", error);
+    return true;
+  }
+  if (!check.files.length) return true;
+  const list = check.files.slice(0, 10).join("\n") + (check.files.length > 10 ? `\n... and ${check.files.length - 10} more` : "");
+  deployText.value = `${props.tab.label} needs a deploy: ${check.files.length} file(s) changed since ./${check.script} last ran.\n\n${list}`;
+  const dialog = deployPopEl.value!;
+  dialog.returnValue = "";
+  dialog.showModal();
+  await new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
+  return dialog.returnValue === "continue";
+}
+
 async function submit(text = draft.value, keepDraft = false): Promise<void> {
   if ((text.trim() === "r" || text.trim() === "v") && !keepDraft) return runScript(text.trim() === "v");
   if (!text.trim() || (props.session?.trashed ?? false)) return;
+  if (!keepDraft && !(await deployOk())) return;
   // Sending during a run stops that run and takes this prompt instead; a run waiting on a
   // background task takes it as a follow-up.
   if (props.status?.active && props.status.phase !== "background" && !window.confirm("Stop the running response and send this prompt instead?")) return;
@@ -878,6 +902,10 @@ onBeforeUnmount(() => {
       <pre>{{ runText }}</pre>
       <form method="dialog"><button autofocus>OK</button></form>
     </dialog>
+    <dialog ref="deployPopEl" class="run-pop">
+      <pre>{{ deployText }}</pre>
+      <form method="dialog"><button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
+    </dialog>
     <div class="dock">
       <div ref="promptHostEl" class="prompt" @pointerdown.capture="onPromptPointer" @mousedown.capture="onPromptMouse">
         <div v-show="!promptMarkdown"></div>
@@ -1017,7 +1045,7 @@ onBeforeUnmount(() => {
 .pane .ctx-pop { position: fixed; z-index: 50; overflow: auto; padding: 8px 10px; border: 1px solid #000; border-radius: 8px; background: #fff; color: #000; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
 /* The ./run result. */
 .pane .run-pop { max-width: 80vw; max-height: 80vh; padding: 12px 16px; border: 1px solid #000; border-radius: 8px; color: #000; font-size: 14px; }
-.pane .run-pop pre { margin: 0 0 10px; white-space: pre-wrap; font: inherit; }
+.pane .run-pop pre { margin: 0 0 10px; white-space: pre-wrap; font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .pane .run-pop form { text-align: right; }
 .pane .run-pop button { font-size: 14px; }
 .pane .ctx-pop table { width: 100%; border-collapse: collapse; }
