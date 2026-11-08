@@ -409,20 +409,21 @@ const latest = computed(() => {
 // ./run restarts vite, which reloads the page; unlike an alert the dialog doesn't hold that off,
 // so the text waits in sessionStorage until OK and is shown again on mount.
 const runKey = (): string => `runPop:${props.tab.label}`;
-// The dialog follows the end of its text unless it has been scrolled up.
+// The dialog follows the end of its text unless it has been scrolled up. It opens only on the tab
+// on show: a modal dialog in a hidden tab would block the whole page with nothing to see.
 function putRun(text: string): void {
   const dialog = runPopEl.value!;
   const following = !dialog.open || dialog.scrollHeight - dialog.scrollTop - dialog.clientHeight < 40;
   runText.value = text;
+  if (!props.active) return;
   if (!dialog.open) dialog.showModal();
   if (following) void nextTick(() => (dialog.scrollTop = dialog.scrollHeight));
 }
 // While a ./run goes on, the dialog shows its output so far. OK hides that (the run carries on)
-// and the result opens the dialog again. Only on the tab on show: a modal dialog in a hidden tab
-// would block the whole page with nothing to see.
+// and the result opens the dialog again.
 let runLive = false;
 function showRunLive(output: string): void {
-  if (runLive && props.active) putRun(`./run in ${props.tab.label} running...\n\n${output}`);
+  if (runLive) putRun(`./run in ${props.tab.label} running...\n\n${output}`);
 }
 function showRun(text: string): void {
   runLive = false;
@@ -434,6 +435,15 @@ function runClosed(): void {
   runLive = false;
   sessionStorage.removeItem(runKey());
 }
+// A result that came while the tab was hidden opens when it's picked; post, so it's on show by then.
+watch(
+  () => props.active,
+  (active) => {
+    const waiting = sessionStorage.getItem(runKey());
+    if (active && waiting !== null) putRun(waiting);
+  },
+  { flush: "post" },
+);
 const askRun = () => post<{ done: boolean; code: number; output: string }>(props.tab, "runResult", {});
 
 // Set while a ./run's answer is due, so a page reloaded meanwhile picks up the wait.
