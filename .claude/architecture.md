@@ -36,7 +36,7 @@ on the laptop, and talks to each backend directly.
   hahnca.com:7301), reached through the backend's `snips` action; read on open and window focus,
   saved 500ms after typing stops.
 - `src/components/Pane.vue`: claude2's conversation pane. History (bars and boxes) is built
-  imperatively, as claude2 builds it; the dock (prompt box, pill, stop, Ctx, pickers, stats) is a
+  imperatively, as claude2 builds it; the dock (prompt box, "+", pill, stop, Ctx, pickers, stats; its "+" emits `new` to Project's newSession) is a
   template. Also the Ctx popup.
 - `src/render.ts`: response text to box: answer text, tool groups and details, the markdown
   renderer. `src/render.check.mjs` is its self-check (`npm test`).

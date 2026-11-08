@@ -10,7 +10,7 @@ import { post } from "../api.ts";
 import { answerText, fillBox, withoutDetails } from "../render.ts";
 
 const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: RunningStatus | null; models: ModelMap; version: number }>();
-const emit = defineEmits<{ started: [sessionId: string] }>();
+const emit = defineEmits<{ started: [sessionId: string]; new: [] }>();
 
 const historyEl = ref<HTMLElement>();
 const ctxPopEl = ref<HTMLElement>();
@@ -427,7 +427,7 @@ function onPromptKey(event: KeyboardEvent): void {
   }
 }
 
-// The box grows with its text from three lines to nine.
+// The box stretches to the footer's height and grows with its text up to nine lines.
 function fitPrompt(): void {
   const el = promptEl.value;
   if (!el) return;
@@ -764,6 +764,9 @@ onBeforeUnmount(() => {
       ></textarea>
       <div class="dock-controls">
         <div class="footer">
+          <button class="new" title="New session" @click="emit('new')">
+            <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
+          </button>
           <div class="indicator finish" :class="pill.cls" :title="pill.title">{{ pill.text }}</div>
           <div class="group">
             <button class="stop" :class="{ stopping: stopping && active }" title="Stop" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
@@ -844,13 +847,13 @@ onBeforeUnmount(() => {
 .pane .error-note { margin-top: 10px; background: #fdecec; border: 1px solid #f0bcbc; border-radius: 6px; padding: 8px 10px; color: #731b1b; }
 .pane .run-arrow { font-weight: 700; margin-right: 6px; animation: run-blink 0.6s steps(1) infinite; }
 @keyframes run-blink { 50% { visibility: hidden; } }
-.pane .prompt { flex: 1 1 260px; min-width: 180px; min-height: 64px; height: 64px; max-height: 200px; resize: none; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: 14px/1.45 Aptos, "Segoe UI", sans-serif; padding: 6px 10px; }
+.pane .prompt { flex: 1 1 260px; min-width: 180px; max-height: 200px; resize: none; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--ink); font: 14px/1.45 Aptos, "Segoe UI", sans-serif; padding: 6px 10px; }
 .pane .prompt::placeholder { color: var(--ink); }
 .pane .prompt:focus { outline: 2px solid var(--ink); outline-offset: -1px; border-color: transparent; }
 .pane .bar, .pane .footer { display: flex; gap: 8px; align-items: center; }
 .pane .group { display: flex; gap: 6px; align-items: center; min-width: 0; flex-wrap: wrap; }
 /* Every digit one width, so a ticking stat does not resize the column. */
-.pane .stats { display: flex; gap: 1ch; align-items: center; justify-content: flex-end; margin-left: 8px; font-variant-numeric: tabular-nums; }
+.pane .stats { display: flex; gap: 1ch; align-items: center; justify-content: flex-end; margin-left: 8px; margin-right: 20px; font-variant-numeric: tabular-nums; }
 .pane .status { white-space: nowrap; }
 .pane .context { cursor: pointer; }
 .pane .context.over { background: #ffd0d0; border-radius: 4px; padding: 0 5px; margin: 0 -5px; }
@@ -858,6 +861,10 @@ onBeforeUnmount(() => {
 .pane .dock-controls button { background: #fff; }
 .pane .dock-controls button:hover:not(:disabled) { background: #fff; border-color: #000; }
 .pane .dock-controls button:disabled { background: #fff; color: #bfbfbf; border-color: #bfbfbf; }
+/* The sidebar's "+" button, copied. */
+.pane .dock-controls button.new { width: 42px; height: 25px; padding: 0 8px; background: var(--surface); }
+.pane .dock-controls button.new:hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), var(--surface); border-color: var(--border); }
+.pane .dock-controls .new svg { display: block; margin: 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .pane .stop { display: inline-flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1; }
 .pane .stop:not(:disabled) { color: #000; border-color: #000; }
 /* Stop asks the CLI to finish the message it is on, so the run keeps streaming for a moment. */

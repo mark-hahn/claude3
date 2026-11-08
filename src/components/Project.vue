@@ -35,7 +35,8 @@ const selected = computed(() => {
 });
 const visible = computed(() => {
   void version.value;
-  return sessions.filter((session) => session.trashed === showTrash.value);
+  // Newest first by the time each card shows.
+  return sessions.filter((session) => session.trashed === showTrash.value).sort((a, b) => b.updatedAt - a.updatedAt);
 });
 const counts = computed(() => {
   void version.value;
@@ -268,7 +269,7 @@ onBeforeUnmount(() => source?.close());
       </div>
     </aside>
     <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
-    <Pane ref="pane" :tab="tab" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :models="models" :version="version" @started="select" />
+    <Pane ref="pane" :tab="tab" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :models="models" :version="version" @started="select" @new="newSession" />
     <Snips v-if="snips && active" :tab="tab" @close="emit('closeSnips')" />
   </div>
 </template>

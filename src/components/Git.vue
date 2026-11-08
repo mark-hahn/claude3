@@ -84,7 +84,7 @@ function onMessageKey(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <button class="git" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" @click="open">
+  <button class="git" :class="{ dirty: files.length }" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" @click="open">
     Git<span v-if="files.length">&nbsp;{{ files.length }}</span>
   </button>
   <dialog ref="dialog" class="git-pop" @cancel="committing && $event.preventDefault()" @close="emit('closed')">
@@ -111,6 +111,9 @@ function onMessageKey(event: KeyboardEvent): void {
 </template>
 
 <style scoped>
+/* Something to commit: changed or staged files. */
+.git.dirty { background: #fbd9d9; border-color: #e4a7a7; }
+.git.dirty:hover { background: linear-gradient(var(--wash), var(--wash)), #fbd9d9; }
 .git-pop { width: min(560px, 92vw); max-height: 86vh; padding: 12px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: var(--ink); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2); }
 .git-pop[open] { display: flex; flex-direction: column; gap: 8px; }
 .git-pop::backdrop { background: rgba(0, 0, 0, 0.15); }
