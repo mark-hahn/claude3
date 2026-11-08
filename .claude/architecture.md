@@ -35,7 +35,8 @@ on the laptop, and talks to each backend directly.
 - `src/components/Snips.vue`: claude2's Snips as a textarea in a column right of the pane
   (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude2-stats (`/snips` on
   hahnca.com:7301), reached through the backend's `snips` action; read on open and window focus,
-  saved 500ms after typing stops.
+  saved 500ms after typing stops. Ctrl+Enter emits `insert` with the selection; Project hands it
+  to Pane's exposed `appendPrompt`, which appends it to the draft and focuses the prompt box.
 - `src/components/Settings.vue`: claude2's management pane in the Snips' column. Only its Quotas
   tab (the tab button does nothing yet), ported from claude2's `quotaHtml` nearly verbatim: graphs
   built by script, global styles under `.settings`, element ids `q-*` (one instance at a time).

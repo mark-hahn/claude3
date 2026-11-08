@@ -336,7 +336,16 @@ function applyDelta(turnId: string, next: RunningStatus | null): void {
 }
 // Sessions holding unsent text: the sidebar's sweep of empty sessions spares them.
 const drafted = (): string[] => [...drafts].filter(([, text]) => text.trim()).map(([id]) => id).concat(draft.value.trim() && props.session ? [props.session.id] : []);
-defineExpose({ applyDelta, drafted, focusPrompt: () => promptEl.value?.focus() });
+// Text picked in the Snips joins the end of the prompt, on a line of its own, with the cursor after it.
+async function appendPrompt(text: string): Promise<void> {
+  draft.value += (draft.value && !draft.value.endsWith("\n") ? "\n" : "") + text;
+  await nextTick();
+  const el = promptEl.value;
+  el?.focus();
+  el?.setSelectionRange(draft.value.length, draft.value.length);
+  if (el) el.scrollTop = el.scrollHeight;
+}
+defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt: () => promptEl.value?.focus() });
 
 // ---- the dock ----
 

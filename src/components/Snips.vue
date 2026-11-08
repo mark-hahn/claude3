@@ -2,13 +2,14 @@
 // claude2's Snips tab, a column right of the conversation pane, the window's full height below the
 // tab strip. One text, kept on claude2's stats server (the backend's `snips` action), so claude2's
 // windows and every claude3 tab edit the same copy. Read when it opens and whenever the window gets focus back; saved half a
-// second after the typing stops, and at once on close. Ctrl+Enter or Esc closes it.
+// second after the typing stops, and at once on close. Esc closes it; Ctrl+Enter adds the selected text
+// to the end of the prompt and moves the cursor there, leaving the Snips open.
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
 
 const props = defineProps<{ tab: Tab }>();
-const emit = defineEmits<{ close: [] }>();
+const emit = defineEmits<{ close: []; insert: [text: string] }>();
 
 const text = ref("");
 // Editable only once the shared copy has been read, so nothing typed early can replace it.
@@ -64,9 +65,14 @@ function typed(): void {
 }
 
 function onKey(event: KeyboardEvent): void {
-  if (event.key === "Escape" || (event.key === "Enter" && event.ctrlKey)) {
+  if (event.key === "Escape") {
     event.preventDefault();
     emit("close");
+  } else if (event.key === "Enter" && event.ctrlKey) {
+    event.preventDefault();
+    const el = event.target as HTMLTextAreaElement;
+    const picked = el.value.slice(el.selectionStart, el.selectionEnd);
+    if (picked) emit("insert", picked);
   }
 }
 
