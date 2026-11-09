@@ -52,8 +52,8 @@ on the laptop, and talks to each backend directly.
   small VS Code Source Control: message, staged and changed files, Commit (= `add -A`, commit,
   push on the backend). "Describe changes" in its header (`describeChanges` action) sends the
   uncommitted diff and untracked files' text to `claude -p` on Opus 5.5 and puts its reply (at most
-  2 short sentences) in the message box. Status is re-read only for the tab on show: on showing, window focus, and
-  session events (a turn starting or ending).
+  2 short sentences) in the message box. Status is re-read only for the tab on show: on showing, session events (a turn starting or ending),
+  and every 2s while the page is visible. Every backend git call sets `GIT_OPTIONAL_LOCKS=0`, so the polling never holds the index lock against a real `git add`.
 - `src/components/ReAuth.vue`: the sidebar's red Re-Auth button and its `<dialog>`, which walks
   every backend through a sign-in: a link to that host's sign-in page, the code box, Skip.
 - `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane

@@ -2,8 +2,8 @@
 // The sidebar's Git button and its popup, a small copy of VS Code's Source Control view for the
 // tab's project: the commit message, then the staged and the changed files. Commit stages
 // everything, commits, and pushes (the backend's `commit`). The label counts the files waiting
-// for a commit. It's re-read only while the tab is up: when it comes up, when the window gets
-// focus back, and when a session changes (a turn starting or ending), since turns change files.
+// for a commit. It's re-read only while the tab is up: when it comes up, when a session changes
+// (a turn starting or ending), and every 2s for changes no event tells of.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
@@ -54,8 +54,20 @@ function refreshSoon(): void {
   timer = window.setTimeout(refresh, 300);
 }
 watch(() => [props.active, props.version], refreshSoon, { immediate: true });
-onMounted(() => window.addEventListener("focus", refreshSoon));
-onBeforeUnmount(() => window.removeEventListener("focus", refreshSoon));
+
+// For the Files tree's edits and other programs'. One request at a time, or a backend that stopped
+// answering would use up the browser's few connections to it.
+// ponytail: polling, not file watches, as the Files tree does; change it if the 2s lag ever matters.
+let polling = false;
+async function poll(): Promise<void> {
+  if (polling || document.hidden || !props.active) return;
+  polling = true;
+  await refresh();
+  polling = false;
+}
+let poller = 0;
+onMounted(() => (poller = window.setInterval(() => void poll(), 2000)));
+onBeforeUnmount(() => window.clearInterval(poller));
 
 function open(): void {
   error.value = "";

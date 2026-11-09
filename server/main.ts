@@ -831,7 +831,8 @@ async function describeChanges(project: Project): Promise<string> {
 
 function git(project: Project, ...args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const options = { cwd: project.tab.path, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }, timeout: 120_000, maxBuffer: 20_000_000 };
+    // No optional locks: the page polls `status`, which must never hold the index lock against a real `git add`.
+    const options = { cwd: project.tab.path, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" }, timeout: 120_000, maxBuffer: 20_000_000 };
     execFile("git", args, options, (error, stdout, stderr) => {
       if (error) reject(new Error(`git ${args[0]}: ${(stderr || stdout || error.message).trim()}`));
       else resolve(stdout);
