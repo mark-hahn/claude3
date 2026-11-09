@@ -226,6 +226,7 @@ function clickCard(session: ClaudeSession, event: MouseEvent): void {
     if (event.ctrlKey || event.shiftKey) return;
   }
   selectedId.value = session.id;
+  void focusPrompt();
 }
 function finishRename(session: ClaudeSession, commit: boolean): void {
   if (editingId.value !== session.id) return;
