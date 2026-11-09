@@ -106,9 +106,9 @@ function select(id: string): void {
 // claude2's "+": a "New session" card, opened in the pane. Attention moving on (another card,
 // Clean, Trash, "+" again) sweeps it away while it is still empty and holds no typing.
 async function newSession(): Promise<void> {
-  showTrash.value = false;
   try {
     openCard((await post<{ session: ClaudeSession }>(props.tab, "new", { keep: keepIds() })).session);
+    showTrash.value = false;
   } catch (error) {
     report(error);
   }
@@ -247,6 +247,13 @@ function firstPrompt(session: ClaudeSession): string {
 }
 
 watch(selectedId, (id) => localStorage.setItem(selectedKey, id));
+// Only the trash list can have a trashed session open. Off it (Trash clicked again, a reload,
+// another page trashing the open card) the newest card opens, or ensureOpen makes one.
+watch(() => !showTrash.value && selected.value?.trashed, (stale) => {
+  if (!stale) return;
+  selectedId.value = visible.value[0]?.id ?? "";
+  void ensureOpen();
+});
 // Only a trashed card on show can stay picked, so the delete button never reaches one out of sight.
 watch(visible, (list) => (picked.value = new Set(list.filter((session) => session.trashed && picked.value.has(session.id)).map((session) => session.id))));
 watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => status.active).length));

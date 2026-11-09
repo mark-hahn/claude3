@@ -134,7 +134,8 @@ on the laptop, and talks to each backend directly.
   pane opens it, as claude2 does. Empty sessions are scratch: "+", a card click, Clean and Trash
   sweep them (`discard`; the backend posts `removed`), sparing the one being opened and any
   holding unsent text (`Pane.drafted`). The tab on show always has a session open: with none
-  (after Clean, trashing the last card, its session removed, first look at the tab), `ensureOpen`
+  (after Clean, trashing the last card, its session removed, first look at the tab, leaving the
+  trash list with a trashed session open and no card to open instead), `ensureOpen`
   asks `open`, which shares any empty card or makes one. `open` never sweeps, or two pages on one
   project would sweep each other's card and open another, forever. `src/keepOpen.ts` queues it
   behind Clean's or a trash's request, which would otherwise catch the new card (`npm test`).
