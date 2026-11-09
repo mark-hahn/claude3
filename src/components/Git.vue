@@ -31,6 +31,7 @@ const button = ref<HTMLButtonElement>();
 const staged = computed(() => files.value.filter((file) => !" ?".includes(file.x)).map((file) => ({ ...file, letter: file.x })));
 const changed = computed(() => files.value.filter((file) => file.y !== " ").map((file) => ({ ...file, letter: file.y === "?" ? "U" : file.y })));
 const canCommit = computed(() => !committing.value && !describing.value && !!message.value.trim() && files.value.length > 0);
+const noRepo = computed(() => /not a git repository/i.test(failure.value));
 watch(() => files.value.length > 0, (dirty) => emit("dirty", dirty));
 
 const messageOf = (problem: unknown): string => (problem instanceof Error ? problem.message : String(problem));
@@ -121,7 +122,7 @@ function onMessageKey(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <button ref="button" class="git" :class="{ dirty: files.length }" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" @click="open">
+  <button ref="button" class="git" :class="{ dirty: files.length }" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" :disabled="noRepo" @click="open">
     Git<span v-if="files.length">&nbsp;{{ files.length }}</span>
   </button>
   <dialog ref="dialog" class="git-pop" @cancel="committing && $event.preventDefault()" @close="emit('closed')" @click="onDialogClick">
