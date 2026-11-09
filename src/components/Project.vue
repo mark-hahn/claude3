@@ -7,6 +7,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { typedPrompt, type ClaudeSession, type RunningStatus, type ServerEvent } from "../../shared/types.ts";
 import { authNeeded, listen, post } from "../api.ts";
+import { copy } from "../copy.ts";
 import { pick } from "../pick.ts";
 import Files from "./Files.vue";
 import Git from "./Git.vue";
@@ -195,11 +196,7 @@ function unpress(): void {
   window.clearTimeout(pressTimer);
 }
 function clickCard(session: ClaudeSession, event: MouseEvent): void {
-  if (event.altKey) {
-    void navigator.clipboard.writeText(session.name || "");
-    (event.currentTarget as HTMLElement).animate([{ backgroundColor: "#ffc9c9" }, { backgroundColor: "#ffc9c9" }], 200);
-    return;
-  }
+  if (event.altKey) return copy(session.name || "", event.currentTarget as HTMLElement);
   sweep(session.id);
   if (renamed) return;
   if (showTrash.value) {
@@ -311,7 +308,7 @@ onBeforeUnmount(() => stopListening());
     <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" @started="select" @deploy-due="(due) => (deployDue = due)" />
     <Snips v-if="side === 'snips' && active" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings' && active" :tab="tab" @close="emit('closeSide')" />
-    <Files v-if="side.startsWith('file') && active" :tab="tab" :file-mode="side === 'file'" @open-file="emit('openFile')" @close="emit('closeSide')" />
+    <Files v-if="side.startsWith('file') && active" :tab="tab" :file-mode="side === 'file'" @open-file="emit('openFile')" />
   </div>
 </template>
 

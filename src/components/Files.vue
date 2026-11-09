@@ -11,13 +11,14 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import type { HostName, Tab } from "../../shared/config.ts";
 import type { FileEntry } from "../../shared/types.ts";
 import { post, postHost, upload } from "../api.ts";
+import { copy } from "../copy.ts";
 import { foldersBetween } from "../tabList.ts";
 import FileEditor from "./FileEditor.vue";
 import FolderPicker from "./FolderPicker.vue";
 
 // fileMode: App's column is showing the file. openFile asks for that; App's Files button leaves it.
 const props = defineProps<{ tab: Tab; fileMode: boolean }>();
-const emit = defineEmits<{ close: []; openFile: [] }>();
+const emit = defineEmits<{ openFile: [] }>();
 
 const roots = computed(() => props.tab.roots ?? []);
 const root = computed(() => roots.value.at(-1) ?? props.tab.path);
@@ -103,16 +104,54 @@ function collapse(): void {
 
 const newFile = (): Promise<void> => attempt(post(props.tab, "newFile", { folder: opened.has(last.value) && foldersBetween(root.value, last.value) ? last.value : root.value }));
 
+// Opens the folders on the way to a row and scrolls to it.
+async function reveal(target: string, folders: string[]): Promise<void> {
+  folders.forEach((folder) => opened.add(folder));
+  await refresh();
+  await nextTick();
+  tree.value?.querySelector(`[data-path="${CSS.escape(target)}"]`)?.scrollIntoView({ block: "nearest" });
+}
+
 // A picked folder under the root is opened down to and shown; any other becomes a new root.
 async function goTo(folder: string): Promise<void> {
   if (folder === root.value) return;
   const chain = foldersBetween(root.value, folder);
   if (!chain) return setRoots([...roots.value, folder]);
-  chain.forEach((entry) => opened.add(entry));
   last.value = folder;
-  await refresh();
-  await nextTick();
-  tree.value?.querySelector(`[data-drop="${CSS.escape(folder)}"]`)?.scrollIntoView({ block: "nearest" });
+  await reveal(folder, chain);
+}
+
+// Each Enter in the search box goes on to the next name below the last one found, in the tree's
+// order, closed folders included, and Ctrl-Enter back to the one above it; new text starts from the
+// end it is heading away from. Queued, so quick presses each move on one.
+const searchText = ref("");
+const searchNodeModules = ref(false);
+const flashing = ref("");
+let foundAt = "";
+let flashTimer = 0;
+let searches: Promise<void> = Promise.resolve();
+
+async function findStep(text: string, backward: boolean): Promise<void> {
+  note.value = "";
+  try {
+    const reply = await post<{ path: string | null }>(props.tab, "findFile", { root: root.value, text, after: foundAt, backward, nodeModules: searchNodeModules.value });
+    if (!reply.path) {
+      note.value = `No name here contains "${text}".`;
+      return;
+    }
+    foundAt = reply.path;
+    await reveal(reply.path, (foldersBetween(root.value, reply.path) ?? []).slice(0, -1));
+    flashing.value = reply.path;
+    window.clearTimeout(flashTimer);
+    flashTimer = window.setTimeout(() => (flashing.value = ""), 500);
+  } catch (problem) {
+    note.value = messageOf(problem);
+  }
+}
+
+function search(backward: boolean): void {
+  const text = searchText.value;
+  if (text) searches = searches.then(() => findStep(text, backward));
 }
 
 // A srv tab's clipboard work is done by WSL's backend: the clipboard is on the laptop.
@@ -133,7 +172,7 @@ let clickTimer = 0;
 function clickRow(row: Row, event: MouseEvent): void {
   if (held) return;
   if (event.ctrlKey) return remove(row);
-  if (event.altKey) return void attempt(navigator.clipboard.writeText(row.path));
+  if (event.altKey) return copy(row.path, event.currentTarget as HTMLElement);
   if (event.shiftKey) return row.dir ? paste(row.path) : undefined;
   if (!row.dir) {
     window.clearTimeout(clickTimer);
@@ -231,6 +270,7 @@ onMounted(() => {
 });
 onBeforeUnmount(() => {
   window.clearInterval(poller);
+  window.clearTimeout(flashTimer);
   window.clearTimeout(clickTimer);
   window.clearTimeout(pressTimer);
 });
@@ -242,14 +282,15 @@ onBeforeUnmount(() => {
     <div v-show="!fileMode" class="files-mode">
       <div class="files-bar">
         <button title="Back to the previous root" aria-label="Back" :disabled="!roots.length" @click="setRoots(roots.slice(0, -1))">
-          <svg viewBox="0 0 20 16"><path d="M18 3h-6C8.5 3 8.5 12 5 12H2M6 8.5 2 12l4 3.5" /></svg>
+          <svg viewBox="0 0 20 16"><path d="M1.5 5.5H14a4.5 4.5 0 0 1 0 9M6 10 1.5 5.5 6 1" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" /></svg>
         </button>
         <button title="Close all folders" aria-label="Collapse" @click="collapse">
           <svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="10" height="10" rx="1" /><path d="M4 9.5h5M4.5 1.5h10v10" /></svg>
         </button>
         <button title="New empty file in the last folder opened" @click="newFile">New</button>
         <button title="Show a folder in the tree" @click="picker?.open(root)">Path</button>
-        <button class="files-close" @click="emit('close')">Close</button>
+        <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" />
+        <label class="files-nm" title="Search inside node_modules too"><input v-model="searchNodeModules" type="checkbox" />NM</label>
       </div>
       <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root" title="Shift-click to paste the clipboard's files here" @click.shift="paste(root)">{{ root }}</div>
       <div v-if="note || listProblem" class="files-note">{{ note || listProblem }}</div>
@@ -258,7 +299,8 @@ onBeforeUnmount(() => {
           v-for="row in rows"
           :key="row.path"
           class="files-row"
-          :class="{ drop: dragTarget === row.path, working: working === row.path }"
+          :class="{ drop: dragTarget === row.path, working: working === row.path, flash: flashing === row.path }"
+          :data-path="row.path"
           :data-drop="row.dir ? row.path : undefined"
           :title="row.path"
           role="button"
@@ -287,12 +329,16 @@ onBeforeUnmount(() => {
 .files-bar { flex: none; display: flex; align-items: center; gap: 6px; }
 .files-bar button { min-height: 0; padding: 3px 10px; }
 .files-bar svg { display: block; width: 20px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-.files-close { margin-left: auto; }
+/* Icons stay black like all text, so a disabled one shows by its thin line. */
+.files-bar button:disabled path { stroke-width: 0.75; }
+.files-bar .tabs-input { padding: 3px 8px; }
+.files-nm { flex: none; display: flex; align-items: center; gap: 3px; margin-right: 15px; cursor: pointer; user-select: none; }
 .files-root { flex: none; padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
 .files-note { flex: none; background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 4px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .files-tree { flex: 1; min-height: 0; overflow: auto; padding: 4px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); user-select: none; }
 .files-row { display: flex; align-items: center; width: max-content; min-width: 100%; height: 24px; padding: 0 8px 0 6px; cursor: pointer; white-space: nowrap; }
 .files-row:hover { background: var(--wash); }
+.files-row.flash { background: var(--yellow); }
 .files-row.working, .files-root.working { background: #fbf3c4; }
 .files-row.drop, .files-root.drop { background: #cfe8ff; box-shadow: inset 0 0 0 1px #8fb8e0; }
 /* VS Code's indent guides: shown while the pointer is over the tree, under the parent's chevron. */

@@ -11,6 +11,7 @@ import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, typedPrompt, type ClaudeSessio
 import { post } from "../api.ts";
 import { cropRect } from "../cropRect.ts";
 import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
+import { copy } from "../copy.ts";
 import { answerText, fillBox, renderMarkdown, withoutDetails } from "../render.ts";
 import { loadWaiting, saveWaiting, type Waiting } from "../waitingImages.ts";
 
@@ -74,11 +75,6 @@ let clearedDraft = localStorage.getItem(lostKey()) ?? "";
 
 const turns = (): ClaudeTurn[] => props.session?.turns ?? [];
 const typedText = (turn: ClaudeTurn): string => typedPrompt(turn.prompt);
-const flash = (el: HTMLElement): void => void el.animate([{ backgroundColor: "#ffc9c9" }, { backgroundColor: "#ffc9c9" }], 200);
-const copy = (text: string, el: HTMLElement): void => {
-  void navigator.clipboard.writeText(text);
-  flash(el);
-};
 
 function render(): void {
   const history = historyEl.value;

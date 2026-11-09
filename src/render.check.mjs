@@ -44,6 +44,29 @@ fs.writeFileSync(edited, Buffer.from([0x61, 0x00]));
 assert.equal((await fileActions.readFile({ path: edited })).text, null, "binary");
 fs.writeFileSync(edited, Buffer.from([0xe9]));
 assert.equal((await fileActions.readFile({ path: edited })).text, null, "not UTF-8");
+// Search goes down the tree in its own order, into closed folders, then round to the top; a link
+// back up the tree can't trap it.
+const inner = path.join(folder, "zdir", "New-inner");
+fs.writeFileSync(inner, "");
+fs.symlinkSync(folder, path.join(folder, "zdir", "loop"));
+const after = async (from) => (await fileActions.findFile({ root: folder, text: "NEW", after: from })).path;
+assert.equal(await after(""), inner, "folders first, whatever the case");
+assert.equal(await after(inner), edited);
+assert.equal(await after(edited), `${edited}(1)`);
+assert.equal(await after(`${edited}(1)`), inner, "round to the top");
+assert.equal((await fileActions.findFile({ root: folder, text: "absent", after: "" })).path, null);
+const before = async (from) => (await fileActions.findFile({ root: folder, text: "NEW", after: from, backward: true })).path;
+assert.equal(await before(edited), inner, "one step back");
+assert.equal(await before(inner), `${edited}(1)`, "round to the bottom");
+assert.equal(await before(""), `${edited}(1)`, "new text going backward: the last one");
+// node_modules only when asked, the folder's own name included.
+const buried = path.join(folder, "zdir", "node_modules", "buried");
+fs.mkdirSync(path.dirname(buried));
+fs.writeFileSync(buried, "");
+const findIn = async (text, nodeModules) => (await fileActions.findFile({ root: folder, text, after: "", nodeModules })).path;
+assert.equal(await findIn("buried", false), null);
+assert.equal(await findIn("node_modules", false), null);
+assert.equal(await findIn("buried", true), buried);
 fs.rmSync(folder, { recursive: true });
 
 // The CLI's own words for a login that's gone send the prompt back; any other failure keeps its turn.

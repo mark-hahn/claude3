@@ -3,7 +3,7 @@
 //   GET  /events               -> server-sent events (StreamEvent) for all this host's projects: the list, then each one's full state
 //   POST /api/<action>         body: { tab, sessionId?, ... } -> JSON (tab is the project's id; the actions about the host ignore it)
 //        folders { path } -> { path, entries: [{ name, path }] } (the folders in a folder; path is "" when it isn't one)
-//        listFiles { paths } -> { listings: { [folder]: entries | null } } | readFile { path, known? } -> { mtime, text? }
+//        listFiles { paths } -> { listings: { [folder]: entries | null } } | findFile { root, text, after, backward, nodeModules } -> { path } | readFile { path, known? } -> { mtime, text? }
 //        saveFile { path, text, mtime } -> { mtime } | { conflict } | newFile { folder } | renamePath { path, name } -> { path } | deletePath { path }
 //        freePath { folder, name } -> { path } | clipCopy { host, path } | clipPaste { host, folder } (the Files pane, server/files.ts)
 //        setRoots { roots } -> {} (the Files tree's stack of roots)

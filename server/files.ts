@@ -61,6 +61,40 @@ async function listFolder(folder: string): Promise<FileEntry[] | null> {
   return entries.sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
 
+// The next name holding text, case aside, in the tree's order: below after, or above it going
+// backward, round to the other end when none is left there. node_modules counts only when asked.
+// Links to folders aren't followed, or a link cycle would never end.
+async function findStep(root: string, text: string, after: string, backward: boolean, nodeModules: boolean): Promise<{ path: string | null }> {
+  const wanted = text.toLowerCase();
+  let first: string | null = null;
+  let latest: string | null = null;
+  let passed = !after;
+  const walk = async (folder: string): Promise<string | null> => {
+    for (const entry of (await listFolder(folder)) ?? []) {
+      if (entry.name === "node_modules" && !nodeModules) {
+        continue;
+      }
+      const hit = entry.name.toLowerCase().includes(wanted);
+      if (backward ? entry.path === after && latest : hit && passed) {
+        return backward ? latest : entry.path;
+      }
+      if (hit) {
+        first ??= entry.path;
+        latest = entry.path;
+      }
+      passed ||= entry.path === after;
+      if (entry.dir && (await fs.promises.lstat(entry.path).then((found) => found.isDirectory(), () => false))) {
+        const found = await walk(entry.path);
+        if (found) {
+          return found;
+        }
+      }
+    }
+    return null;
+  };
+  return { path: (await walk(root)) ?? (backward ? latest : first) };
+}
+
 // text is left out when the file is still the version known, and null when it can't be edited
 // here: too big, binary, or not UTF-8, which a save would corrupt.
 async function readText(file: string, known: number): Promise<{ mtime: number; text?: string | null }> {
@@ -189,6 +223,7 @@ export const fileActions: Record<string, (body: Record<string, unknown>) => Prom
     const paths = Array.isArray(body.paths) ? body.paths.map(absolute) : [];
     return { listings: Object.fromEntries(await Promise.all(paths.map(async (folder) => [folder, await listFolder(folder)]))) };
   },
+  findFile: (body) => findStep(absolute(body.root), String(body.text ?? ""), String(body.after ?? ""), body.backward === true, body.nodeModules === true),
   readFile: (body) => readText(absolute(body.path), Number(body.known)),
   saveFile: (body) => saveText(absolute(body.path), String(body.text ?? ""), Number(body.mtime)),
   newFile: async (body) => {

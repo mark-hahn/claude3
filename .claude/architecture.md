@@ -80,6 +80,7 @@ on the laptop, and talks to each backend directly.
   rendered as markdown. A plain Enter outside the prompt box and the controls (claude2's
   `selectBottomBlock`) selects and opens the last block; pressed again it toggles that box.
 - `server/capture.ts`: claude2's PowerShell screen shot, returned as a PNG data URI.
+- `src/copy.ts`: every alt-click's copy, with its light-red flash.
 - `src/waitingImages.ts`: unsent pictures per tab in IndexedDB. `src/cropRect.ts`: the crop's
   arithmetic, checked by `npm test`.
 - `src/monaco.ts` (+ `monaco.css`): claude2's Monaco setup (its webviews.ts `monacoScript` /
@@ -190,6 +191,9 @@ on the laptop, and talks to each backend directly.
   WSL's backend (`clipHost`), which carries the files with scp: fetched ones wait in
   `~/.claude3/clipboard/`, and for a paste it asks the srv backend's `freePath` for the name. Clashes on new,
   paste and drop take `name(<idx>).ext`; nothing is overwritten. Drops stream raw to `POST /upload`.
+  The search box's Enter (Ctrl-Enter going backward) asks `findFile` for the next name after the last
+  found, walked on the backend so closed folders count and skipping node_modules unless NM is
+  ticked; the page opens the way to it and flashes its row.
   **File mode:** Saved 500ms after typing, and read again if the file's mtime changes. `saveFile`
   carries the mtime it read and is refused if the file has moved on; the editor then stops saving
   until Reload.
@@ -272,9 +276,11 @@ on the laptop, and talks to each backend directly.
   never saved one there) keeps them so: nothing typed in claude3 may replace claude2's copy unseen.
 - Monaco's `addCommand` keys are page-wide and every tab has its own editor, so editor keys are
   `addAction`s. Monaco is about 4MB of the built page. Its theme and `addKeybindingRules` are page-wide
-  too: the Files editor is stock Monaco but must use the `claude2` theme, and is kept out of the
-  user's key rules by its `stockEditor` context key.
-- Every page element follows CLAUDE.md's display rules: font sizes 14–18px only, text solid black
+  too: the Files editor is stock Monaco (plus word wrap and the line dots) but must use the `claude2` theme, and is kept out of the
+  user's key rules, all but Ctrl-D, by its `stockEditor` context key. Its ctrl-wheel font size is its own
+  handler, since Monaco's `mouseWheelZoom` is page-wide too.
+- Every page element follows CLAUDE.md's display rules: font sizes 14–18px only (the one exception,
+  at the user's asking, is the Files editor's ctrl-wheel size, which has no limits), text solid black
   or a colour, never grey. Monaco's markdown keeps the stock light theme's token colours (blue
   headings), and its one grey token is pinned to black in `monaco.ts`. A disabled button shows by its dashed grey
   border, a paused quota age by its background; only status icons (tab dot, card clocks) keep colour.
