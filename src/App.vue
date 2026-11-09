@@ -90,7 +90,7 @@ provide("onPreviousTab", onPreviousTab);
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .tabs .tab { min-height: 0; padding: 3px 12px; }
 /* Buttons are about 28px high. With the row's 10px padding and 6px gap, 12px each side: what the Tabs button has on its right. */
-.tabs .indicator { align-self: center; width: 17.6px; height: 17.6px; margin: 0 6px 0 2px; border: 1px solid #000; border-radius: 50%; background: #fff; }
+.tabs .indicator { align-self: center; width: 14.08px; height: 14.08px; margin: 0 6px 0 2px; border: 1px solid #000; border-radius: 50%; background: #fff; }
 .tabs .indicator.due { background: #fbd9d9; border-color: #e4a7a7; }
 .tabs .indicator.active { background: lightgreen; border-color: lightgreen; }
 .tabs .tab.selected { background: #fbf3c4; border-color: #ddd08a; }
