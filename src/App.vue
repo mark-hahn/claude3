@@ -22,14 +22,14 @@ const currentTab = computed(() => opened.value.find((tab) => tab.id === current.
 watch(sorted, (list, old) => {
   if (!currentTab.value) current.value = nextTab(list, old?.find((tab) => tab.id === current.value));
 }, { immediate: true });
-// A project the Tabs dialog just made comes up as soon as its backend's list has it, which can be
-// before or after the answer to the create.
-const created = ref<{ host: string; path: string } | null>(null);
-watch([created, sorted], () => {
-  const tab = sorted.value.find((entry) => entry.host === created.value?.host && entry.path === created.value?.path);
+// A project the Tabs dialog just made or opened comes up as soon as its backend's list has it open,
+// which can be before or after the answer to the request.
+const toShow = ref<{ host: string; path: string } | null>(null);
+watch([toShow, sorted], () => {
+  const tab = opened.value.find((entry) => entry.host === toShow.value?.host && entry.path === toShow.value?.path);
   if (!tab) return;
   current.value = tab.id;
-  created.value = null;
+  toShow.value = null;
 });
 // Bumped when the Tabs dialog closes: a tab picked behind the dialog couldn't take the cursor then.
 const focusAsked = ref(0);
@@ -71,7 +71,7 @@ provide("onPreviousTab", onPreviousTab);
 <template>
   <div class="app">
     <nav class="tabs">
-      <Tabs :tabs="sorted" @created="(host, path) => (created = { host, path })" @closed="focusAsked++" />
+      <Tabs :tabs="sorted" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
       <button v-for="tab in opened" :key="tab.id" class="tab" :class="{ selected: tab.id === current }" :title="`${tab.path} (${tab.host})`" @click="current = tab.id">
         <span v-if="busy[tab.id]" class="tab-busy" title="Responding">&#x25CF;</span>{{ tab.label }}
       </button>

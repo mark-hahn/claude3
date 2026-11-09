@@ -10,7 +10,7 @@ import { folderName, sameName } from "../tabList.ts";
 
 // Every project, in name order.
 const props = defineProps<{ tabs: Tab[] }>();
-const emit = defineEmits<{ created: [host: HostName, path: string]; closed: [] }>();
+const emit = defineEmits<{ show: [host: HostName, path: string]; closed: [] }>();
 
 interface Folders {
   path: string;
@@ -73,7 +73,7 @@ async function create(): Promise<void> {
   creating.value = true;
   try {
     await postHost(host.value, "createProject", { label, path: path.value });
-    emit("created", host.value, path.value);
+    emit("show", host.value, path.value);
     edited.value = false;
     setPath("");
   } catch (problem) {
@@ -123,8 +123,9 @@ const unpress = (): void => window.clearTimeout(pressTimer);
 
 function clickName(tab: Tab, event: MouseEvent): void {
   if (held) return;
-  if (event.ctrlKey) remove(tab);
-  else attempt(post(tab, "openProject", { open: !tab.open }));
+  if (event.ctrlKey) return remove(tab);
+  const open = !tab.open;
+  attempt(post(tab, "openProject", { open }).then(() => open && emit("show", tab.host, tab.path)));
 }
 
 // ponytail: the project's unsent drafts and pictures stay in this browser, unreachable; clear them if storage ever fills.

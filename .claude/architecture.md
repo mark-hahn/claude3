@@ -32,8 +32,8 @@ on the laptop, and talks to each backend directly.
   `<dialog>`, the VS Code-style folder picker on every host, fed by the backend's `folders`), name
   and Create above the list of every project, where a click opens or closes one, a hold renames and
   ctrl-click deletes. It keeps no copy of the list: changes go to the backend and come back as a
-  `projects` event. The dialog stays open after Create, with the new project's tab on show behind
-  it; closing the dialog puts the cursor in the prompt box of the tab on show (`focusAsked`).
+  `projects` event. The dialog stays open after Create or opening a project, with that project's
+  tab on show behind it; closing the dialog puts the cursor in the prompt box of the tab on show (`focusAsked`).
 - `src/components/Project.vue`: one tab. Listens for its project's events, holds the session list, the sidebar
   (new session +, Git; Clean, Trash; rename by long press, trash/restore, busy clocks; on the trash
   list Clean turns into a delete for good of the picked cards, picking in `src/pick.ts`), the divider
