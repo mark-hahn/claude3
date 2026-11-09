@@ -189,8 +189,8 @@ on the laptop, and talks to each backend directly.
   `runResult` once a second until they're there (resuming after a reload, via sessionStorage).
   `deploy` sends its own output through `tee`, so a caller's pipe vanishing can't fail an echo
   under its `set -e`.
-- **Files.** The tree's root is the top of `Tab.roots` (kept in `projects.json`, `setRoots`, back
-  through a `projects` event) or else the project folder; open folders are per tab in localStorage
+- **Files.** The tree's root is `Tab.roots[Tab.rootIdx]` (kept in `projects.json`, `setRoots`, back
+  through a `projects` event) or else the project folder. Back and Fwd only move the index; a new root drops the entries past it first. Open folders are per tab in localStorage
   (`filesOpen:<tab>`), and one selected row per root (`filesSelected:<tab>`). Every open folder is listed again every 2s, so outside
   changes appear. The keys (`keyDown`) work only while focus is in the tree's part of the column, outside its text boxes and
   the Path dialog; a selection out of sight counts as none for them. Ctrl-C puts the selection on the real

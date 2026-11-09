@@ -6,7 +6,7 @@
 //        listFiles { paths } -> { listings: { [folder]: entries | null } } | findFile { root, text, after, backward, nodeModules } -> { path } | readFile { path, known? } -> { mtime, text? }
 //        saveFile { path, text, mtime } -> { mtime } | { conflict } | newFile { folder } | renamePath { path, name } -> { path } | deletePath { path }
 //        freePath { folder, name } -> { path } | clipCopy { host, path } | clipPaste { host, folder } (the Files pane, server/files.ts)
-//        setRoots { roots } -> {} (the Files tree's stack of roots)
+//        setRoots { roots, rootIdx } -> {} (the Files tree's list of roots and the one on show)
 //        createProject { label, path } -> {} | renameProject { label } -> {} | openProject { open } -> {}
 //        deleteProject -> {} (the project, its sessions and what they keep on disk; never its folder)
 //        prompt  { prompt, images? } -> { sessionId } (an empty sessionId starts a session; images are PNG data URIs)
@@ -591,6 +591,7 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "setRoots") {
     project.tab.roots = Array.isArray(body.roots) ? body.roots.map(String) : [];
+    project.tab.rootIdx = Number(body.rootIdx);
     saveTabs();
     return {};
   }

@@ -27,7 +27,8 @@ const props = defineProps<{ tab: Tab; fileMode: boolean }>();
 const emit = defineEmits<{ openFile: [] }>();
 
 const roots = computed(() => props.tab.roots ?? []);
-const root = computed(() => roots.value.at(-1) ?? props.tab.path);
+const rootIdx = computed(() => props.tab.rootIdx ?? roots.value.length - 1);
+const root = computed(() => roots.value[rootIdx.value] ?? props.tab.path);
 const listings = reactive(new Map<string, FileEntry[]>());
 const openKey = `filesOpen:${props.tab.id}`;
 const selectKey = `filesSelected:${props.tab.id}`;
@@ -119,11 +120,15 @@ function attempt(work: Promise<unknown>): Promise<void> {
 }
 
 // The backend's list comes back as a projects event, and with it the new root.
-const setRoots = (next: string[]): Promise<void> => attempt(post(props.tab, "setRoots", { roots: next }));
+const setRoots = (next: string[], idx: number): Promise<void> => attempt(post(props.tab, "setRoots", { roots: next, rootIdx: idx }));
+// Anything Fwd could still have reached is dropped, as in a browser's history.
+const addRoot = (folder: string): Promise<void> => setRoots([...roots.value.slice(0, rootIdx.value + 1), folder], rootIdx.value + 1);
 
-function goBack(): void {
-  void setRoots(roots.value.slice(0, -1));
-  // The Back button may have just been disabled, with the focus on it.
+// -1 is Back, 1 is Fwd.
+function stepRoot(by: number): void {
+  const idx = rootIdx.value + by;
+  if (idx >= -1 && idx < roots.value.length) void setRoots(roots.value, idx);
+  // The button may have just been disabled, with the focus on it.
   treeArea.value?.focus();
 }
 
@@ -164,7 +169,7 @@ const newFile = (): Promise<void> => attempt(post<{ path: string }>(props.tab, "
 async function goTo(folder: string): Promise<void> {
   if (folder === root.value) return;
   const chain = foldersBetween(root.value, folder);
-  if (!chain) return setRoots([...roots.value, folder]);
+  if (!chain) return addRoot(folder);
   select(folder);
   await reveal(folder, chain);
 }
@@ -260,7 +265,7 @@ function keyDown(event: KeyboardEvent): void {
   // Text picked in the path row or a note is what Ctrl-C copies then.
   const picked = window.getSelection();
   if (key === "ctrl+c" && picked && !picked.isCollapsed && area.contains(picked.anchorNode)) return;
-  if (key === "backspace") goBack();
+  if (key === "backspace") stepRoot(-1);
   else if (key === "ctrl+v") {
     const folder = landing.value;
     clipboardJob(folder, () => paste(folder));
@@ -306,7 +311,7 @@ function doubleClickRow(row: Row, event: MouseEvent): void {
   const rendered = event.ctrlKey && !row.dir && /\.md$/i.test(row.name);
   if ((event.ctrlKey && !rendered) || event.altKey || event.shiftKey) return;
   select(row.path);
-  if (row.dir) void setRoots([...roots.value, row.path]);
+  if (row.dir) void addRoot(row.path);
   else void openRow(row, rendered);
 }
 
@@ -389,8 +394,11 @@ onBeforeUnmount(() => window.clearInterval(poller));
     <FileEditor v-else-if="fileMode && file" :tab="tab" :file="file" />
     <div v-show="!fileMode" ref="treeArea" class="files-mode" tabindex="-1" @keydown="keyDown">
       <div class="files-bar">
-        <button title="Back to the previous root" aria-label="Back" :disabled="!roots.length" @click="goBack">
+        <button title="Back to the previous root" aria-label="Back" :disabled="rootIdx < 0" @click="stepRoot(-1)">
           <svg viewBox="0 0 20 16"><path d="M1.5 5.5H14a4.5 4.5 0 0 1 0 9M6 10 1.5 5.5 6 1" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" /></svg>
+        </button>
+        <button title="Forward to the next root" aria-label="Forward" :disabled="rootIdx >= roots.length - 1" @click="stepRoot(1)">
+          <svg class="files-flip" viewBox="0 0 20 16"><path d="M1.5 5.5H14a4.5 4.5 0 0 1 0 9M6 10 1.5 5.5 6 1" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" /></svg>
         </button>
         <button title="Close all folders but the way to the selection; pressed again, close those too and drop the selection" aria-label="Collapse" @click="collapse">
           <svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="10" height="10" rx="1" /><path d="M4 9.5h5M4.5 1.5h10v10" /></svg>
@@ -435,6 +443,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
 .files-bar { flex: none; display: flex; align-items: center; gap: 6px; }
 .files-bar button { min-height: 0; padding: 3px 10px; }
 .files-bar svg { display: block; width: 20px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.files-bar .files-flip { transform: scaleX(-1); }
 /* Icons stay black like all text, so a disabled one shows by its thin line. */
 .files-bar button:disabled path { stroke-width: 0.75; }
 .files-bar .tabs-input { padding: 3px 8px; }
