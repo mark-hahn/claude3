@@ -75,7 +75,11 @@ onBeforeUnmount(() => window.clearInterval(poller));
 function open(): void {
   error.value = "";
   void refresh();
-  dialog.value?.showModal();
+  // Upper left, just under the button, and no taller than the room below it so Commit stays on screen.
+  const { left, bottom } = button.value!.getBoundingClientRect();
+  dialog.value!.style.margin = `${bottom + 4}px 0 0 ${left}px`;
+  dialog.value!.style.maxHeight = `calc(100vh - ${bottom + 16}px)`;
+  dialog.value!.showModal();
 }
 
 // The modal's backdrop covers the Git button, so a click on the button lands on the dialog
