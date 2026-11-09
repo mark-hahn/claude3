@@ -33,7 +33,7 @@ on the laptop, and talks to each backend directly.
   column, each tab with its own state (`sides[id]`: "", "files", "file", "snips" or "settings"), so it is as it was left when the tab comes back.
   Each tab's label has a dot: green with a session active, else light red when its Git or Run button
   is highlighted (`dirty` and `deployDue` come up through Project's `highlighted`), else none. Those
-  two are only re-read while the tab is on show, so a tab out of sight has the last value it saw.
+  two are re-read for every open project, on show or not; closed ones are skipped.
 - `src/components/FolderPicker.vue`: the VS Code-style folder picker `<dialog>` on any host, fed by
   the backend's `folders`; used by the Tabs dialog and the Files pane. Its styles are Tabs.vue's, unscoped for that.
 - `src/components/Files.vue`: the Files column: header rows and a tree of the tab's host, with
@@ -52,7 +52,7 @@ on the laptop, and talks to each backend directly.
   small VS Code Source Control: message, staged and changed files, Commit (= `add -A`, commit,
   push on the backend). "Describe changes" in its header (`describeChanges` action) sends the
   uncommitted diff and untracked files' text to `claude -p` on Opus 5.5 and puts its reply (at most
-  2 short sentences) in the message box. Status is re-read only for the tab on show: on showing, session events (a turn starting or ending),
+  2 short sentences) in the message box. Status is re-read for every open project, on show or not: on showing, session events (a turn starting or ending),
   and every 2s while the page is visible. Every backend git call sets `GIT_OPTIONAL_LOCKS=0`, so the polling never holds the index lock against a real `git add`.
 - `src/components/ReAuth.vue`: the sidebar's red Re-Auth button and its `<dialog>`, which walks
   every backend through a sign-in: a link to that host's sign-in page, the code box, Skip.
@@ -178,7 +178,7 @@ on the laptop, and talks to each backend directly.
   script (claude3, claude2, tv, finance on hahnca.com). A script can write paths into the stamp
   and then only those count: claude3's writes `server shared`, what `--if-stale` hashes, so
   docs and page-only edits don't ask for a deploy. The footer's Run button is highlighted
-  while the same check finds files; it is re-read for the tab on show on showing, window focus,
+  while the same check finds files; it is re-read for every open project on showing, window focus,
   session events, and a ./run's result.
 - **"r".** A prompt of just `r`, or the footer's Run button (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
   project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
