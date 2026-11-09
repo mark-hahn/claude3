@@ -3,7 +3,7 @@
 // and everything on its screen carry on while it is out of sight.
 import { computed, provide, reactive, ref, watch, watchEffect } from "vue";
 import { FIRST_TABS, type HostName, type Tab } from "../shared/config.ts";
-import { connect } from "./api.ts";
+import { connect, post } from "./api.ts";
 import Project from "./components/Project.vue";
 import Tabs from "./components/Tabs.vue";
 import { byName, nextTab } from "./tabList.ts";
@@ -34,6 +34,18 @@ watch([toShow, sorted], () => {
 // Bumped when the Tabs dialog closes (a tab picked behind the dialog couldn't take the cursor then)
 // and on a click on a tab, which may be the one already on show.
 const focusAsked = ref(0);
+// Ctrl-click closes the project, as a click on its name in the Tabs dialog does. The tab goes when
+// the backend's new list comes down; a project with a session running is refused.
+function clickTab(tab: Tab, event: MouseEvent): void {
+  if (event.ctrlKey) {
+    post(tab, "openProject", { open: false })
+      .catch((error) => window.alert(error instanceof Error ? error.message : String(error)))
+      .finally(() => focusAsked.value++);
+    return;
+  }
+  current.value = tab.id;
+  focusAsked.value++;
+}
 // Sessions responding per tab, so a tab out of sight still shows it is working.
 const busy = reactive<Record<string, number>>({});
 // Per tab: its Git or Run button is highlighted.
@@ -78,7 +90,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
   <div class="app">
     <nav class="tabs">
       <Tabs ref="tabsDialog" :tabs="sorted" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
-      <button v-for="tab in opened" :key="tab.id" class="tab" :class="{ selected: tab.id === current }" :title="`${tab.path} (${tab.host})`" @click="current = tab.id; focusAsked++">
+      <button v-for="tab in opened" :key="tab.id" class="tab" :class="{ selected: tab.id === current }" :title="`${tab.path} (${tab.host}). Ctrl-click: close`" @click="clickTab(tab, $event)">
         <span v-if="busy[tab.id] || highlighted[tab.id]" class="tab-dot" :class="{ due: !busy[tab.id] }" :title="busy[tab.id] ? 'Responding' : 'Git or Run is highlighted'">&#x25CF;</span>{{ tab.label }}
       </button>
       <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" title="Open or close the Files: a tree of the project's folder, and an editor" @click="toggle('files')">Files</button>

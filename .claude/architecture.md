@@ -27,7 +27,7 @@ on the laptop, and talks to each backend directly.
 - `server/login.ts`: claude2's Re-Auth as steps the page drives: this host's `claude auth login`,
   its URL, the pasted code on its stdin, then `claude auth status` for who signed in.
 - `src/App.vue`: the tab strip and the list of every project; open ones have a tab, sorted by name
-  (`src/tabList.ts`, checked by `npm test`), and every project's `Project` stays mounted and laid out,
+  (`src/tabList.ts`, checked by `npm test`), ctrl-click on one closes its project (`openProject`), and every project's `Project` stays mounted and laid out,
   closed ones too: all in one grid cell, those not on show `visibility:hidden` (`.offstage`), never `display:none` (see Gotchas). The Files, Snips and
   gear (Settings) toggles are here, at the row's right end, acting on the tab on show; they share one
   column, each tab with its own state (`sides[id]`: "", "files", "file", "snips" or "settings"), so it is as it was left when the tab comes back.
