@@ -1083,8 +1083,8 @@ watch(
       // Another session in the pane: its own draft, picks and a fresh view.
       if (switchedFrom !== null) drafts.set(switchedFrom, draft.value);
       if (draft.value.trim()) clearedDraft = draft.value;
-      draft.value = drafts.get(id) ?? "";
-      // A session just started from the new-session draft keeps nothing of it.
+      // An empty card taking over from the new-session draft keeps what was typed there.
+      draft.value = drafts.get(id) || (switchedFrom === "" && !turns().length ? draft.value : "");
       if (switchedFrom === "") {
         drafts.delete("");
         localStorage.removeItem(draftKey(""));

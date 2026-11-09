@@ -31,7 +31,8 @@ watch([toShow, sorted], () => {
   current.value = tab.id;
   toShow.value = null;
 });
-// Bumped when the Tabs dialog closes: a tab picked behind the dialog couldn't take the cursor then.
+// Bumped when the Tabs dialog closes (a tab picked behind the dialog couldn't take the cursor then)
+// and on a click on a tab, which may be the one already on show.
 const focusAsked = ref(0);
 // Sessions responding per tab, so a tab out of sight still shows it is working.
 const busy = reactive<Record<string, number>>({});
@@ -76,7 +77,7 @@ provide("onPreviousTab", onPreviousTab);
     <nav class="tabs">
       <span class="indicator" :class="busy[current] ? 'active' : highlighted[current] ? 'due' : ''"></span>
       <Tabs :tabs="sorted" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
-      <button v-for="tab in opened" :key="tab.id" class="tab" :class="{ selected: tab.id === current }" :title="`${tab.path} (${tab.host})`" @click="current = tab.id">
+      <button v-for="tab in opened" :key="tab.id" class="tab" :class="{ selected: tab.id === current }" :title="`${tab.path} (${tab.host})`" @click="current = tab.id; focusAsked++">
         <span v-if="busy[tab.id]" class="tab-busy" title="Responding">&#x25CF;</span>{{ tab.label }}
       </button>
       <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" title="Open or close the Files: a tree of the project's folder, and an editor" @click="toggle('files')">Files</button>

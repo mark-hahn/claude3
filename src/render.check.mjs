@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { AUTH_FAILED, imageNote, typedPrompt } from "../shared/types.ts";
 import { extraBlankLines, headingEnter } from "./blankLines.ts";
 import { cropRect } from "./cropRect.ts";
+import { keepOpen } from "./keepOpen.ts";
 import { pick } from "./pick.ts";
 import { answerText, renderMarkdown } from "./render.ts";
 import { byName, folderName, foldersBetween, nextTab, sameName } from "./tabList.ts";
@@ -11,6 +12,34 @@ import { fileActions, numberedName } from "../server/files.ts";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+
+// Always a session open: Clean lands before the card is made, a burst of events makes one card,
+// and a failed open doesn't jam the queue.
+{
+  const log = [];
+  let isOpen = false;
+  let fail = false;
+  let land;
+  const check = keepOpen(() => !isOpen, async () => {
+    if (fail) throw new Error("no answer");
+    log.push("open");
+    isOpen = true;
+  }, (error) => log.push(error.message));
+  check(new Promise((resolve) => (land = resolve)).then(() => log.push("cleaned")));
+  check();
+  const burst = check();
+  await new Promise((resolve) => setTimeout(resolve));
+  assert.deepEqual(log, [], "nothing opens before Clean has landed");
+  land();
+  await burst;
+  assert.deepEqual(log, ["cleaned", "open"]);
+  isOpen = false;
+  fail = true;
+  await check();
+  fail = false;
+  await check();
+  assert.deepEqual(log.slice(2), ["no answer", "open"]);
+}
 
 // The Files pane: a clash's index goes before the extension, and a picked folder opens down from the root.
 assert.equal(numberedName("new-file", 0), "new-file");

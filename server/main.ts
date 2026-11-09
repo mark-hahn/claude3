@@ -15,6 +15,7 @@
 //        stop | rename { name } | trash { trashed } | ctx -> { table }
 //        new { keep } -> { session } (an empty "New session"; sweeps other empty ones, as discard does)
 //        discard { keep } -> {} (drop every session with no turns, except the ids in keep)
+//        open -> { session } (for a page with none open: any empty card, or a new one; sweeps nothing)
 //        run -> { output } (the project's ./run, the prompt box's "r")
 //        runResult -> { done, code, output } (the last ./run's output so far and, when it's over, its exit code)
 //        deployNeeded -> { script, files } (project files changed since .deployed; see deployNeeded)
@@ -526,6 +527,14 @@ function discardEmpty(project: Project, keep: string[]): void {
   removeSessions(project, project.sessions.filter((session) => !session.turns.length && !keep.includes(session.id) && !runs.has(session.id)).map((session) => session.id));
 }
 
+function addSession(project: Project): ClaudeSession {
+  const session: ClaudeSession = { id: randomUUID(), name: "", createdAt: Date.now(), updatedAt: Date.now(), trashed: false, turns: [] };
+  project.sessions.unshift(session);
+  save(project);
+  sendSession(project, session);
+  return session;
+}
+
 function removeSessions(project: Project, ids: string[]): void {
   if (!ids.length) {
     return;
@@ -633,14 +642,12 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "new" || name === "discard") {
     discardEmpty(project, Array.isArray(body.keep) ? body.keep.map(String) : []);
-    if (name === "discard") {
-      return {};
-    }
-    const session: ClaudeSession = { id: randomUUID(), name: "", createdAt: Date.now(), updatedAt: Date.now(), trashed: false, turns: [] };
-    project.sessions.unshift(session);
-    save(project);
-    sendSession(project, session);
-    return { session };
+    return name === "discard" ? {} : { session: addSession(project) };
+  }
+  if (name === "open") {
+    // Unlike new it sweeps nothing and shares an empty card, or pages showing one project would
+    // sweep each other's card and answer by opening another, forever.
+    return { session: project.sessions.find((session) => !session.trashed && !session.turns.length && !runs.has(session.id)) ?? addSession(project) };
   }
   if (name === "clean") {
     for (const entry of project.sessions.filter((session) => !session.trashed)) {

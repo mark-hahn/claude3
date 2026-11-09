@@ -47,7 +47,7 @@ on the laptop, and talks to each backend directly.
   (new session +, Git; Clean, Trash; rename by long press, trash/restore, busy clocks; on the trash
   list Clean turns into a delete for good of the picked cards, picking in `src/pick.ts`), the divider
   drag (`--sidebar-width` on the root, shared by every tab, in localStorage), and passes the
-  selected session to the pane. Picking a tab focuses its prompt box (the `active` prop).
+  selected session to the pane. Picking a tab focuses its prompt box (the `active` prop), and so does a click on the tab already on show (`focusAsked`).
 - `src/components/Git.vue`: the Git button (label counts the changed files) and its `<dialog>`, a
   small VS Code Source Control: message, staged and changed files, Commit (= `add -A`, commit,
   push on the backend). "Describe changes" in its header (`describeChanges` action) sends the
@@ -133,9 +133,13 @@ on the laptop, and talks to each backend directly.
 - **New session.** "+" → `POST /api/new` makes an empty "New session" card and the
   pane opens it, as claude2 does. Empty sessions are scratch: "+", a card click, Clean and Trash
   sweep them (`discard`; the backend posts `removed`), sparing the one being opened and any
-  holding unsent text (`Pane.drafted`).
+  holding unsent text (`Pane.drafted`). The tab on show always has a session open: with none
+  (after Clean, trashing the last card, its session removed, first look at the tab), `ensureOpen`
+  asks `open`, which shares any empty card or makes one. `open` never sweeps, or two pages on one
+  project would sweep each other's card and open another, forever. `src/keepOpen.ts` queues it
+  behind Clean's or a trash's request, which would otherwise catch the new card (`npm test`).
 - **A prompt.** Ctrl+Enter → `POST /api/prompt` → `submitPrompt` (an empty sessionId, the pane's
-  draft after a trash or Clean, creates the session; a running session is stopped first unless the
+  draft in the moment before `ensureOpen` has a session or if it failed, creates the session; a running session is stopped first unless the
   prompt can follow up a background wait) → `runTurn` stores the turn, posts `session`, names the
   session on its first prompt, and runs the CLI. Text and status go out as `delta` every 80ms.
   The result settles the turn (`markAnswer` puts the answer mark in), saves, posts `session`.
@@ -261,6 +265,8 @@ on the laptop, and talks to each backend directly.
   `~/.local/bin`, where the CLI's installer puts it and where pm2/systemd shells leave it off.
 - Pane history elements are built by script, so they get no Vue scope attribute: the pane's and
   sidebar's styles are global, prefixed `.pane` / `.sidebar`.
+- Vue runs a `flush: "post"` watcher on a prop before that update's `v-show` hook, so a tab being
+  picked is still `display:none` there and can't take focus. Project's `focusPrompt` awaits `nextTick`.
 - Session objects are plain (not reactive) and mutated in place as text streams in; `version`
   tells Vue the shape changed. A delta goes to `Pane.applyDelta`, which refills only the growing
   box, as claude2 does.

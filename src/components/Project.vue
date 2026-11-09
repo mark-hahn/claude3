@@ -3,11 +3,12 @@
 // sessions come down the tab's event stream; picking a card shows that session in the pane, and
 // the others keep running and show their clocks here. Left out for now: search, management,
 // Close.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { typedPrompt, type ClaudeSession, type RunningStatus, type ServerEvent } from "../../shared/types.ts";
 import { authNeeded, listen, post } from "../api.ts";
 import { copy } from "../copy.ts";
+import { keepOpen } from "../keepOpen.ts";
 import { pick } from "../pick.ts";
 import Files from "./Files.vue";
 import Git from "./Git.vue";
@@ -28,7 +29,7 @@ const version = ref(0);
 const statuses = ref<Record<string, RunningStatus>>({});
 const ceilings = ref(0);
 const selectedKey = `claude3.session.${props.tab.id}`;
-// '' is the new-session draft: the pane is empty until its first prompt makes the session.
+// '' is the moment before ensureOpen has a session; a prompt sent then makes its own.
 const selectedId = ref(localStorage.getItem(selectedKey) ?? "");
 const showTrash = ref(false);
 // The trashed cards the trash list's delete button takes, and the card a shift-click runs from.
@@ -69,6 +70,7 @@ function setStatus(id: string, status: RunningStatus | null): void {
 
 function onEvent(event: ServerEvent): void {
   if (event.type === "state") {
+    loaded = true;
     sessions = event.sessions;
     statuses.value = event.statuses;
     if (selectedId.value && !sessions.some((session) => session.id === selectedId.value)) selectedId.value = "";
@@ -94,6 +96,7 @@ function onEvent(event: ServerEvent): void {
   } else if (event.type === "returned") {
     pane.value?.returnPrompt(event.sessionId, event.prompt, event.images);
   }
+  if (event.type === "state" || event.type === "removed") void ensureOpen();
 }
 
 function select(id: string): void {
@@ -105,31 +108,47 @@ function select(id: string): void {
 async function newSession(): Promise<void> {
   showTrash.value = false;
   try {
-    const { session } = await post<{ session: ClaudeSession }>(props.tab, "new", { keep: keepIds() });
-    if (!sessions.some((entry) => entry.id === session.id)) onEvent({ type: "session", session, status: null });
-    selectedId.value = session.id;
-    focusPrompt();
+    openCard((await post<{ session: ClaudeSession }>(props.tab, "new", { keep: keepIds() })).session);
   } catch (error) {
     report(error);
   }
 }
 
-function keepIds(keep = ""): string[] {
-  return [keep, ...(pane.value?.drafted() ?? [])].filter(Boolean);
-}
-function sweep(keep = ""): void {
-  if (sessions.some((session) => !session.turns.length)) void post(props.tab, "discard", { keep: keepIds(keep) }).catch(report);
+function openCard(session: ClaudeSession): void {
+  if (!sessions.some((entry) => entry.id === session.id)) onEvent({ type: "session", session, status: null });
+  selectedId.value = session.id;
+  focusPrompt();
 }
 
-// claude2's Clean: every session to the trash, the pane back to a new-session draft.
+// There is always a session open. Only the tab on show gets one, once its backend's list is in, so
+// tabs never looked at stay as they were. A failed open leaves the pane able to start a session
+// from its first prompt, so it is only logged.
+let loaded = false;
+const ensureOpen = keepOpen(
+  () => loaded && props.active && !selected.value,
+  async () => {
+    const { session } = await post<{ session: ClaudeSession }>(props.tab, "open", {});
+    if (!selected.value) openCard(session);
+  },
+  console.error,
+);
+
+function keepIds(...keep: string[]): string[] {
+  return [...keep, ...(pane.value?.drafted() ?? [])].filter(Boolean);
+}
+function sweep(...keep: string[]): void {
+  if (sessions.some((session) => !session.turns.length)) void post(props.tab, "discard", { keep: keepIds(...keep) }).catch(report);
+}
+
+// claude2's Clean: every session to the trash, then a new one opens.
 function clean(): void {
   sweep();
   selectedId.value = "";
-  void post(props.tab, "clean", {}).catch(report);
+  void ensureOpen(post(props.tab, "clean", {}).catch(report));
 }
 
 function toggleTrash(): void {
-  sweep();
+  sweep(selectedId.value);
   showTrash.value = !showTrash.value;
 }
 
@@ -141,7 +160,10 @@ function deletePicked(): void {
   void post(props.tab, "delete", { sessionIds: ids }).catch(report);
 }
 
-function focusPrompt(): void {
+// After the whole flush: even a post watcher runs before v-show has put its tab on show, and a
+// hidden box can't take focus.
+async function focusPrompt(): Promise<void> {
+  await nextTick();
   pane.value?.focusPrompt();
 }
 
@@ -164,14 +186,14 @@ function dragDivider(event: PointerEvent): void {
 }
 
 function trash(session: ClaudeSession, trashed: boolean): void {
-  sweep(session.turns.length ? "" : session.id);
   // Trashing the open card opens the one below it (or above, if it was the last).
   if (trashed && session.id === selectedId.value) {
     const list = visible.value;
     const at = list.findIndex((entry) => entry.id === session.id);
     selectedId.value = (list[at + 1] ?? list[at - 1])?.id ?? "";
   }
-  void post(props.tab, "trash", { sessionId: session.id, trashed }).catch(report);
+  sweep(selectedId.value, session.id);
+  void ensureOpen(post(props.tab, "trash", { sessionId: session.id, trashed }).catch(report));
 }
 
 function report(error: unknown): void {
@@ -235,10 +257,14 @@ watch(() => gitDirty.value || deployDue.value, (on) => emit("highlighted", on));
 const snipsShown = computed(() => props.side === "snips" && props.active);
 const snipsOpened = ref(false);
 watch(snipsShown, (shown) => { if (shown) snipsOpened.value = true; }, { immediate: true });
-// Picking a tab puts the cursor in its prompt box; post, so the tab is on show by then.
-watch(() => props.active, (active) => active && focusPrompt(), { flush: "post" });
-watch(() => props.side, (open) => !open && props.active && focusPrompt(), { flush: "post" });
-watch(() => props.focusAsked, () => props.active && focusPrompt(), { flush: "post" });
+// Picking a tab puts the cursor in its prompt box.
+watch(() => props.active, (active) => {
+  if (!active) return;
+  void focusPrompt();
+  void ensureOpen();
+});
+watch(() => props.side, (open) => !open && props.active && focusPrompt());
+watch(() => props.focusAsked, () => props.active && focusPrompt());
 
 let stopListening = (): void => undefined;
 onMounted(() => {
@@ -261,7 +287,7 @@ onBeforeUnmount(() => stopListening());
         </div>
         <div class="row">
           <button v-if="showTrash" class="delete" title="Permanently delete the selected trashed sessions. Ctrl-click or shift-click a card to select more" :disabled="!picked.size" @click="deletePicked">&#x1F5D1;{{ picked.size ? ` ${picked.size}` : "" }}</button>
-          <button v-else class="clean" title="Move every session to the trash" :disabled="!counts.active" @click="clean">Clean</button>
+          <button v-else class="clean" title="Move every session to the trash" :disabled="!visible.some((session) => session.turns.length)" @click="clean">Clean</button>
           <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="toggleTrash">Trash</button>
           <span class="counts" title="Active sessions / trashed sessions">{{ counts.active }}/{{ counts.trashed }}</span>
         </div>
