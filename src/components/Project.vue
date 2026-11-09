@@ -257,7 +257,7 @@ watch(() => !showTrash.value && selected.value?.trashed, (stale) => {
 // Only a trashed card on show can stay picked, so the delete button never reaches one out of sight.
 watch(visible, (list) => (picked.value = new Set(list.filter((session) => session.trashed && picked.value.has(session.id)).map((session) => session.id))));
 watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => status.active).length));
-// The Git and Run buttons' highlights, for the indicator in App's tab strip.
+// The Git and Run buttons' highlights, for the dot on this project's tab in App's tab strip.
 const gitDirty = ref(false);
 const deployDue = ref(false);
 watch(() => gitDirty.value || deployDue.value, (on) => emit("highlighted", on));

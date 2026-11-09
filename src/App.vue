@@ -75,10 +75,9 @@ provide("onPreviousTab", onPreviousTab);
 <template>
   <div class="app">
     <nav class="tabs">
-      <span class="indicator" :class="busy[current] ? 'active' : highlighted[current] ? 'due' : ''"></span>
       <Tabs :tabs="sorted" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
       <button v-for="tab in opened" :key="tab.id" class="tab" :class="{ selected: tab.id === current }" :title="`${tab.path} (${tab.host})`" @click="current = tab.id; focusAsked++">
-        <span v-if="busy[tab.id]" class="tab-busy" title="Responding">&#x25CF;</span>{{ tab.label }}
+        <span v-if="busy[tab.id] || highlighted[tab.id]" class="tab-dot" :class="{ due: !busy[tab.id] }" :title="busy[tab.id] ? 'Responding' : 'Git or Run is highlighted'">&#x25CF;</span>{{ tab.label }}
       </button>
       <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" title="Open or close the Files: a tree of the project's folder, and an editor" @click="toggle('files')">Files</button>
       <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" :disabled="!currentTab" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
@@ -96,12 +95,10 @@ provide("onPreviousTab", onPreviousTab);
 .app > .project.offstage { visibility: hidden; }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .tabs .tab { min-height: 0; padding: 3px 12px; }
-/* Buttons are about 28px high. With the row's 10px padding and 6px gap, 12px each side: what the Tabs button has on its right. */
-.tabs .indicator { align-self: center; width: 14.08px; height: 14.08px; margin: 0 6px 0 2px; border: 1px solid #000; border-radius: 50%; background: #fff; }
-.tabs .indicator.due { background: #fbd9d9; border-color: #e4a7a7; }
-.tabs .indicator.active { background: lightgreen; border-color: lightgreen; }
 .tabs .tab.selected { background: #fbf3c4; border-color: #ddd08a; }
 .tabs .files-toggle { margin-left: auto; }
 .tabs .files-toggle.active, .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
-.tabs .tab-busy { color: #1a8f2e; margin-right: 6px; }
+/* 20% over the tab's 14px. The line-height keeps the bigger glyph from making its tab taller. */
+.tabs .tab-dot { color: #1a8f2e; margin-right: 6px; font-size: 16.8px; line-height: 1; }
+.tabs .tab-dot.due { color: #f08080; }
 </style>

@@ -31,9 +31,9 @@ on the laptop, and talks to each backend directly.
   closed ones too: all in one grid cell, those not on show `visibility:hidden` (`.offstage`), never `display:none` (see Gotchas). The Files, Snips and
   gear (Settings) toggles are here, at the row's right end, acting on the tab on show; they share one
   column, each tab with its own state (`sides[id]`: "", "files", "file", "snips" or "settings"), so it is as it was left when the tab comes back.
-  The circle left of the Tabs button is the tab on show's state: green with a session active, else
-  the Run button's highlight colour when its Git or Run button is highlighted (`dirty` and
-  `deployDue` come up through Project's `highlighted`), else hollow.
+  Each tab's label has a dot: green with a session active, else light red when its Git or Run button
+  is highlighted (`dirty` and `deployDue` come up through Project's `highlighted`), else none. Those
+  two are only re-read while the tab is on show, so a tab out of sight has the last value it saw.
 - `src/components/FolderPicker.vue`: the VS Code-style folder picker `<dialog>` on any host, fed by
   the backend's `folders`; used by the Tabs dialog and the Files pane. Its styles are Tabs.vue's, unscoped for that.
 - `src/components/Files.vue`: the Files column: header rows and a tree of the tab's host, with
