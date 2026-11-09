@@ -7,6 +7,7 @@ import "monaco-editor/features/register.all";
 import "monaco-editor/editor/browser/coreCommands";
 import "monaco-editor/languages/definitions/markdown/register";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
+import { headingEnter } from "./blankLines.ts";
 import "./monaco.css";
 
 export { monaco };
@@ -200,13 +201,20 @@ function untabLine(line: string): LineStart {
 }
 
 // Enter at each caret, with the spaces after the caret dropped so the text it takes along keeps
-// exactly one after the dash.
+// exactly one after the dash. At the end of a heading, headingEnter says what happens instead. Its
+// edit starts at the line's first column, so a second caret on that line would overlap it.
 function enterLines(editor: Editor): void {
   const model = editor.getModel()!;
-  const edits = editor.getSelections()!.map((s) => {
+  const carets = editor.getSelections()!;
+  const edits = carets.map((s) => {
+    const n = s.startLineNumber;
+    const line = model.getLineContent(n);
     const rest = model.getLineContent(s.endLineNumber).slice(s.endColumn - 1);
     const spaces = rest.match(/^ */)![0].length;
-    return { range: new monaco.Range(s.startLineNumber, s.startColumn, s.endLineNumber, s.endColumn + spaces), text: "\n" + enterStart(model.getLineContent(s.startLineNumber), rest.slice(spaces)) };
+    const alone = carets.every((c) => c === s || c.endLineNumber < n || c.startLineNumber > n);
+    const heading = alone ? headingEnter(line.slice(0, s.startColumn - 1), rest.slice(spaces), n > 1 ? model.getLineContent(n - 1) : "") : null;
+    if (heading !== null) return { range: new monaco.Range(n, 1, s.endLineNumber, s.endColumn + spaces), text: heading };
+    return { range: new monaco.Range(n, s.startColumn, s.endLineNumber, s.endColumn + spaces), text: "\n" + enterStart(line, rest.slice(spaces)) };
   });
   typeEdits(editor, edits);
 }

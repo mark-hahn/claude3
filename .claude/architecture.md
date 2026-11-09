@@ -78,7 +78,9 @@ on the laptop, and talks to each backend directly.
   `monacoStyle`), shared by the prompt box and the Snips: markdown only, the worker through Vite's
   `?worker`, the black theme, the user's VS Code keys (Ctrl-D delete line, ...), the line dots in
   the gutter, the list keys (Tab, Shift-Tab, Enter, Backspace, #) and untabbing. claude2's F1
-  unbinding is left out (it was for VS Code).
+  unbinding is left out (it was for VS Code). Unlike claude2, Enter at the end of a heading (white space and a `- ` before
+  its # come off) also opens a blank line above it and starts the item at the left edge (`headingEnter` in
+  `src/blankLines.ts`, checked by `npm test`).
 - `src/render.ts`: response text to box: answer text, tool groups and details, the markdown
   renderer. `src/render.check.mjs` is its self-check (`npm test`).
 - `src/api.ts`: `post` (a project's backend), `postHost` (a backend, no project needed), and the
@@ -239,6 +241,7 @@ on the laptop, and talks to each backend directly.
   never saved one there) keeps them so: nothing typed in claude3 may replace claude2's copy unseen.
 - Monaco's `addCommand` keys are page-wide and every tab has its own editor, so editor keys are
   `addAction`s. Monaco is about 4MB of the built page.
-- Every page element follows CLAUDE.md's display rules: font sizes 14–18px only, text solid black,
-  Monaco's token colours included (`monaco.css`). A disabled button shows by its dashed grey
+- Every page element follows CLAUDE.md's display rules: font sizes 14–18px only, text solid black
+  or a colour, never grey. Monaco's markdown keeps the stock light theme's token colours (blue
+  headings), and its one grey token is pinned to black in `monaco.ts`. A disabled button shows by its dashed grey
   border, a paused quota age by its background; only status icons (tab dot, card clocks) keep colour.

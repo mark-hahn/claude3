@@ -2,7 +2,7 @@
 // The ports un-doubled every backslash of claude2's template-literal source, so a missed one shows here.
 import assert from "node:assert/strict";
 import { imageNote, typedPrompt } from "../shared/types.ts";
-import { extraBlankLines } from "./blankLines.ts";
+import { extraBlankLines, headingEnter } from "./blankLines.ts";
 import { cropRect } from "./cropRect.ts";
 import { pick } from "./pick.ts";
 import { answerText, renderMarkdown } from "./render.ts";
@@ -85,8 +85,22 @@ assert.deepEqual([...picked].sort(), ["b", "c", "d"]);
 assert.equal(pick(picked, ids, "a", "gone", shift), "a");
 assert.deepEqual([...picked], ["a"]);
 
+// Enter at the end of a heading: a blank line above unless one is there, an item at the left edge.
+assert.equal(headingEnter("## modes", "", "- a"), "\n## modes\n- ");
+assert.equal(headingEnter("  # x", "", "  "), "# x\n- ");
+assert.equal(headingEnter("# top", "", ""), "# top\n- ");
+// White space and a "- " before the # come off; a dash later in the heading stays.
+assert.equal(headingEnter("- ## modes", "", "- a"), "\n## modes\n- ");
+assert.equal(headingEnter("  -   # x", "", ""), "# x\n- ");
+assert.equal(headingEnter("# a - b", "", ""), "# a - b\n- ");
+assert.equal(headingEnter("- a # x", "", "b"), null);
+// Not at the end of the line, or no heading before the caret.
+assert.equal(headingEnter("# x", "y", "a"), null);
+assert.equal(headingEnter("", "", "a"), null);
+assert.equal(headingEnter("a # x", "", "a"), null);
+
 // The Snips' blank lines after a removal: only those at or beside it come down to one.
-const extras = (lines, removedAt) => extraBlankLines(lines.length, (line) => !lines[line - 1].trim(), removedAt);
+const extras =(lines, removedAt) => extraBlankLines(lines.length, (line) => !lines[line - 1].trim(), removedAt);
 assert.deepEqual(extras(["a", "", "", "", "b"], [3]), [3, 4]);
 assert.deepEqual(extras(["a", "", "", "b", "", "", "c"], [2]), [3]);
 assert.deepEqual(extras(["a", "", "b"], [2]), []);

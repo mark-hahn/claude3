@@ -2,8 +2,6 @@
 /* The line dots, in Monaco's line gutter on the first row of each real line. */
 .line-dot { cursor: pointer; }
 .line-dot::after { content: ''; position: absolute; left: 2px; top: 50%; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%; background: #000; }
-/* All text black, whatever the markdown token; bold and italic still show. */
-.monaco-editor [class*="mtk"] { color: #000 !important; }
 /* Monaco draws its widgets' text at 11-13px; these are the ones the editor can show. */
 .monaco-editor .find-widget > .find-part, .monaco-editor .find-widget > .replace-part, .monaco-editor .find-widget .monaco-findInput .input, .monaco-findInput .monaco-inputbox,
 .quick-input-widget, .context-view.fixed, .monaco-hover, .hover-row.status-bar, .monaco-keybinding > .monaco-keybinding-key, .monaco-editor-overlaymessage .message { font-size: 14px !important; }
