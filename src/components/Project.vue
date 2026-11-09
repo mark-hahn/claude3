@@ -200,13 +200,13 @@ function report(error: unknown): void {
   window.alert(error instanceof Error ? error.message : String(error));
 }
 
-// A long press renames; a plain click opens; alt-click copies the name.
+// A long press renames; a plain click opens; alt-click copies the name. On the trash list every
+// click opens the card, whatever the modifier; alt there also copies and leaves the picks alone.
 let pressTimer = 0;
 let renamed = false;
 function press(session: ClaudeSession, event: PointerEvent): void {
-  if (event.altKey) return;
-  renamed = editingId.value === session.id;
-  if (renamed) return;
+  renamed = !event.altKey && editingId.value === session.id;
+  if (renamed || event.altKey) return;
   window.clearTimeout(pressTimer);
   pressTimer = window.setTimeout(() => {
     renamed = true;
@@ -218,13 +218,13 @@ function unpress(): void {
   window.clearTimeout(pressTimer);
 }
 function clickCard(session: ClaudeSession, event: MouseEvent): void {
-  if (event.altKey) return copy(session.name || "", event.currentTarget as HTMLElement);
+  if (event.altKey) {
+    copy(session.name || "", event.currentTarget as HTMLElement);
+    if (!showTrash.value) return;
+  }
   sweep(session.id);
   if (renamed) return;
-  if (showTrash.value) {
-    pickAnchor = pick(picked.value, visible.value.map((entry) => entry.id), session.id, pickAnchor, event);
-    if (event.ctrlKey || event.shiftKey) return;
-  }
+  if (showTrash.value && !event.altKey) pickAnchor = pick(picked.value, visible.value.map((entry) => entry.id), session.id, pickAnchor, event);
   selectedId.value = session.id;
   void focusPrompt();
 }
@@ -254,8 +254,9 @@ watch(() => !showTrash.value && selected.value?.trashed, (stale) => {
   selectedId.value = visible.value[0]?.id ?? "";
   void ensureOpen();
 });
-// Only a trashed card on show can stay picked, so the delete button never reaches one out of sight.
-watch(visible, (list) => (picked.value = new Set(list.filter((session) => session.trashed && picked.value.has(session.id)).map((session) => session.id))));
+// Picks outlive leaving the trash list; only a card restored or deleted drops out. The delete button
+// exists only on that list, where every trashed card is on show, so it never reaches one out of sight.
+watch(visible, () => (picked.value = new Set(sessions.filter((session) => session.trashed && picked.value.has(session.id)).map((session) => session.id))));
 watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => status.active).length));
 // The Git and Run buttons' highlights, for the dot on this project's tab in App's tab strip.
 const gitDirty = ref(false);
