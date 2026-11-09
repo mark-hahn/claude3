@@ -89,6 +89,15 @@ if (fs.existsSync("/dev/shm")) {
   assert.ok(!fs.existsSync(landed), "the original goes too");
   fs.rmSync(otherDisk, { recursive: true });
 }
+// The editor's tail mode: a change is answered at once with its text; a missing file is refused.
+const tailed = path.join(into, "tailed.txt");
+fs.writeFileSync(tailed, "one");
+const waitStarted = Date.now();
+const waited = fileActions.waitFile({ path: tailed, known: fs.statSync(tailed).mtimeMs });
+setTimeout(() => fs.appendFileSync(tailed, " two"), 100);
+assert.equal((await waited).text, "one two");
+assert.ok(Date.now() - waitStarted < 1500, "a change doesn't wait out the 2s");
+await assert.rejects(async () => fileActions.waitFile({ path: path.join(into, "absent"), known: 0 }), /ENOENT/);
 fs.rmSync(moves, { recursive: true });
 
 // The CLI's own words for a login that's gone send the prompt back; any other failure keeps its turn.

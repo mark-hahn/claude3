@@ -3,7 +3,9 @@
 // box's and Snips' custom keys only Ctrl-D, uncoloured, wrapped, their line dots in place of line numbers, no minimap. Live as Snips are: saved half a second after the
 // typing stops and at once on close, and read again when the file changes on disk. A save is
 // refused if the file changed since it was read, and then nothing more is saved until Reload.
-// ponytail: asks every 2s, not a file watch; change it if that lag ever matters.
+// With the file's last line in view it is in tail mode: changes arrive as they happen and the view
+// stays at the bottom. Nothing else differs, so an unchanging file looks the same in and out of it.
+// ponytail: out of tail mode asks every 2s, not a file watch; change it if that lag ever matters.
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
@@ -22,6 +24,10 @@ let dirty = false;
 let saving = false;
 let saveTimer = 0;
 let poller = 0;
+let tail = false;
+// While text from disk goes in, whose scrolling isn't the user's.
+let settingText = false;
+let following = false;
 // One save at a time: each needs the mtime the one before it left.
 let saves: Promise<void> = Promise.resolve();
 
@@ -67,25 +73,47 @@ function show(reply: { mtime: number; text?: string | null }): void {
     note.value = "This file can no longer be edited here.";
   } else if (reply.text !== undefined && editor && reply.text !== editor.getValue()) {
     const view = editor.saveViewState();
+    settingText = true;
     editor.setValue(reply.text);
     editor.restoreViewState(view);
+    if (tail) editor.setScrollTop(editor.getContentHeight() - editor.getLayoutInfo().height);
+    settingText = false;
   }
 }
 
-async function poll(): Promise<void> {
-  if (document.hidden || saveTimer || saving || refused.value) return;
-  // A save that failed is tried again.
-  if (dirty) return flush();
+// True when the backend answered; false when nothing was asked or it failed.
+async function poll(action = "readFile"): Promise<boolean> {
+  if (!editor || document.hidden || saveTimer || saving || refused.value) return false;
+  if (dirty) {
+    // A save that failed is tried again.
+    flush();
+    return false;
+  }
   const asked = edits;
   try {
-    const reply = await post<{ mtime: number; text?: string | null }>(props.tab, "readFile", { path: props.file.path, known: mtime });
-    if (asked !== edits || saving || refused.value) return;
-    note.value = "";
-    show(reply);
+    const reply = await post<{ mtime: number; text?: string | null }>(props.tab, action, { path: props.file.path, known: mtime });
+    if (asked === edits && !saving && !refused.value) {
+      note.value = "";
+      show(reply);
+    }
+    return true;
   } catch (error) {
     note.value = messageOf(error);
+    return false;
   }
 }
+
+// Tail mode: each wait the backend answers is followed at once by the next. Whatever makes poll
+// say false (typing, a hidden page, a failure) ends this, and the 2s tick starts it again.
+async function follow(): Promise<void> {
+  if (following) return;
+  following = true;
+  while (tail && (await poll("waitFile")));
+  following = false;
+}
+
+// With scrollBeyondLastLine off, the scrollbar's end, and exactly where a change puts the view.
+const atBottom =(): boolean => editor!.getScrollTop() + editor!.getLayoutInfo().height >= editor!.getContentHeight() - 2;
 
 async function reload(): Promise<void> {
   try {
@@ -100,14 +128,22 @@ async function reload(): Promise<void> {
 }
 
 onMounted(() => {
-  editor = monaco.editor.create(host.value!, { value: props.file.text, language: "plaintext", theme: "claude2", automaticLayout: true, fontSize: 14, minimap: { enabled: false }, lineNumbers: "off", wordWrap: "on", lineDecorationsWidth: 14, glyphMargin: false, folding: false, editContext: false });
+  editor = monaco.editor.create(host.value!, { value: props.file.text, language: "plaintext", theme: "claude2", automaticLayout: true, fontSize: 14, minimap: { enabled: false }, lineNumbers: "off", wordWrap: "on", scrollBeyondLastLine: false, lineDecorationsWidth: 14, glyphMargin: false, folding: false, editContext: false });
   addLineDots(editor);
   addWheelZoom(editor, "claude3.fileFontSize");
   editor.createContextKey("stockEditor", true);
   // A read's setValue is an edit too, but not typing.
   editor.onDidChangeModelContent((event) => !event.isFlush && typed());
   editor.focus();
-  poller = window.setInterval(() => void poll(), 2000);
+  // Only the scroll position moving decides this, so a column resize doesn't.
+  editor.onDidScrollChange((event) => {
+    if (!event.scrollTopChanged || settingText) return;
+    tail = atBottom();
+    void follow();
+  });
+  tail = atBottom();
+  void follow();
+  poller = window.setInterval(() => void (tail ? follow() : poll()), 2000);
 });
 onBeforeUnmount(() => {
   window.clearInterval(poller);

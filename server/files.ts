@@ -113,6 +113,35 @@ async function readText(file: string, known: number): Promise<{ mtime: number; t
   }
 }
 
+// The editor's tail mode: answers once the file differs from the version known, or after 2s, so
+// where a watch can't see a change (Windows writing a file WSL reads under /mnt/c) it is no worse
+// than the polling. A new watch each time: a file replaced by rename leaves the old one on a dead inode.
+// ponytail: answers with the whole file; send only what was appended if huge busy logs ever matter.
+async function waitForChange(file: string, known: number): Promise<{ mtime: number; text?: string | null }> {
+  await new Promise<void>((resolve) => {
+    let watcher: fs.FSWatcher | undefined;
+    let timer = setTimeout(() => {
+      watcher?.close();
+      resolve();
+    }, 2000);
+    // The first event ends the watch, so a burst of writes comes back as one answer.
+    const changed = (): void => {
+      watcher?.close();
+      clearTimeout(timer);
+      timer = setTimeout(resolve, 100);
+    };
+    try {
+      // The listener is needed: Windows reports a deleted file as an error event, which would end the backend.
+      watcher = fs.watch(file, changed).on("error", () => undefined);
+    } catch {
+      // No watch to be had: the 2s stands, and a missing file is found by the stat below.
+    }
+    // A change made before the watch began sends no event.
+    void fs.promises.stat(file).then((found) => found.mtimeMs !== known && changed(), changed);
+  });
+  return readText(file, known);
+}
+
 // Refused unless the file is still the version the editor read, so a change made meanwhile (a
 // Claude session, most likely) isn't overwritten unseen.
 async function saveText(file: string, text: string, mtime: number): Promise<{ mtime?: number; conflict?: boolean }> {
@@ -252,6 +281,7 @@ export const fileActions: Record<string, (body: Record<string, unknown>) => Prom
   },
   findFile: (body) => findStep(absolute(body.root), String(body.text ?? ""), String(body.after ?? ""), body.backward === true, body.nodeModules === true),
   readFile: (body) => readText(absolute(body.path), Number(body.known)),
+  waitFile: (body) => waitForChange(absolute(body.path), Number(body.known)),
   saveFile: (body) => saveText(absolute(body.path), String(body.text ?? ""), Number(body.mtime)),
   newFile: async (body) => {
     const target = await freePath(absolute(body.folder), "new-file");

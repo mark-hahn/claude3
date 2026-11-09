@@ -11,7 +11,7 @@ import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, typedPrompt, type ClaudeSessio
 import { post } from "../api.ts";
 import { cropRect } from "../cropRect.ts";
 import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
-import { copy } from "../copy.ts";
+import { copy, copyCodeBlock } from "../copy.ts";
 import { answerText, fillBox, renderMarkdown, withoutDetails } from "../render.ts";
 import { loadWaiting, saveWaiting, type Waiting } from "../waitingImages.ts";
 
@@ -1129,15 +1129,6 @@ watch(() => props.session?.trashed, lockPrompt);
 
 let ticker = 0;
 let resize: ResizeObserver | null = null;
-// Alt-click in a fenced code block copies just that block. Capture phase, so it wins over every
-// other alt-click (the box's whole-text copy included).
-function copyCodeBlock(event: MouseEvent): void {
-  const block = event.altKey ? (event.target as HTMLElement).closest("pre") : null;
-  if (!block) return;
-  event.stopPropagation();
-  event.preventDefault();
-  copy(block.textContent ?? "", block);
-}
 function closeCtxOutside(event: MouseEvent): void {
   const pop = ctxPopEl.value;
   if (pop && !pop.hidden && !pop.contains(event.target as Node) && !ctxButtonEl.value?.contains(event.target as Node)) pop.hidden = true;

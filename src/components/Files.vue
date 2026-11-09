@@ -6,7 +6,7 @@ let cut: { tab: Tab; path: string; clip: string } | null = null;
 <script setup lang="ts">
 // The Files column, in the Snips' place: a VS Code-style tree on the tab's host or, in file mode,
 // one file in FileEditor. Click a folder to open it, double-click to make it the root; double-click
-// a file to edit it; alt-click copies the path. One row can be selected, remembered per root: a
+// a file to edit it, or ctrl-double-click a .md to read it rendered; alt-click copies the path. One row can be selected, remembered per root: a
 // click on a file or a ctrl-click on anything toggles it, and the keys act on it (keyDown).
 // Files dragged from Explorer land on the folder under them. The header's path row stands for the
 // root folder, which has no row of its own, for drop.
@@ -16,7 +16,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } 
 import type { HostName, Tab } from "../../shared/config.ts";
 import type { FileEntry } from "../../shared/types.ts";
 import { post, postHost, upload } from "../api.ts";
-import { copy } from "../copy.ts";
+import { copy, copyCodeBlock } from "../copy.ts";
+import { renderMarkdown } from "../render.ts";
 import { foldersBetween, sameName } from "../tabList.ts";
 import FileEditor from "./FileEditor.vue";
 import FolderPicker from "./FolderPicker.vue";
@@ -43,7 +44,8 @@ function select(path: string): void {
 
 const note = ref("");
 const listProblem = ref("");
-const file = ref<{ path: string; text: string; mtime: number } | null>(null);
+// rendered: shown as markdown, read-only, instead of in the editor.
+const file = ref<{ path: string; text: string; mtime: number; rendered: boolean } | null>(null);
 // The row a clipboard or drop job is running on, and the folder a drag is over.
 const working = ref("");
 const dragTarget = ref("");
@@ -271,23 +273,41 @@ function keyDown(event: KeyboardEvent): void {
   event.preventDefault();
 }
 
-async function openRow(row: Row): Promise<void> {
+async function openRow(row: Row, rendered: boolean): Promise<void> {
   note.value = "";
   try {
     const reply = await post<{ mtime: number; text: string | null }>(props.tab, "readFile", { path: row.path });
     if (reply.text === null) return;
-    file.value = { path: row.path, text: reply.text, mtime: reply.mtime };
+    file.value = { path: row.path, text: reply.text, mtime: reply.mtime, rendered };
     emit("openFile");
   } catch (problem) {
     note.value = messageOf(problem);
   }
 }
 
+// The rendered view follows the file, as the editor does. An unchanged file answers with no text.
+// One request at a time, or a backend that stopped answering would use up the browser's connections to it.
+let rereading = false;
+async function rereadRendered(): Promise<void> {
+  if (rereading) return;
+  rereading = true;
+  const shown = file.value!;
+  try {
+    const reply = await post<{ mtime: number; text?: string | null }>(props.tab, "readFile", { path: shown.path, known: shown.mtime });
+    listProblem.value = "";
+    if (typeof reply.text === "string" && file.value === shown) file.value = { ...shown, text: reply.text, mtime: reply.mtime };
+  } catch (problem) {
+    listProblem.value = messageOf(problem);
+  }
+  rereading = false;
+}
+
 function doubleClickRow(row: Row, event: MouseEvent): void {
-  if (event.ctrlKey || event.altKey || event.shiftKey) return;
+  const rendered = event.ctrlKey && !row.dir && /\.md$/i.test(row.name);
+  if ((event.ctrlKey && !rendered) || event.altKey || event.shiftKey) return;
   select(row.path);
   if (row.dir) void setRoots([...roots.value, row.path]);
-  else void openRow(row);
+  else void openRow(row, rendered);
 }
 
 function startRename(row: Row): void {
@@ -350,14 +370,23 @@ watch(() => props.fileMode, async (editing) => {
 onMounted(() => {
   void refresh();
   treeArea.value?.focus();
-  poller = window.setInterval(() => !document.hidden && !props.fileMode && void refresh(), 2000);
+  poller = window.setInterval(() => {
+    if (document.hidden) return;
+    if (!props.fileMode) void refresh();
+    else if (file.value?.rendered) void rereadRendered();
+  }, 2000);
 });
 onBeforeUnmount(() => window.clearInterval(poller));
 </script>
 
 <template>
   <div class="files" @dragover.prevent="dragOver" @dragleave="dragLeave" @drop.prevent="drop">
-    <FileEditor v-if="fileMode && file" :tab="tab" :file="file" />
+    <div v-if="fileMode && file?.rendered && listProblem" class="files-note">{{ listProblem }}</div>
+    <!-- Inside a .pane for Pane.vue's global markdown styles. -->
+    <div v-if="fileMode && file?.rendered" class="pane files-rendered" @click.capture="copyCodeBlock">
+      <div class="response markdown files-rendered-text" v-html="renderMarkdown(file.text)"></div>
+    </div>
+    <FileEditor v-else-if="fileMode && file" :tab="tab" :file="file" />
     <div v-show="!fileMode" ref="treeArea" class="files-mode" tabindex="-1" @keydown="keyDown">
       <div class="files-bar">
         <button title="Back to the previous root" aria-label="Back" :disabled="!roots.length" @click="goBack">
@@ -400,6 +429,8 @@ onBeforeUnmount(() => window.clearInterval(poller));
 
 <style scoped>
 .files { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-left: 1px solid var(--border); background: var(--page); }
+.files-rendered { flex: 1; min-height: 0; }
+.files-rendered-text { overflow-y: auto; }
 .files-mode { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; outline: none; }
 .files-bar { flex: none; display: flex; align-items: center; gap: 6px; }
 .files-bar button { min-height: 0; padding: 3px 10px; }
