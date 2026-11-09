@@ -41,8 +41,8 @@ on the laptop, and talks to each backend directly.
 - `src/components/Tabs.vue`: the row's Tabs button and its `<dialog>`: host, Path (the folder picker), name
   and Create above the list of every project, where a click opens or closes one, a hold renames and
   ctrl-click deletes. It keeps no copy of the list: changes go to the backend and come back as a
-  `projects` event. The dialog stays open after Create or opening a project, with that project's
-  tab on show behind it; closing the dialog puts the cursor in the prompt box of the tab on show (`focusAsked`).
+  `projects` event. The dialog stays open after Create, with that project's tab on show behind it,
+  and closes when a click opens a project (a failed open stays, showing its error); closing the dialog puts the cursor in the prompt box of the tab on show (`focusAsked`).
   The Files bar's Prj opens it with host, path and name filled in from the selected folder (`openWith`, reached through App's `newProjectAt` provide).
 - `src/components/Project.vue`: one tab. Listens for its project's events, holds the session list, the sidebar
   (new session +, Git; Clean, Trash; rename by long press, trash/restore, busy clocks; on the trash

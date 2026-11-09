@@ -97,7 +97,11 @@ function clickName(tab: Tab, event: MouseEvent): void {
   if (held) return;
   if (event.ctrlKey) return remove(tab);
   const open = !tab.open;
-  attempt(post(tab, "openProject", { open }).then(() => open && emit("show", tab.host, tab.path)));
+  attempt(post(tab, "openProject", { open }).then(() => {
+    if (!open) return;
+    emit("show", tab.host, tab.path);
+    dialog.value?.close();
+  }));
 }
 
 // ponytail: the project's unsent drafts and pictures stay in this browser, unreachable; clear them if storage ever fills.
