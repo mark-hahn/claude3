@@ -127,7 +127,7 @@ function onMessageKey(event: KeyboardEvent): void {
       <div class="git-title">Source Control: {{ tab.path }}</div>
       <button class="git-describe" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "Describing…" : "Describe changes" }}</button>
     </div>
-    <textarea v-model="message" class="git-message" rows="3" spellcheck="false" autofocus :readonly="describing" placeholder="Message (Ctrl+Enter commits and pushes)" @keydown="onMessageKey"></textarea>
+    <textarea v-model="message" class="git-message" rows="3" spellcheck="false" autofocus :readonly="describing" @keydown="onMessageKey"></textarea>
     <div v-if="failure" class="git-error">{{ failure }}</div>
     <div v-if="error" class="git-error">{{ error }}</div>
     <div class="git-files">
@@ -160,7 +160,6 @@ function onMessageKey(event: KeyboardEvent): void {
 .git-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .git-describe { flex: none; }
 .git-message { resize: vertical; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--ink); font: inherit; }
-.git-message::placeholder { color: var(--ink); opacity: 1; }
 .git-error { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 6px; padding: 4px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .git-files { overflow: auto; min-height: 0; }
 .git-group { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; font-weight: 600; }
