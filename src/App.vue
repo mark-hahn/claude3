@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// The tab strip. Every project's Project stays mounted (v-show), closed ones too, so its events and
-// its pane's state carry on while it is out of sight.
+// The tab strip. Every project's Project stays mounted and laid out, closed ones too, so its events
+// and everything on its screen carry on while it is out of sight.
 import { computed, provide, reactive, ref, watch, watchEffect } from "vue";
 import { FIRST_TABS, type Tab } from "../shared/config.ts";
 import { connect } from "./api.ts";
@@ -39,11 +39,12 @@ const busy = reactive<Record<string, number>>({});
 // Per tab: its Git or Run button is highlighted.
 const highlighted = reactive<Record<string, boolean>>({});
 // The Files, Snips and Settings share the column right of the pane, one at a time: "" (closed),
-// "files" (the tree), "file" (its editor), "snips" or "settings". One toggle each here, for every
-// tab; the tab on show draws the column, and picking a tab closes it, as if it were a tab of its
-// own. The toggle's name being "files", the Files button takes the editor back to the tree.
-const side = ref("");
-const toggle = (name: string): void => void (side.value = side.value === name ? "" : name);
+// "files" (the tree), "file" (its editor), "snips" or "settings". Each tab has its own, and one
+// toggle each here acts on the tab on show. The toggle's name being "files", the Files button takes
+// the editor back to the tree.
+const sides = reactive<Record<string, string>>({});
+const side = computed(() => sides[current.value] ?? "");
+const toggle = (name: string): void => void (sides[current.value] = side.value === name ? "" : name);
 // The sidebar width every tab shares; Project's divider drag sets it.
 document.documentElement.style.setProperty("--sidebar-width", `${Number(localStorage.getItem("claude3.sidebarWidth")) || 300}px`);
 
@@ -52,7 +53,6 @@ document.documentElement.style.setProperty("--sidebar-width", `${Number(localSto
 let previous = "";
 watch(current, (id, old) => {
   previous = old ?? previous;
-  side.value = "";
   localStorage.setItem("claude3.tab", id);
 }, { immediate: true });
 watchEffect(() => (document.title = currentTab.value ? `${currentTab.value.label} - claude3` : "claude3"));
@@ -84,12 +84,16 @@ provide("onPreviousTab", onPreviousTab);
       <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" :disabled="!currentTab" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
       <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" :disabled="!currentTab" title="Open or close the Settings: quotas" aria-label="Settings" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
-    <Project v-for="tab in sorted" v-show="tab.id === current" :key="tab.id" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" :side="side" :focus-asked="focusAsked" @close-side="side = ''" @open-file="side = 'file'" />
+    <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" />
   </div>
 </template>
 
 <style>
-.app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
+/* Every project in the one cell, those not on show only invisible. display:none (v-show) would
+   lose their scroll positions and have their layout code measure 0x0. */
+.app > .project { grid-area: 2 / 1; }
+.app > .project.offstage { visibility: hidden; }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .tabs .tab { min-height: 0; padding: 3px 12px; }
 /* Buttons are about 28px high. With the row's 10px padding and 6px gap, 12px each side: what the Tabs button has on its right. */

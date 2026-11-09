@@ -2,12 +2,13 @@
 // claude2's management pane, in the column the Snips use. Only its Quotas tab so far, ported from
 // claude2's quotaHtml (webviews.ts) nearly verbatim: the graphs are built by script, as there, so
 // the styles are global, prefixed `.settings`. Data comes from the tab's backend (server/quota.ts).
-// The script uses element ids: only the tab on show draws this pane, so there is one at a time.
-import { onBeforeUnmount, onMounted } from "vue";
+// The script uses element ids, looked up inside this pane: every tab with it open has its own.
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
 
-const props = defineProps<{ tab: Tab }>();
+// active: this is the tab on show; a tab out of sight stops asking the backend.
+const props = defineProps<{ tab: Tab; active: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 // claude2's "Quota pane timezone" setting, at its default. ponytail: fixed until a Settings tab exists.
@@ -34,7 +35,8 @@ const plotObserver = new ResizeObserver((entries) => {
     if (plot.clientWidth > 0 && plot.clientHeight > 0) plot.innerHTML = plot.draw(plot.clientWidth, plot.clientHeight);
   }
 });
-const byId = (id: string): HTMLElement => document.getElementById(id)!;
+const root = ref<HTMLElement>();
+const byId = (id: string): HTMLElement => root.value?.querySelector<HTMLElement>(`#${id}`) as HTMLElement;
 
 // claude2's request(): the webview's message round trip, here a POST to the tab's backend.
 async function request(action: string, data: Record<string, unknown>): Promise<Reply> {
@@ -95,7 +97,7 @@ function render(): void {
   renderAge();
   renderCredits();
   const graphsNode = byId("q-graphs");
-  const pane = byId("q-pane");
+  const pane = root.value!;
   const five = buildWindowGraph("five", "5h", 5 * 60 * 60 * 1000, [{ field: "five_pct", reset: "five_resets", name: "5h", color: "#000" }], rows);
   const seven = buildWindowGraph("seven", "7d", 7 * 24 * 60 * 60 * 1000, [{ field: "seven_pct", reset: "seven_resets", name: "7d", color: "#2457d6" }, { field: "fable_pct", reset: "fable_resets", name: modelLabel(), color: "#c62828" }], rows);
   const graphs = [five, seven];
@@ -117,11 +119,11 @@ function render(): void {
 }
 
 function renderAge(): void {
-  const age = document.getElementById("q-age");
+  const age = byId("q-age");
   if (!age) return;
   age.textContent = payload.readAt ? elapsed(payload.readAt) : "";
   age.style.background = payload.state && payload.state.pausedUntil > Date.now() ? "#ffd0d0" : "";
-  const asrAge = document.getElementById("q-asr-age");
+  const asrAge = byId("q-asr-age");
   if (asrAge) asrAge.textContent = elapsed(Number(asrAge.dataset.at));
 }
 
@@ -134,7 +136,7 @@ function elapsed(at: number): string {
 // month takes the live reading first; otherwise, and for past months, the newest row in that
 // month with a credits block. Months are UTC: credits reset at 00:00 UTC on the 1st.
 function renderCredits(): void {
-  const node = document.getElementById("q-credits");
+  const node = byId("q-credits");
   if (!node) return;
   const rows = Array.isArray(payload.rows) ? payload.rows : [];
   const now = new Date();
@@ -245,7 +247,7 @@ function measureExpandedPlot(): void {
 // The expanded card keeps the small graphs' 256x140 plot shape, so its width is whatever
 // the leftover height allows (capped by the pane width); the flex row then centres it.
 function fitExpanded(): void {
-  const container = document.getElementById("q-graphs");
+  const container = byId("q-graphs");
   const card = container && container.querySelector<HTMLElement>(".graph");
   const plot = card && card.querySelector(".plot");
   if (!container || !card || !plot) return;
@@ -387,7 +389,7 @@ onMounted(() => {
   window.addEventListener("focus", renderAge);
   document.addEventListener("visibilitychange", renderAge);
   document.addEventListener("click", renderAge);
-  timers.push(window.setInterval(() => void load(false), 5 * 60 * 1000), window.setInterval(renderAge, 10 * 1000), window.setInterval(() => void sync(), 30 * 1000));
+  timers.push(window.setInterval(() => void (props.active && load(false)), 5 * 60 * 1000), window.setInterval(renderAge, 10 * 1000), window.setInterval(() => void (props.active && sync()), 30 * 1000));
   void load(false);
 });
 onBeforeUnmount(() => {
@@ -402,7 +404,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div id="q-pane" class="settings">
+  <div id="q-pane" ref="root" class="settings">
     <div class="title">
       <div class="title-row">
         <!-- Tabs act as radio buttons; Quotas is the only one so far, so clicking it does nothing. -->

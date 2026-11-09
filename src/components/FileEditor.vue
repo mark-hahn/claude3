@@ -11,7 +11,7 @@ import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
 import { addLineDots, addWheelZoom, monaco } from "../monaco.ts";
 
-const props = defineProps<{ tab: Tab; file: { path: string; text: string; mtime: number } }>();
+const props = defineProps<{ tab: Tab; active: boolean; file: { path: string; text: string; mtime: number } }>();
 
 const note = ref("");
 const refused = ref(false);
@@ -83,7 +83,7 @@ function show(reply: { mtime: number; text?: string | null }): void {
 
 // True when the backend answered; false when nothing was asked or it failed.
 async function poll(action = "readFile"): Promise<boolean> {
-  if (!editor || document.hidden || saveTimer || saving || refused.value) return false;
+  if (!editor || document.hidden || !props.active || saveTimer || saving || refused.value) return false;
   if (dirty) {
     // A save that failed is tried again.
     flush();

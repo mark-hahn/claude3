@@ -23,7 +23,8 @@ import FileEditor from "./FileEditor.vue";
 import FolderPicker from "./FolderPicker.vue";
 
 // fileMode: App's column is showing the file. openFile asks for that; App's Files button leaves it.
-const props = defineProps<{ tab: Tab; fileMode: boolean }>();
+// active: this is the tab on show; a tab out of sight stops asking the backend.
+const props = defineProps<{ tab: Tab; active: boolean; fileMode: boolean }>();
 const emit = defineEmits<{ openFile: [] }>();
 
 const roots = computed(() => props.tab.roots ?? []);
@@ -387,7 +388,7 @@ watch(() => props.fileMode, async (editing) => {
 onMounted(() => {
   focusTree();
   poller = window.setInterval(() => {
-    if (document.hidden) return;
+    if (document.hidden || !props.active) return;
     if (!props.fileMode) void refresh();
     else if (file.value?.rendered) void rereadRendered();
   }, 2000);
@@ -403,7 +404,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
     <div v-if="fileMode && file?.rendered" class="pane files-rendered" @click.capture="copyCodeBlock">
       <div class="response markdown files-rendered-text" v-html="renderMarkdown(file.text)"></div>
     </div>
-    <FileEditor v-else-if="fileMode && file" :tab="tab" :file="file" />
+    <FileEditor v-else-if="fileMode && file" :tab="tab" :active="active" :file="file" />
     <div v-show="!fileMode" ref="treeArea" class="files-mode" tabindex="-1" @keydown="keyDown">
       <div class="files-bar">
         <button title="Back to the previous root" aria-label="Back" :disabled="rootIdx < 0" @click="stepRoot(-1)">

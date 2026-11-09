@@ -17,8 +17,8 @@ import ReAuth from "./ReAuth.vue";
 import Settings from "./Settings.vue";
 import Snips from "./Snips.vue";
 
-// active: this is the tab on show. side: what App's column toggles have open right of the pane
-// ("", "snips", "settings", "files" for the tree or "file" for its editor; one for every tab).
+// active: this is the tab on show. side: what this tab has open right of the pane ("", "snips",
+// "settings", "files" for the tree or "file" for its editor), through App's column toggles.
 // focusAsked: a change puts the cursor in the prompt box of the tab on show.
 const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number }>();
 const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; highlighted: [on: boolean] }>();
@@ -160,7 +160,7 @@ function deletePicked(): void {
   void post(props.tab, "delete", { sessionIds: ids }).catch(report);
 }
 
-// After the whole flush: even a post watcher runs before v-show has put its tab on show, and a
+// After the whole flush: the watchers that call this run before their tab is put on show, and a
 // hidden box can't take focus.
 async function focusPrompt(): Promise<void> {
   await nextTick();
@@ -283,7 +283,7 @@ onBeforeUnmount(() => stopListening());
 </script>
 
 <template>
-  <div class="project" :class="{ 'with-snips': side && active }">
+  <div class="project" :class="{ 'with-snips': side }">
     <aside class="sidebar">
       <div class="top">
         <div class="row">
@@ -345,8 +345,8 @@ onBeforeUnmount(() => stopListening());
     <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
     <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" @started="select" @deploy-due="(due) => (deployDue = due)" />
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
-    <Settings v-if="side === 'settings' && active" :tab="tab" @close="emit('closeSide')" />
-    <Files v-if="side.startsWith('file') && active" :tab="tab" :file-mode="side === 'file'" @open-file="emit('openFile')" />
+    <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
+    <Files v-if="side.startsWith('file')" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" />
   </div>
 </template>
 

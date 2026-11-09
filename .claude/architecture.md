@@ -27,17 +27,17 @@ on the laptop, and talks to each backend directly.
 - `server/login.ts`: claude2's Re-Auth as steps the page drives: this host's `claude auth login`,
   its URL, the pasted code on its stdin, then `claude auth status` for who signed in.
 - `src/App.vue`: the tab strip and the list of every project; open ones have a tab, sorted by name
-  (`src/tabList.ts`, checked by `npm test`), and every project's `Project` stays mounted (`v-show`),
-  closed ones too. The Files, Snips and
-  gear (Settings) toggles are here, at the row's right end, one each for every tab; they share one
-  column (`side`: "", "files", "file", "snips" or "settings"), the tab on show draws it, and picking a tab closes it.
+  (`src/tabList.ts`, checked by `npm test`), and every project's `Project` stays mounted and laid out,
+  closed ones too: all in one grid cell, those not on show `visibility:hidden` (`.offstage`), never `display:none` (see Gotchas). The Files, Snips and
+  gear (Settings) toggles are here, at the row's right end, acting on the tab on show; they share one
+  column, each tab with its own state (`sides[id]`: "", "files", "file", "snips" or "settings"), so it is as it was left when the tab comes back.
   The circle left of the Tabs button is the tab on show's state: green with a session active, else
   the Run button's highlight colour when its Git or Run button is highlighted (`dirty` and
   `deployDue` come up through Project's `highlighted`), else hollow.
 - `src/components/FolderPicker.vue`: the VS Code-style folder picker `<dialog>` on any host, fed by
   the backend's `folders`; used by the Tabs dialog and the Files pane. Its styles are Tabs.vue's, unscoped for that.
 - `src/components/Files.vue`: the Files column: header rows and a tree of the tab's host, with
-  `FileEditor.vue` in its place in file mode. Holds only what the backend last listed.
+  `FileEditor.vue` in its place in file mode. Holds only what the backend last listed. Stays mounted while its tab is hidden; both stop polling then (`active`).
 - `src/components/Tabs.vue`: the row's Tabs button and its `<dialog>`: host, Path (the folder picker), name
   and Create above the list of every project, where a click opens or closes one, a hold renames and
   ctrl-click deletes. It keeps no copy of the list: changes go to the backend and come back as a
@@ -68,7 +68,7 @@ on the laptop, and talks to each backend directly.
   Snips close, which saves at once. With no selection they just close.
 - `src/components/Settings.vue`: claude2's management pane in the Snips' column. Only its Quotas
   tab (the tab button does nothing yet), ported from claude2's `quotaHtml` nearly verbatim: graphs
-  built by script, global styles under `.settings`, element ids `q-*` (one instance at a time).
+  built by script, global styles under `.settings`, element ids `q-*` looked up inside its own root (`byId`: one instance per tab with it open, polling only while on show).
   Asks the backend's `quota` (Update = force), `quotaSync` every 30s, `speechmatics` per month.
 - `server/quota.ts`: claude2's QuotaService and its stats-server calls. The account's one history
   and the poll lease live on claude2-stats (hahnca.com:7301), shared with claude2's windows; local
@@ -181,7 +181,7 @@ on the laptop, and talks to each backend directly.
   while the same check finds files; it is re-read for the tab on show on showing, window focus,
   session events, and a ./run's result.
 - **"r".** A prompt of just `r`, or the footer's Run button (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
-  project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a `v-show`-hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
+  project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
   (`KillMode=process`), outside claude3.service's cgroup, so claude3's own `./run` restarting
   this backend kills neither the script nor the vite it leaves running. The page's request
   dies with the backend then, so the script's output and exit code go to
@@ -266,8 +266,8 @@ on the laptop, and talks to each backend directly.
   `~/.local/bin`, where the CLI's installer puts it and where pm2/systemd shells leave it off.
 - Pane history elements are built by script, so they get no Vue scope attribute: the pane's and
   sidebar's styles are global, prefixed `.pane` / `.sidebar`.
-- Vue runs a `flush: "post"` watcher on a prop before that update's `v-show` hook, so a tab being
-  picked is still `display:none` there and can't take focus. Project's `focusPrompt` awaits `nextTick`.
+- A tab must never be hidden with `display:none` / `v-show`: the browser loses every scroll position in it, and the pane's ResizeObserver runs at 0x0, drops the box's height clamp and sends the box to its bottom on return. `.offstage` keeps it laid out.
+- Vue runs a `flush: "post"` watcher on a prop before that update's `v-show` hook (Snips' column), and a pre-flush watcher before the update's patch, so what is being shown can't take focus there yet. Project's `focusPrompt` awaits `nextTick`.
 - Session objects are plain (not reactive) and mutated in place as text streams in; `version`
   tells Vue the shape changed. A delta goes to `Pane.applyDelta`, which refills only the growing
   box, as claude2 does.
