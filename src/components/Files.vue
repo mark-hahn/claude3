@@ -12,7 +12,7 @@ let cut: { tab: Tab; path: string; clip: string } | null = null;
 // root folder, which has no row of its own, for drop.
 // The tree holds only what the backend last said: each open folder is asked for again every 2s.
 // ponytail: polling, not file watches; change it if the 2s lag or the traffic ever matters.
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import type { HostName, Tab } from "../../shared/config.ts";
 import type { FileEntry } from "../../shared/types.ts";
 import { post, postHost, upload } from "../api.ts";
@@ -26,6 +26,7 @@ import FolderPicker from "./FolderPicker.vue";
 // active: this is the tab on show; a tab out of sight stops asking the backend.
 const props = defineProps<{ tab: Tab; active: boolean; fileMode: boolean }>();
 const emit = defineEmits<{ openFile: [] }>();
+const newProjectAt = inject("newProjectAt") as (host: HostName, folder: string) => void;
 
 const roots = computed(() => props.tab.roots ?? []);
 const rootIdx = computed(() => props.tab.rootIdx ?? roots.value.length - 1);
@@ -417,6 +418,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
           <svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="10" height="10" rx="1" /><path d="M4 9.5h5M4.5 1.5h10v10" /></svg>
         </button>
         <button title="New empty file in the selected folder, beside the selected file, or in the root" @click="newFile">New</button>
+        <button title="New project from the selected folder" :disabled="!selectedRow?.dir" @click="newProjectAt(tab.host, selectedRow!.path)">Prj</button>
         <button title="Show a folder in the tree" @click="picker?.open(root)">Path</button>
         <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="focusTree()" />
         <label class="files-nm" title="Search inside node_modules too"><input v-model="searchNodeModules" type="checkbox" />NM</label>

@@ -14,6 +14,7 @@ const props = defineProps<{ tabs: Tab[] }>();
 const emit = defineEmits<{ show: [host: HostName, path: string]; closed: [] }>();
 
 const HOST_NAMES = Object.keys(HOSTS) as HostName[];
+const button = ref<HTMLButtonElement>();
 const dialog = ref<HTMLDialogElement>();
 const picker = ref<InstanceType<typeof FolderPicker>>();
 const host = ref<HostName>("wsl");
@@ -35,15 +36,25 @@ function setPath(folder: string): void {
   path.value = folder;
   if (!edited.value) name.value = folderName(folder);
 }
-watch(host, () => setPath(""));
+// Sync, so openWith's folder isn't emptied by this running after it.
+watch(host, () => setPath(""), { flush: "sync" });
 
-function open(event: MouseEvent): void {
+function open(): void {
   error.value = "";
   // Upper left, just under the button.
-  const { left, bottom } = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const { left, bottom } = button.value!.getBoundingClientRect();
   dialog.value!.style.margin = `${bottom + 4}px 0 0 ${left}px`;
   dialog.value!.showModal();
 }
+
+// The Files bar's Prj: the new-project fields filled in from a folder.
+function openWith(onHost: HostName, folder: string): void {
+  host.value = onHost;
+  edited.value = false;
+  setPath(folder);
+  open();
+}
+defineExpose({ openWith });
 
 function attempt(work: Promise<unknown>): void {
   error.value = "";
@@ -107,16 +118,16 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
 </script>
 
 <template>
-  <button class="tab tabs-toggle" title="Add, open, close, rename or delete projects" aria-label="Tabs" @click="open">
+  <button ref="button" class="tab tabs-toggle" title="Add, open, close, rename or delete projects" aria-label="Tabs" @click="open">
     <svg viewBox="0 0 20 16" width="20" height="16" aria-hidden="true"><path d="M1 14.5V6h18v8.5zM2 6V2.5h4.5V6M7.75 6V2.5h4.5V6M13.5 6V2.5H18V6" /></svg>
   </button>
   <dialog ref="dialog" class="tabs-pop" @pointerdown="closeOnBackdrop" @close="emit('closed')">
     <section class="tabs-row">
       <select v-model="host" aria-label="Host"><option v-for="entry in HOST_NAMES" :key="entry">{{ entry }}</option></select>
       <button @click="picker?.open(HOSTS[host].appsFolder)">Path</button>
-      <span class="tabs-path">{{ path }}</span>
-      <button @click="dialog?.close()">Close</button>
+      <button class="tabs-close" @click="dialog?.close()">Close</button>
     </section>
+    <div v-if="path" class="tabs-path">{{ path }}</div>
     <section class="tabs-row">
       <input v-model="name" class="tabs-input" placeholder="Project name" aria-label="Project name" spellcheck="false" @input="edited = !!($event.target as HTMLInputElement).value" @keydown.enter.prevent="create" />
       <button :disabled="!canCreate" @click="create">Create</button>
@@ -160,17 +171,18 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
 /* With the row's 6px gap, twice the space the tabs have between them. */
 .tabs-toggle { margin-right: 6px; }
 .tabs-toggle svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
-.tabs-pop { width: min(560px, 92vw); max-height: 86vh; padding: 12px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: var(--ink); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2); }
+.tabs-pop { width: min(280px, 92vw); max-height: 86vh; padding: 12px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: var(--ink); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2); }
 .tabs-pop[open] { display: flex; flex-direction: column; gap: 10px; }
 .tabs-pop::backdrop { background: rgba(0, 0, 0, 0.15); }
-.tabs-picker { height: min(480px, 86vh); }
+.tabs-picker { width: min(560px, 92vw); height: min(480px, 86vh); }
 .tabs-row { display: flex; align-items: center; gap: 8px; flex: none; }
-.tabs-path { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tabs-path { overflow-wrap: anywhere; }
+.tabs-close { margin-left: auto; }
 .tabs-input { flex: 1; min-width: 0; width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--ink); font: inherit; }
 .tabs-input::placeholder { color: var(--ink); opacity: 1; }
 .tabs-error { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 6px; padding: 4px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tabs-names { overflow: auto; min-height: 0; padding-top: 10px; border-top: 1px solid var(--border); }
-.tabs-row + .tabs-row { padding-top: 10px; border-top: 1px solid var(--border); }
+.tabs-row + .tabs-row, .tabs-path + .tabs-row { padding-top: 10px; border-top: 1px solid var(--border); }
 .tabs-name { padding: 2px 6px; border-radius: 4px; cursor: pointer; user-select: none; }
 .tabs-name:hover { background: var(--wash); }
 .tabs-name.open { font-weight: 700; }

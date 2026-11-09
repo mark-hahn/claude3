@@ -2,7 +2,7 @@
 // The tab strip. Every project's Project stays mounted and laid out, closed ones too, so its events
 // and everything on its screen carry on while it is out of sight.
 import { computed, provide, reactive, ref, watch, watchEffect } from "vue";
-import { FIRST_TABS, type Tab } from "../shared/config.ts";
+import { FIRST_TABS, type HostName, type Tab } from "../shared/config.ts";
 import { connect } from "./api.ts";
 import Project from "./components/Project.vue";
 import Tabs from "./components/Tabs.vue";
@@ -70,12 +70,14 @@ async function onPreviousTab<T>(shot: () => Promise<T>): Promise<T> {
   }
 }
 provide("onPreviousTab", onPreviousTab);
+const tabsDialog = ref<InstanceType<typeof Tabs>>();
+provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.openWith(host, folder));
 </script>
 
 <template>
   <div class="app">
     <nav class="tabs">
-      <Tabs :tabs="sorted" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
+      <Tabs ref="tabsDialog" :tabs="sorted" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
       <button v-for="tab in opened" :key="tab.id" class="tab" :class="{ selected: tab.id === current }" :title="`${tab.path} (${tab.host})`" @click="current = tab.id; focusAsked++">
         <span v-if="busy[tab.id] || highlighted[tab.id]" class="tab-dot" :class="{ due: !busy[tab.id] }" :title="busy[tab.id] ? 'Responding' : 'Git or Run is highlighted'">&#x25CF;</span>{{ tab.label }}
       </button>
