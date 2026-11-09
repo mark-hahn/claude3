@@ -6,7 +6,7 @@
 // The prompt box is a Monaco editor with claude2's editing (src/monaco.ts), and has claude2's big
 // prompt editor.
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { TABS, type Tab } from "../../shared/config.ts";
+import type { Tab } from "../../shared/config.ts";
 import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, typedPrompt, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
 import { post } from "../api.ts";
 import { cropRect } from "../cropRect.ts";
@@ -62,14 +62,14 @@ let programmaticScroll = false;
 // Unsent text per session; '' is the new-session draft. Every edit is saved in localStorage, as
 // claude2 keeps its drafts beside the sessions, so a reload puts each one back in its session's box.
 // ponytail: drafts of deleted sessions stay in localStorage; prune them if the 5MB quota ever matters.
-const draftKey = (id: string): string => `draft:${props.tab.label}:${id}`;
+const draftKey = (id: string): string => `draft:${props.tab.id}:${id}`;
 const drafts = new Map<string, string>();
 for (const key of Object.keys(localStorage)) {
   if (key.startsWith(draftKey(""))) drafts.set(key.slice(draftKey("").length), localStorage.getItem(key)!);
 }
 // The prompt box's text when something other than sending emptied it (a session switch, a page
 // reload); Ctrl+Enter in an empty box puts it back. Every edit is saved under lostKey for the reload.
-const lostKey = (): string => `lostPrompt:${props.tab.label}`;
+const lostKey = (): string => `lostPrompt:${props.tab.id}`;
 let clearedDraft = localStorage.getItem(lostKey()) ?? "";
 
 const turns = (): ClaudeTurn[] => props.session?.turns ?? [];
@@ -420,7 +420,7 @@ const latest = computed(() => {
 // Its result shows in a <dialog> rather than window.alert so the font can be sized. claude3's own
 // ./run restarts vite, which reloads the page; unlike an alert the dialog doesn't hold that off,
 // so the text waits in sessionStorage until OK and is shown again on mount.
-const runKey = (): string => `runPop:${props.tab.label}`;
+const runKey = (): string => `runPop:${props.tab.id}`;
 // The dialog follows the end of its text unless it has been scrolled up. It opens only on the tab
 // on show: a modal dialog in a hidden tab would block the whole page with nothing to see.
 function putRun(text: string): void {
@@ -459,7 +459,7 @@ watch(
 const askRun = () => post<{ done: boolean; code: number; output: string }>(props.tab, "runResult", {});
 
 // Set while a ./run's answer is due, so a page reloaded meanwhile picks up the wait.
-const runWaitKey = (): string => `runWait:${props.tab.label}`;
+const runWaitKey = (): string => `runWait:${props.tab.id}`;
 
 // Also the footer's Run button (ctrl-click: "v"). It leaves the prompt box's text alone and never
 // takes focus, so the Enter that dismisses the result can't land on it and run ./run again.
@@ -613,7 +613,7 @@ function fitPrompt(): void {
 // the same layout; a session started from the new-session draft takes the draft's.
 // ponytail: flags of deleted sessions stay in localStorage; a few bytes each.
 const bigPrompt = ref(false);
-const bigKey = (id: string): string => `bigPrompt:${props.tab.label}:${id}`;
+const bigKey = (id: string): string => `bigPrompt:${props.tab.id}:${id}`;
 function storeBig(id: string, on: boolean): void {
   if (on) localStorage.setItem(bigKey(id), "1");
   else localStorage.removeItem(bigKey(id));
@@ -692,14 +692,14 @@ const sessionKey = (): string => props.session?.id ?? "";
 // Waiting on each session's next prompt, as drafts wait ('' is the new-session draft).
 // ponytail: pictures of a session deleted before sending stay in IndexedDB; prune them if the space matters.
 let waiting: Waiting = {};
-void loadWaiting(props.tab.label).then((stored) => {
+void loadWaiting(props.tab.id).then((stored) => {
   waiting = stored;
   showImageChars();
 }, report);
 const images = (): string[][] => waiting[sessionKey()] ?? [];
 function storeImages(): void {
   showImageChars();
-  saveWaiting(props.tab.label, waiting).catch(report);
+  saveWaiting(props.tab.id, waiting).catch(report);
 }
 
 // The icons lead the box's first line as injected text: drawn there but not part of the text, so
@@ -722,7 +722,7 @@ function imageCharAt(event: MouseEvent): number {
 }
 
 // The screen is the laptop's, so a tab on the server asks a laptop backend for the shot.
-const captureTab = (): Tab => (props.tab.host === "srv" ? TABS.find((tab) => tab.host === "wsl")! : props.tab);
+const captureTab = (): Tab => (props.tab.host === "srv" ? { ...props.tab, host: "wsl" } : props.tab);
 const onPreviousTab = inject("onPreviousTab") as <T>(shot: () => Promise<T>) => Promise<T>;
 const capturing = ref(false);
 // A plain click hides this window for the shot, a ctrl-click leaves it up, and an alt-click leaves

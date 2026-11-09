@@ -1,5 +1,6 @@
 // Ported from claude2's src/types.ts: the session and turn records, and the marks the runner
 // writes into a response for the pane to find.
+import type { Tab } from "./config.ts";
 
 export const DEFAULT_CONTEXT_WINDOW = 256000;
 
@@ -125,7 +126,7 @@ export interface ClaudeRunResult {
   modelWindow: number | null;
 }
 
-// What a backend sends down a tab's event stream.
+// What a backend sends about one project.
 export type ServerEvent =
   // On connect: everything the tab shows.
   | { type: "state"; sessions: ClaudeSession[]; statuses: Record<string, RunningStatus> }
@@ -137,3 +138,7 @@ export type ServerEvent =
   | { type: "removed"; ids: string[] }
   // How many "ponytail:" comments the project holds; on connect and when a turn ends.
   | { type: "ceilings"; count: number };
+
+// A backend's one event stream: its list of projects, on connect and at every change, and each
+// project's events marked with its id.
+export type StreamEvent = { type: "projects"; tabs: Tab[] } | (ServerEvent & { tab: string });

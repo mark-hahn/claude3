@@ -8,23 +8,33 @@ on the laptop, and talks to each backend directly.
 
 ## Layout
 
-- `shared/config.ts`: the tab list (label, host, project path), each host's port/URL/bind
-  address/allowed Host names, and `ORIGINS`, the page origins the backends accept. Read by both
+- `shared/config.ts`: the `Tab` record of a project (id, label, host, path, open), `FIRST_TABS`
+  (what a backend starts from until it has its own list), each host's port/URL/bind address/allowed
+  Host names/picker folder, and `ORIGINS`, the page origins the backends accept. Read by both
   sides; the deploy copies it with the server.
 - `shared/types.ts`: sessions, turns, `RunningStatus`, the response marks (from claude2's
-  types.ts), and `ServerEvent`, the event-stream protocol.
-- `server/main.ts`: one backend, `node server/main.ts <wsl|win|srv>`. Stdlib `http` only. Session
-  store, the event stream, POST actions, `runTurn` (ported from claude2's extension.ts), and the
-  built page from `dist/` (only the WSL deploy has one). Endpoints are listed at its top.
+  types.ts), `ServerEvent` (one project's events) and `StreamEvent` (what the stream carries).
+- `server/main.ts`: one backend, `node server/main.ts <wsl|win|srv>`. Stdlib `http` only. Project
+  list, session store, the event stream, POST actions, `runTurn` (ported from claude2's
+  extension.ts), and the built page from `dist/` (only the WSL deploy has one). Endpoints are
+  listed at its top.
 - `server/claudeCli.ts`: `ClaudeCliRunner`, claude2's runner nearly verbatim: spawns the CLI,
   parses its stream into the response text (tool lines with marks, details), stop by interrupt,
   follow-up into a background wait, titles, the model list, `contextUsage` for Ctx. Also
   `cheapestModel` from claude2's modelInfo.ts.
 - `server/contextStats.ts`: the Ctx popup's table, copied unchanged from claude2.
-- `src/App.vue`: the tab strip; every tab's `Project` stays mounted (`v-show`). The Snips and
+- `src/App.vue`: the tab strip and the list of every project; open ones have a tab, sorted by name
+  (`src/tabList.ts`, checked by `npm test`), and every project's `Project` stays mounted (`v-show`),
+  closed ones too. The Snips and
   gear (Settings) toggles are here, at the row's right end, one each for every tab; they share one
   column (`side`: "", "snips" or "settings"), the tab on show draws it, and picking a tab closes it.
-- `src/components/Project.vue`: one tab. Owns its EventSource, the session list, the sidebar
+- `src/components/Tabs.vue`: the row's Tabs button and its `<dialog>`: host, Path (a second
+  `<dialog>`, the VS Code-style folder picker on every host, fed by the backend's `folders`), name
+  and Create above the list of every project, where a click opens or closes one, a hold renames and
+  ctrl-click deletes. It keeps no copy of the list: changes go to the backend and come back as a
+  `projects` event. The dialog stays open after Create, with the new project's tab on show behind
+  it; closing the dialog puts the cursor in the prompt box of the tab on show (`focusAsked`).
+- `src/components/Project.vue`: one tab. Listens for its project's events, holds the session list, the sidebar
   (new session +, Git; Clean, Trash; rename by long press, trash/restore, busy clocks; on the trash
   list Clean turns into a delete for good of the picked cards, picking in `src/pick.ts`), the divider
   drag (`--sidebar-width` on the root, shared by every tab, in localStorage), and passes the
@@ -68,7 +78,9 @@ on the laptop, and talks to each backend directly.
   unbinding is left out (it was for VS Code).
 - `src/render.ts`: response text to box: answer text, tool groups and details, the markdown
   renderer. `src/render.check.mjs` is its self-check (`npm test`).
-- `src/api.ts`: `post` and `listen` against a tab's backend.
+- `src/api.ts`: `post` (a project's backend), `postHost` (a backend, no project needed), and the
+  one event stream per backend: `connect` opens them, `listen` is one project's share of its
+  host's. A state that arrives before its `Project` is mounted is held for it.
 - `vite.config.ts`: besides the pinned ports, a dev-only plugin (copied from tv) that mirrors the
   page's console and uncaught errors to `vite-console.log` in the repo, emptied at each vite start.
 - `public/manifest.webmanifest`: for the page installed as an Edge app (taskbar pin).
@@ -87,10 +99,21 @@ on the laptop, and talks to each backend directly.
 
 ## Main flows
 
-- **Connect.** A tab opens `GET /events?tab=<label>` on its host's backend. The first event is the
-  full state (sessions, running statuses, model list); then `session` (one session changed shape),
-  `delta` (streamed text spliced at an offset, plus status), `models` and `removed`. EventSource reconnects by
-  itself, and each reconnect starts with a full state again.
+- **Connect.** The page opens one `GET /events` on each backend. It starts with `projects` (the
+  host's list), then a `state` (sessions, running statuses) per project; after that `session` (one
+  session changed shape), `delta` (streamed text spliced at an offset, plus status), `removed` and
+  `ceilings`, each marked with its project's id. EventSource reconnects by itself after a dropped
+  connection and each reconnect starts over with the full list and states; a refused one
+  (`api.ts`) is retried every 3s.
+- **Projects.** The Tabs dialog calls `createProject`, `renameProject`, `openProject` or
+  `deleteProject`; the backend rewrites `~/.claude3/projects.json` and sends `projects` to every
+  page. App replaces that host's part of its list and caches the whole in localStorage
+  (`claude3.tabs`), so a backend that is down still shows its tabs. A folder can be only one project
+  (two would overwrite one sessions file; the backend refuses), and names are unique ignoring case
+  (only the page sees all three hosts, so the page refuses). A project with a session running can't
+  be closed or deleted (`refuseIfRunning`). Deleting removes its sessions file, images, debug
+  records and run log; its folder and the CLI's transcripts stay. The tab on show closing moves to
+  the next open one by name (`nextTab`).
 - **New session.** "+" → `POST /api/new` makes an empty "New session" card and the
   pane opens it, as claude2 does. Empty sessions are scratch: "+", a card click, Clean and Trash
   sweep them (`discard`; the backend posts `removed`), sparing the one being opened and any
@@ -142,7 +165,7 @@ on the laptop, and talks to each backend directly.
 - **Session ↔ transcript.** A session id is the CLI session id; `--resume` or `--session-id` is
   picked by whether the transcript exists (claude2's rule). `/clear` swaps transcript files so the
   session keeps its id.
-- **Storage.** `~/.claude3/sessions/<project path as a file name>.json` on each host, outside the
+- **Storage.** `~/.claude3/projects.json` is each host's list of projects. `~/.claude3/sessions/<project path as a file name>.json` on each host, outside the
   project folders, written whole through a temp file at turn start and end and on every change.
   `~/.claude3/<host>.log` is the backend's log; `~/.claude3/debug/` holds the runner's per-session
   spawn records.
@@ -160,6 +183,16 @@ on the laptop, and talks to each backend directly.
 - Every backend refuses a request whose Origin isn't in `ORIGINS` or whose Host isn't one of the
   host's own names: it runs claude with `bypassPermissions`, and any other website in the browser
   could otherwise drive it (DNS rebinding included). A new page origin has to go in `ORIGINS`.
+- A project's `id` never changes, and everything stored for it goes by the id (backend map, run
+  log, drafts, pictures, big-prompt flags), so a rename loses nothing. The six first projects' ids
+  are their old labels, which is what their stored data was already under. Show `label`, key on `id`.
+- One event stream per backend, not per project: each open stream holds a connection, browsers
+  allow about 6 per server over HTTP/1.1, and closed projects stay mounted, so per-project streams
+  would hang the page at a host's 6th project.
+- Actions about the host (`folders`, `createProject`, `capture`, `snips`, the quota ones) come before
+  `action`'s project lookup, so they work on a host with no projects.
+- The page and backends change the stream format together. A page ahead of its backends shows
+  every tab as "No answer" with POSTs still working, and picks up by itself after the deploy.
 - Vite's ports are pinned with strictPort (`vite.config.ts`): 5173 is the tv client's, and a vite
   that drifted to another port would be an origin the backends refuse.
 - `npm run dev` does not type-check (Vite only strips types); run `npx vue-tsc -b` or

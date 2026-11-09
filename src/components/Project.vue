@@ -14,8 +14,9 @@ import Settings from "./Settings.vue";
 import Snips from "./Snips.vue";
 
 // active: this is the tab on show. side: what App's column toggles have open right of the pane
-// ("", "snips" or "settings"; one for every tab).
-const props = defineProps<{ tab: Tab; active: boolean; side: string }>();
+// ("", "snips" or "settings"; one for every tab). focusAsked: a change puts the cursor in the
+// prompt box of the tab on show.
+const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number }>();
 const emit = defineEmits<{ busy: [count: number]; closeSide: [] }>();
 
 // Plain objects mutated in place as text streams in; `version` tells Vue when the shape changed.
@@ -23,7 +24,7 @@ let sessions: ClaudeSession[] = [];
 const version = ref(0);
 const statuses = ref<Record<string, RunningStatus>>({});
 const ceilings = ref(0);
-const selectedKey = `claude3.session.${props.tab.label}`;
+const selectedKey = `claude3.session.${props.tab.id}`;
 // '' is the new-session draft: the pane is empty until its first prompt makes the session.
 const selectedId = ref(localStorage.getItem(selectedKey) ?? "");
 const showTrash = ref(false);
@@ -226,13 +227,14 @@ watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => stat
 // Picking a tab puts the cursor in its prompt box; post, so the tab is on show by then.
 watch(() => props.active, (active) => active && focusPrompt(), { flush: "post" });
 watch(() => props.side, (open) => !open && props.active && focusPrompt(), { flush: "post" });
+watch(() => props.focusAsked, () => props.active && focusPrompt(), { flush: "post" });
 
-let source: EventSource | null = null;
+let stopListening = (): void => undefined;
 onMounted(() => {
-  source = listen(props.tab, onEvent, (up) => (connected.value = up));
+  stopListening = listen(props.tab, onEvent, (up) => (connected.value = up));
   if (props.active) focusPrompt();
 });
-onBeforeUnmount(() => source?.close());
+onBeforeUnmount(() => stopListening());
 </script>
 
 <template>

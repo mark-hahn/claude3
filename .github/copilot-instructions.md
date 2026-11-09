@@ -40,12 +40,14 @@
 - **wsl** backend: port 7310, deployed to /root/apps/claude3Wsl, also serves the built page.
 - **win** backend: port 7311, deployed to C:\Users\mark\apps\claude3Win.
 - **srv** backend: port 7312 on hahnca.com, deployed to /root/dev/apps/claude3Srv.
-- The tabs and which host each runs on are in `shared/config.ts`.
+- Each backend keeps its own projects (name, folder, open or closed) in `~/.claude3/projects.json`; the Tabs dialog changes them. `shared/config.ts` has the hosts and the list a backend starts from.
 - The page's browser console is mirrored to `vite-console.log` in the repo while vite runs.
 
 ## Page terminology
 
 - the page is the whole claude3 browser page; the tab strip is the row of tab buttons at its top
+- a project is a collection of sessions for a single working dir; project names are the short names shown in tabs
+  - an open project occupies a tab; a closed one keeps all its state with its tab and UI hidden
 - a tab is one project: a sidebar on the left and a pane on the right
 - the sidebar is the column of session cards on the left of a tab
 - the bar is the single line of prompt text in the pane

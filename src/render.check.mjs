@@ -6,6 +6,23 @@ import { extraBlankLines } from "./blankLines.ts";
 import { cropRect } from "./cropRect.ts";
 import { pick } from "./pick.ts";
 import { answerText, renderMarkdown } from "./render.ts";
+import { byName, folderName, nextTab, sameName } from "./tabList.ts";
+
+// A new project's default name is its folder's, written as the path writes it, on either host's paths.
+assert.equal(folderName("/root/apps/MyProj/"), "MyProj");
+assert.equal(folderName("C:\\Users\\mark\\apps\\ham"), "ham");
+assert.equal(folderName(""), "");
+assert.ok(sameName("TV", "tv"));
+assert.ok(!sameName("tv", "tv srvr"));
+
+// Tabs sort without regard to case; closing the one on show moves on to the next open one by name.
+const named = (label, open = true) => ({ id: label, label, host: "wsl", path: `/${label}`, open });
+const list = [named("alpha"), named("Beta", false), named("gamma"), named("Zed")];
+assert.deepEqual([named("Zed"), named("gamma"), named("alpha")].sort(byName).map((tab) => tab.label), ["alpha", "gamma", "Zed"]);
+assert.equal(nextTab(list, list[1]), "gamma", "the next open one after it");
+assert.equal(nextTab(list, list[3]), "Zed", "the last when it was the last");
+assert.equal(nextTab(list, undefined), "alpha", "the first with nothing to go by");
+assert.equal(nextTab([named("a", false)], named("a", false)), "", "none open");
 
 const T = "⁣"; // TOOL_LINE_MARK
 const A = "⁤"; // ANSWER_MARK

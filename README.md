@@ -2,7 +2,7 @@
 
 Claude Code in a browser page: one tab per project, each a session sidebar and a conversation
 pane, like the claude2 VS Code extension. The claude CLI runs under a small Node backend on each
-host (WSL, Windows, hahnca.com); the tabs and hosts are in `shared/config.ts`.
+host (WSL, Windows, hahnca.com); the hosts are in `shared/config.ts`, and each backend keeps its own projects, which the Tabs dialog manages.
 
 - `./run`: deploy any backend not running the repo's server code, then the page with hot update at http://localhost:5310 (`npm run dev` is the page alone)
 - `npm run build`: type-check page and server, build the page to `dist/`

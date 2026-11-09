@@ -1,12 +1,38 @@
 <script setup lang="ts">
-// The tab strip. Every tab's Project stays mounted (v-show), so its stream and its pane's state
-// carry on while another tab is up.
-import { provide, reactive, ref, watch } from "vue";
-import { TABS } from "../shared/config.ts";
+// The tab strip. Every project's Project stays mounted (v-show), closed ones too, so its events and
+// its pane's state carry on while it is out of sight.
+import { computed, provide, reactive, ref, watch, watchEffect } from "vue";
+import { FIRST_TABS, type Tab } from "../shared/config.ts";
+import { connect } from "./api.ts";
 import Project from "./components/Project.vue";
+import Tabs from "./components/Tabs.vue";
+import { byName, nextTab } from "./tabList.ts";
 
-const saved = localStorage.getItem("claude3.tab");
-const current = ref(TABS.some((tab) => tab.label === saved) ? saved! : TABS[0]!.label);
+// Every project on every host. Each backend's part is replaced when it sends its list; until then
+// it's the last one that backend sent, so a backend that is down still shows its tabs.
+const all = ref<Tab[]>(JSON.parse(localStorage.getItem("claude3.tabs") ?? "null") ?? FIRST_TABS);
+connect((host, tabs) => {
+  all.value = [...all.value.filter((tab) => tab.host !== host), ...tabs];
+  localStorage.setItem("claude3.tabs", JSON.stringify(all.value));
+});
+const sorted = computed(() => [...all.value].sort(byName));
+const opened = computed(() => sorted.value.filter((tab) => tab.open));
+const current = ref(localStorage.getItem("claude3.tab") ?? "");
+const currentTab = computed(() => opened.value.find((tab) => tab.id === current.value));
+watch(sorted, (list, old) => {
+  if (!currentTab.value) current.value = nextTab(list, old?.find((tab) => tab.id === current.value));
+}, { immediate: true });
+// A project the Tabs dialog just made comes up as soon as its backend's list has it, which can be
+// before or after the answer to the create.
+const created = ref<{ host: string; path: string } | null>(null);
+watch([created, sorted], () => {
+  const tab = sorted.value.find((entry) => entry.host === created.value?.host && entry.path === created.value?.path);
+  if (!tab) return;
+  current.value = tab.id;
+  created.value = null;
+});
+// Bumped when the Tabs dialog closes: a tab picked behind the dialog couldn't take the cursor then.
+const focusAsked = ref(0);
 // Sessions responding per tab, so a tab out of sight still shows it is working.
 const busy = reactive<Record<string, number>>({});
 // The Snips and Settings share the column right of the pane, one at a time: "" (closed), "snips"
@@ -20,15 +46,15 @@ document.documentElement.style.setProperty("--sidebar-width", `${Number(localSto
 // The tab on show before this one, for Alt-Cap: it comes up for the length of the shot, then the
 // tab that asked is back, holding the picture.
 let previous = "";
-watch(current, (label, old) => {
+watch(current, (id, old) => {
   previous = old ?? previous;
   side.value = "";
-  localStorage.setItem("claude3.tab", label);
-  document.title = `${label} - claude3`;
+  localStorage.setItem("claude3.tab", id);
 }, { immediate: true });
+watchEffect(() => (document.title = currentTab.value ? `${currentTab.value.label} - claude3` : "claude3"));
 
 async function onPreviousTab<T>(shot: () => Promise<T>): Promise<T> {
-  if (!previous) return await shot();
+  if (!opened.value.some((tab) => tab.id === previous)) return await shot();
   const back = current.value;
   current.value = previous;
   // claude2's tabSettleMs: the tab has to lay out and paint before the screen is worth copying.
@@ -45,13 +71,14 @@ provide("onPreviousTab", onPreviousTab);
 <template>
   <div class="app">
     <nav class="tabs">
-      <button v-for="tab in TABS" :key="tab.label" class="tab" :class="{ selected: tab.label === current }" :title="`${tab.path} (${tab.host})`" @click="current = tab.label">
-        <span v-if="busy[tab.label]" class="tab-busy" title="Responding">&#x25CF;</span>{{ tab.label }}
+      <Tabs :tabs="sorted" @created="(host, path) => (created = { host, path })" @closed="focusAsked++" />
+      <button v-for="tab in opened" :key="tab.id" class="tab" :class="{ selected: tab.id === current }" :title="`${tab.path} (${tab.host})`" @click="current = tab.id">
+        <span v-if="busy[tab.id]" class="tab-busy" title="Responding">&#x25CF;</span>{{ tab.label }}
       </button>
-      <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
-      <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" title="Open or close the Settings: quotas" aria-label="Settings" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
+      <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" :disabled="!currentTab" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
+      <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" :disabled="!currentTab" title="Open or close the Settings: quotas" aria-label="Settings" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
-    <Project v-for="tab in TABS" v-show="tab.label === current" :key="tab.label" :tab="tab" :active="tab.label === current" @busy="(count) => (busy[tab.label] = count)" :side="side" @close-side="side = ''" />
+    <Project v-for="tab in sorted" v-show="tab.id === current" :key="tab.id" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" :side="side" :focus-asked="focusAsked" @close-side="side = ''" />
   </div>
 </template>
 

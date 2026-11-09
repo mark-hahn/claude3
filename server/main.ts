@@ -1,7 +1,10 @@
 // One claude3 backend: `node --experimental-strip-types server/main.ts <wsl|win|srv>`. It runs the
 // claude CLI for the tabs whose host is this one, keeps their sessions, and streams them to the page.
-//   GET  /events?tab=<label>   -> server-sent events (ServerEvent), the full state first
-//   POST /api/<action>         body: { tab, sessionId?, ... } -> JSON
+//   GET  /events               -> server-sent events (StreamEvent) for all this host's projects: the list, then each one's full state
+//   POST /api/<action>         body: { tab, sessionId?, ... } -> JSON (tab is the project's id; the actions about the host ignore it)
+//        folders { path } -> { path, entries: [{ name, path }] } (the folders in a folder; path is "" when it isn't one)
+//        createProject { label, path } -> {} | renameProject { label } -> {} | openProject { open } -> {}
+//        deleteProject -> {} (the project, its sessions and what they keep on disk; never its folder)
 //        prompt  { prompt, images? } -> { sessionId } (an empty sessionId starts a session; images are PNG data URIs)
 //        capture { hideWindow } -> { dataUri } (a shot of the desktop; laptop backends only)
 //        image { turnId, index } -> { dataUri } (a sent picture)
@@ -28,8 +31,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { HOSTS, ORIGINS, TABS, type HostName, type Tab } from "../shared/config.ts";
-import { ANSWER_MARK, DEFAULT_CONTEXT_WINDOW, imageNote, typedPrompt, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent } from "../shared/types.ts";
+import { FIRST_TABS, HOSTS, ORIGINS, type HostName, type Tab } from "../shared/config.ts";
+import { ANSWER_MARK, DEFAULT_CONTEXT_WINDOW, imageNote, typedPrompt, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
 import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, swapSessionTranscripts, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
@@ -77,13 +80,93 @@ interface Project {
   file: string;
   // Newest first, the sidebar's order.
   sessions: ClaudeSession[];
-  clients: Set<ServerResponse>;
 }
 
 const projects = new Map<string, Project>();
-for (const tab of TABS.filter((entry) => entry.host === hostName)) {
-  const file = path.join(DATA_DIR, "sessions", `${tab.path.replace(/[^a-zA-Z0-9]/g, "-")}.json`);
-  projects.set(tab.label, { tab, file, sessions: loadSessions(file), clients: new Set() });
+// Every page connected here; each gets every project's events on the one stream.
+const clients = new Set<ServerResponse>();
+const TABS_FILE = path.join(DATA_DIR, "projects.json");
+// This host's own list, which the Tabs dialog changes. Before it has one, config.ts's first list.
+for (const tab of fs.existsSync(TABS_FILE) ? (JSON.parse(fs.readFileSync(TABS_FILE, "utf8")) as Tab[]) : FIRST_TABS.filter((entry) => entry.host === hostName)) {
+  addProject(tab);
+}
+
+function addProject(tab: Tab): Project {
+  const file = sessionsFile(tab.path);
+  const project = { tab, file, sessions: loadSessions(file) };
+  projects.set(tab.id, project);
+  return project;
+}
+
+function sessionsFile(folder: string): string {
+  return path.join(DATA_DIR, "sessions", `${folder.replace(/[^a-zA-Z0-9]/g, "-")}.json`);
+}
+
+const tabList = (): Tab[] => [...projects.values()].map((project) => project.tab);
+
+// Written whole through a temp file, as the sessions are, and sent to every page.
+function saveTabs(): void {
+  const temp = `${TABS_FILE}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(tabList(), null, 1));
+  fs.renameSync(temp, TABS_FILE);
+  broadcast({ type: "projects", tabs: tabList() });
+}
+
+// The real location of a folder, on this host, or "" when wanted isn't an absolute path to one.
+async function realFolder(wanted: string): Promise<string> {
+  if (!path.isAbsolute(wanted)) {
+    return "";
+  }
+  try {
+    const real = await fs.promises.realpath(wanted);
+    return (await fs.promises.stat(real)).isDirectory() ? real : "";
+  } catch {
+    return "";
+  }
+}
+
+// What the Tabs dialog's picker lists: "..", then the folders inside, no files.
+// ponytail: no list of drives on Windows; typing D:\ gets there.
+async function folders(wanted: string): Promise<{ path: string; entries: { name: string; path: string }[] }> {
+  const real = await realFolder(wanted);
+  if (!real) {
+    return { path: "", entries: [] };
+  }
+  const found = await fs.promises.readdir(real, { withFileTypes: true }).catch(() => []);
+  const kept = await Promise.all(found.map(async (entry) => (entry.isDirectory() || (entry.isSymbolicLink() && (await realFolder(path.join(real, entry.name)))) ? entry.name : "")));
+  const entries = kept.filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })).map((name) => ({ name, path: path.join(real, name) }));
+  const parent = path.dirname(real);
+  return { path: real, entries: parent === real ? entries : [{ name: "..", path: parent }, ...entries] };
+}
+
+// Two projects on one sessions file would overwrite each other, so a folder can only be one project.
+async function createProject(label: string, wanted: string): Promise<object> {
+  const real = await realFolder(wanted);
+  if (!label || !real) {
+    throw new Error(label ? `${wanted} is not a folder on ${hostName}.` : "A project needs a name.");
+  }
+  const taken = [...projects.values()].find((project) => project.file === sessionsFile(real));
+  if (taken) {
+    throw new Error(`${taken.tab.label} already uses ${taken.tab.path}.`);
+  }
+  const project = addProject({ id: randomUUID(), label, host: hostName, path: real, open: true });
+  saveTabs();
+  send(project, { type: "state", sessions: project.sessions, statuses: statuses(project) });
+  return {};
+}
+
+function refuseIfRunning(project: Project, what: string): void {
+  if (Object.values(statuses(project)).some((status) => status.active) || project.sessions.some((session) => runs.has(session.id))) {
+    throw new Error(`${project.tab.label} has a session running, so it can't be ${what}.`);
+  }
+}
+
+// What a session deleted for good leaves on disk. The CLI's transcripts stay, as in claude2.
+function removeSessionFiles(ids: string[]): Promise<unknown> {
+  return Promise.all(ids.flatMap((id) => [
+    fs.promises.rm(path.join(DATA_DIR, "debug", `${id}.jsonl`), { force: true }),
+    fs.promises.rm(path.join(DATA_DIR, "images", id), { recursive: true, force: true }),
+  ]));
 }
 
 function loadSessions(file: string): ClaudeSession[] {
@@ -105,16 +188,24 @@ function loadSessions(file: string): ClaudeSession[] {
 // Written whole, through a temp file, so a crash mid-write never leaves half a file.
 // ponytail: the whole project on every save, sync; split per session if files grow large.
 function save(project: Project): void {
+  // A session's name can arrive after its project was deleted; that mustn't bring the file back.
+  if (projects.get(project.tab.id) !== project) {
+    return;
+  }
   const temp = `${project.file}.tmp`;
   fs.writeFileSync(temp, JSON.stringify(project.sessions));
   fs.renameSync(temp, project.file);
 }
 
-function send(project: Project, event: ServerEvent): void {
+function broadcast(event: StreamEvent): void {
   const data = `data: ${JSON.stringify(event)}\n\n`;
-  for (const client of project.clients) {
+  for (const client of clients) {
     client.write(data);
   }
+}
+
+function send(project: Project, event: ServerEvent): void {
+  broadcast({ ...event, tab: project.tab.id });
 }
 
 function sendSession(project: Project, session: ClaudeSession): void {
@@ -386,15 +477,60 @@ function removeSessions(project: Project, ids: string[]): void {
 }
 
 async function action(name: string, body: Record<string, unknown>): Promise<unknown> {
+  // About the host, not one project, so they still work when it has none.
+  if (name === "folders") {
+    return await folders(String(body.path ?? ""));
+  }
+  if (name === "createProject") {
+    return await createProject(String(body.label ?? "").trim(), String(body.path ?? ""));
+  }
+  if (name === "capture") {
+    return { dataUri: await captureScreen(body.hideWindow === true) };
+  }
+  if (name === "snips") {
+    return await snips(body.text);
+  }
+  if (name === "quota") {
+    const [history, apiCosts] = await Promise.all([quota.history(body.force === true), checkCosts(log)]);
+    return { ...history, apiCosts };
+  }
+  if (name === "quotaSync") {
+    return { payload: await quota.shared(Number(body.readAt) || 0, String(body.error ?? "")) };
+  }
+  if (name === "speechmatics") {
+    return { payload: await speechmaticsCost(String(body.month ?? ""), body.rescan === true, log) };
+  }
   const project = projects.get(String(body.tab));
   if (!project) {
     throw new Error(`No tab ${JSON.stringify(body.tab)} on ${hostName}.`);
   }
+  if (name === "renameProject") {
+    project.tab.label = String(body.label ?? "").trim() || project.tab.label;
+    saveTabs();
+    return {};
+  }
+  if (name === "openProject") {
+    if (body.open !== true) {
+      refuseIfRunning(project, "closed");
+    }
+    project.tab.open = body.open === true;
+    saveTabs();
+    return {};
+  }
+  if (name === "deleteProject") {
+    refuseIfRunning(project, "deleted");
+    projects.delete(project.tab.id);
+    saveTabs();
+    await Promise.all([
+      fs.promises.rm(project.file, { force: true }),
+      fs.promises.rm(runFile(project, "log"), { force: true }),
+      fs.promises.rm(runFile(project, "status"), { force: true }),
+      removeSessionFiles(project.sessions.map((session) => session.id)),
+    ]);
+    return {};
+  }
   if (name === "prompt") {
     return await submitPrompt(project, body);
-  }
-  if (name === "capture") {
-    return { dataUri: await captureScreen(body.hideWindow === true) };
   }
   if (name === "git") {
     return { files: parseStatus(await git(project, "status", "--porcelain", "-z", "--untracked-files=all")) };
@@ -413,19 +549,6 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "describeChanges") {
     return { text: await describeChanges(project) };
-  }
-  if (name === "snips") {
-    return await snips(body.text);
-  }
-  if (name === "quota") {
-    const [history, apiCosts] = await Promise.all([quota.history(body.force === true), checkCosts(log)]);
-    return { ...history, apiCosts };
-  }
-  if (name === "quotaSync") {
-    return { payload: await quota.shared(Number(body.readAt) || 0, String(body.error ?? "")) };
-  }
-  if (name === "speechmatics") {
-    return { payload: await speechmaticsCost(String(body.month ?? ""), body.rescan === true, log) };
   }
   if (name === "new" || name === "discard") {
     discardEmpty(project, Array.isArray(body.keep) ? body.keep.map(String) : []);
@@ -454,10 +577,7 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     // A run still going would post its session back as it settled.
     await Promise.all(ids.map((id) => (runner.stop(id), runs.get(id))));
     removeSessions(project, ids);
-    await Promise.all(ids.flatMap((id) => [
-      fs.promises.rm(path.join(DATA_DIR, "debug", `${id}.jsonl`), { force: true }),
-      fs.promises.rm(path.join(DATA_DIR, "images", id), { recursive: true, force: true }),
-    ]));
+    await removeSessionFiles(ids);
     return {};
   }
   const session = project.sessions.find((entry) => entry.id === body.sessionId);
@@ -563,7 +683,7 @@ function runScript(project: Project, restartVite: boolean): Promise<string> {
 }
 
 function runFile(project: Project, extension: "log" | "status"): string {
-  return path.join(DATA_DIR, `run-${project.tab.label.replace(/\W/g, "-")}.${extension}`);
+  return path.join(DATA_DIR, `run-${project.tab.id.replace(/\W/g, "-")}.${extension}`);
 }
 
 // The last ./run's output so far, for the page's live view, and its result, for a page that lost
@@ -738,16 +858,14 @@ const server = createServer((req, res) => {
     return;
   }
   if (req.method === "GET" && url.pathname === "/events") {
-    const project = projects.get(url.searchParams.get("tab") ?? "");
-    if (!project) {
-      res.writeHead(404).end();
-      return;
-    }
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
-    res.write(`data: ${JSON.stringify({ type: "state", sessions: project.sessions, statuses: statuses(project) } satisfies ServerEvent)}\n\n`);
-    project.clients.add(res);
-    void sendCeilings(project);
-    req.on("close", () => project.clients.delete(res));
+    const events: StreamEvent[] = [{ type: "projects", tabs: tabList() }, ...[...projects.values()].map((project): StreamEvent => ({ type: "state", tab: project.tab.id, sessions: project.sessions, statuses: statuses(project) }))];
+    res.write(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""));
+    clients.add(res);
+    for (const project of projects.values()) {
+      void sendCeilings(project);
+    }
+    req.on("close", () => clients.delete(res));
     return;
   }
   if (req.method === "POST" && url.pathname.startsWith("/api/")) {
@@ -765,7 +883,7 @@ const server = createServer((req, res) => {
 });
 
 server.listen(host.port, host.bind, () => {
-  log(`claude3 ${hostName} backend on ${host.bind}:${host.port} for ${[...projects.keys()].join(", ")}`);
+  log(`claude3 ${hostName} backend on ${host.bind}:${host.port} for ${tabList().map((tab) => tab.label).join(", ")}`);
   void loadModels();
 });
 
