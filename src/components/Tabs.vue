@@ -37,9 +37,12 @@ function setPath(folder: string): void {
 }
 watch(host, () => setPath(""));
 
-function open(): void {
+function open(event: MouseEvent): void {
   error.value = "";
-  dialog.value?.showModal();
+  // Upper left, just under the button.
+  const { left, bottom } = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  dialog.value!.style.margin = `${bottom + 4}px 0 0 ${left}px`;
+  dialog.value!.showModal();
 }
 
 function attempt(work: Promise<unknown>): void {
