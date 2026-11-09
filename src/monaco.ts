@@ -116,6 +116,28 @@ export function addLineDots(editor: Editor): void {
   window.addEventListener("pointerup", () => (dragFrom = 0));
 }
 
+// Ctrl-wheel sizes the text, remembered under key, with no limits of ours (the one exception to
+// CLAUDE.md's 14-18px, at the user's asking); read back from Monaco so a size it refuses can't run
+// the count away. Monaco's own mouseWheelZoom would zoom every editor on the page. On the frame
+// around the editor, so the gap between them doesn't zoom the page; capture phase, so Monaco
+// doesn't scroll as well.
+export function applyWheelZoom(editor: Editor, key: string): void {
+  const saved = Number(localStorage.getItem(key));
+  if (saved) editor.updateOptions({ fontSize: saved });
+}
+
+export function addWheelZoom(editor: Editor, key: string): void {
+  const { fontSize } = monaco.editor.EditorOption;
+  applyWheelZoom(editor, key);
+  editor.getContainerDomNode().parentElement!.addEventListener("wheel", (event) => {
+    if (!event.ctrlKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    editor.updateOptions({ fontSize: editor.getOption(fontSize) + (event.deltaY < 0 ? 1 : -1) });
+    localStorage.setItem(key, String(editor.getOption(fontSize)));
+  }, true);
+}
+
 // No tab char ever goes in the box: Tab itself makes list items, and text arriving with tabs
 // (a paste, a draft, the Snips) has each one turned into two spaces.
 export const untab = (text: string): string => text.replace(/\t/g, "  ");

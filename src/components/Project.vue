@@ -231,6 +231,10 @@ watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => stat
 const gitDirty = ref(false);
 const deployDue = ref(false);
 watch(() => gitDirty.value || deployDue.value, (on) => emit("highlighted", on));
+// Mounted the first time they are opened, not with every project at page load, and only hidden after that.
+const snipsShown = computed(() => props.side === "snips" && props.active);
+const snipsOpened = ref(false);
+watch(snipsShown, (shown) => { if (shown) snipsOpened.value = true; }, { immediate: true });
 // Picking a tab puts the cursor in its prompt box; post, so the tab is on show by then.
 watch(() => props.active, (active) => active && focusPrompt(), { flush: "post" });
 watch(() => props.side, (open) => !open && props.active && focusPrompt(), { flush: "post" });
@@ -306,7 +310,7 @@ onBeforeUnmount(() => stopListening());
     </aside>
     <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
     <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" @started="select" @deploy-due="(due) => (deployDue = due)" />
-    <Snips v-if="side === 'snips' && active" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
+    <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings' && active" :tab="tab" @close="emit('closeSide')" />
     <Files v-if="side.startsWith('file') && active" :tab="tab" :file-mode="side === 'file'" @open-file="emit('openFile')" />
   </div>

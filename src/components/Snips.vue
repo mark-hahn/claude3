@@ -6,16 +6,17 @@
 // to the end of the prompt and the cursor there, takes the blank lines around the removed text
 // down to one and closes the Snips; with nothing selected it just closes them. A Monaco editor with
 // claude2's editing (src/monaco.ts).
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
 import { extraBlankLines } from "../blankLines.ts";
-import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
+import { addLineDots, addListKeys, addWheelZoom, applyWheelZoom, editorOptions, monaco, untab } from "../monaco.ts";
 
 // addToPrompt answers whether the prompt took the text: a trashed session's doesn't.
-const props = defineProps<{ tab: Tab; addToPrompt: (text: string) => boolean }>();
+const props = defineProps<{ tab: Tab; shown: boolean; addToPrompt: (text: string) => boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
+const FONT_KEY = "claude3.snipsFontSize";
 // Editable only once the shared copy has been read, so nothing typed early can replace it.
 let ready = false;
 // Why it can't be read or saved; empty while all is well.
@@ -30,7 +31,7 @@ let saveTimer = 0;
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 async function load(): Promise<void> {
-  if (saveTimer) return;
+  if (saveTimer || !props.shown) return;
   const asked = edits;
   try {
     const reply = await post<{ text: string | null }>(props.tab, "snips", {});
@@ -70,10 +71,34 @@ function typed(): void {
   saveTimer = window.setTimeout(save, 500);
 }
 
+// Closing only hides the column, so the cursor, selections and undo last until the page reloads.
+// Hidden it is 0x0 and every line rewraps, so the scroll position is put back by hand. Another tab's
+// Snips may have changed the text or the size meanwhile, so it is read-only again until the text has
+// been read, as it is when first opened.
+let closedView: monaco.editor.ICodeEditorViewState | null = null;
+watch(() => props.shown, async (shown) => {
+  const ed = editor!;
+  if (!shown) {
+    closedView = ed.saveViewState();
+    if (saveTimer) save();
+    return;
+  }
+  ready = false;
+  ed.updateOptions({ readOnly: true });
+  // v-show undoes display:none after post watchers like this one, and until then the editor can't take focus or be measured.
+  await nextTick();
+  applyWheelZoom(ed, FONT_KEY);
+  ed.layout();
+  ed.restoreViewState(closedView);
+  ed.focus();
+  void load();
+}, { flush: "post" });
+
 onMounted(() => {
   editor = monaco.editor.create(host.value!, { ...editorOptions, readOnly: true, readOnlyMessage: { value: "The Snips can't be edited until claude2's copy has been read." } });
   addLineDots(editor);
   addListKeys(editor);
+  addWheelZoom(editor, FONT_KEY);
   // A load's setValue is an edit too, but not typing: only user edits count and get saved.
   editor.onDidChangeModelContent((event) => !event.isFlush && typed());
   // Esc is left to Monaco while it has something of its own up to close.
@@ -114,7 +139,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="snips">
+  <div v-show="shown" class="snips">
     <div v-if="note" class="snips-note">{{ note }}</div>
     <div class="snips-text"><div ref="host"></div></div>
   </div>

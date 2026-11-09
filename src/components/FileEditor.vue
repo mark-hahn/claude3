@@ -7,7 +7,7 @@
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
-import { addLineDots, monaco } from "../monaco.ts";
+import { addLineDots, addWheelZoom, monaco } from "../monaco.ts";
 
 const props = defineProps<{ tab: Tab; file: { path: string; text: string; mtime: number } }>();
 
@@ -99,23 +99,10 @@ async function reload(): Promise<void> {
   }
 }
 
-// Ctrl-wheel sizes the text, for every file, with no limits of ours (the one exception to CLAUDE.md's
-// 14-18px, at the user's asking); read back from Monaco so a size it refuses can't run the count away.
-// Monaco's own mouseWheelZoom would zoom every editor on the page. Capture phase, so Monaco doesn't
-// scroll as well.
-const FONT_KEY = "claude3.fileFontSize";
-function zoom(event: WheelEvent): void {
-  if (!event.ctrlKey || !editor) return;
-  event.preventDefault();
-  event.stopPropagation();
-  const { fontSize } = monaco.editor.EditorOption;
-  editor.updateOptions({ fontSize: editor.getOption(fontSize) + (event.deltaY < 0 ? 1 : -1) });
-  localStorage.setItem(FONT_KEY, String(editor.getOption(fontSize)));
-}
-
 onMounted(() => {
-  editor = monaco.editor.create(host.value!, { value: props.file.text, language: "plaintext", theme: "claude2", automaticLayout: true, fontSize: Number(localStorage.getItem(FONT_KEY)) || 14, minimap: { enabled: false }, lineNumbers: "off", wordWrap: "on", lineDecorationsWidth: 14, glyphMargin: false, folding: false, editContext: false });
+  editor = monaco.editor.create(host.value!, { value: props.file.text, language: "plaintext", theme: "claude2", automaticLayout: true, fontSize: 14, minimap: { enabled: false }, lineNumbers: "off", wordWrap: "on", lineDecorationsWidth: 14, glyphMargin: false, folding: false, editContext: false });
   addLineDots(editor);
+  addWheelZoom(editor, "claude3.fileFontSize");
   editor.createContextKey("stockEditor", true);
   // A read's setValue is an edit too, but not typing.
   editor.onDidChangeModelContent((event) => !event.isFlush && typed());
@@ -132,7 +119,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div v-if="note" class="file-note">{{ note }} <button v-if="refused" @click="reload">Reload</button></div>
-  <div class="file-text" @wheel.capture="zoom"><div ref="host"></div></div>
+  <div class="file-text"><div ref="host"></div></div>
 </template>
 
 <style scoped>

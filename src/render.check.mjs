@@ -69,6 +69,28 @@ assert.equal(await findIn("node_modules", false), null);
 assert.equal(await findIn("buried", true), buried);
 fs.rmSync(folder, { recursive: true });
 
+// Ctrl-X's move: nothing in its own folder, a free name on a clash, and across disks (/dev/shm is another one).
+const moves = fs.mkdtempSync(path.join(os.tmpdir(), "claude3-move-"));
+const moving = path.join(moves, "item.txt");
+const into = path.join(moves, "into");
+fs.writeFileSync(moving, "x");
+fs.mkdirSync(into);
+fs.writeFileSync(path.join(into, "item.txt"), "already here");
+assert.deepEqual(await fileActions.movePath({ path: moving, folder: moves }), { path: moving }, "its own folder");
+const landed = (await fileActions.movePath({ path: moving, folder: into })).path;
+assert.equal(landed, path.join(into, "item(1).txt"));
+assert.equal(fs.readFileSync(landed, "utf8"), "x");
+assert.equal(fs.readFileSync(path.join(into, "item.txt"), "utf8"), "already here");
+assert.ok(!fs.existsSync(moving));
+if (fs.existsSync("/dev/shm")) {
+  const otherDisk = fs.mkdtempSync("/dev/shm/claude3-move-");
+  const crossed = (await fileActions.movePath({ path: landed, folder: otherDisk })).path;
+  assert.equal(fs.readFileSync(crossed, "utf8"), "x");
+  assert.ok(!fs.existsSync(landed), "the original goes too");
+  fs.rmSync(otherDisk, { recursive: true });
+}
+fs.rmSync(moves, { recursive: true });
+
 // The CLI's own words for a login that's gone send the prompt back; any other failure keeps its turn.
 assert.ok(AUTH_FAILED.test("Failed to authenticate: OAuth session expired and could not be refreshed"));
 assert.ok(AUTH_FAILED.test("Not logged in · Please run /login"));

@@ -180,7 +180,8 @@ const SRV = new URL(HOSTS.srv.url).hostname;
 const CLIP_DIR = path.join(os.homedir(), ".claude3", "clipboard");
 const scp = (from: string, to: string): Promise<string> => run("scp", ["-q", "-r", "-o", "BatchMode=yes", from, to]);
 
-async function clipCopy(host: string, file: string): Promise<object> {
+// clip is the clipboard's own name for the item, which a later clipFiles answers in.
+async function clipCopy(host: string, file: string): Promise<{ clip: string }> {
   let local = file;
   if (host === "srv") {
     // ponytail: the fetched copy stays until the next one, as a paste can come at any time.
@@ -189,9 +190,12 @@ async function clipCopy(host: string, file: string): Promise<object> {
     local = path.join(CLIP_DIR, path.basename(file));
     await scp(`${SRV}:${file}`, local);
   }
-  await powershell(`Set-Clipboard -LiteralPath ${quoted(await toWindows(local))}`);
-  return {};
+  const clip = await toWindows(local);
+  await powershell(`Set-Clipboard -LiteralPath ${quoted(clip)}`);
+  return { clip };
 }
+
+const clipFiles = async (): Promise<string[]> => (await powershell("Get-Clipboard -Format FileDropList | ForEach-Object { $_.FullName }")).split(/\r?\n/).filter(Boolean);
 
 async function srvFreePath(folder: string, name: string): Promise<string> {
   const res = await fetch(`${HOSTS.srv.url}/api/freePath`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ folder, name }) });
@@ -202,20 +206,43 @@ async function srvFreePath(folder: string, name: string): Promise<string> {
   return reply.path;
 }
 
-async function clipPaste(host: string, folder: string): Promise<object> {
-  const listed = (await powershell("Get-Clipboard -Format FileDropList | ForEach-Object { $_.FullName }")).split(/\r?\n/).filter(Boolean);
+// Answers where the first item landed; the tree selects that one.
+async function clipPaste(host: string, folder: string): Promise<{ path: string }> {
+  const listed = await clipFiles();
   if (!listed.length) {
     throw new Error("The clipboard has no files.");
   }
+  let first = "";
   for (const file of await Promise.all(listed.map(fromWindows))) {
     const name = path.basename(file);
+    const target = host === "srv" ? await srvFreePath(folder, name) : await freePath(folder, name);
     if (host === "srv") {
-      await scp(file, `${SRV}:${await srvFreePath(folder, name)}`);
+      await scp(file, `${SRV}:${target}`);
     } else {
-      await fs.promises.cp(file, await freePath(folder, name), { recursive: true, force: false, errorOnExist: true });
+      await fs.promises.cp(file, target, { recursive: true, force: false, errorOnExist: true });
     }
+    first ||= target;
   }
-  return {};
+  return { path: first };
+}
+
+// Ctrl-X's item landing on its own host. Into the folder it is already in, nothing moves.
+async function move(item: string, folder: string): Promise<{ path: string }> {
+  if (path.dirname(item) === path.resolve(folder)) {
+    return { path: item };
+  }
+  const target = await freePath(folder, path.basename(item));
+  try {
+    await fs.promises.rename(item, target);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") {
+      throw error;
+    }
+    // Another disk, such as /root to /mnt/c.
+    await fs.promises.cp(item, target, { recursive: true, force: false, errorOnExist: true, verbatimSymlinks: true, preserveTimestamps: true });
+    await fs.promises.rm(item, { recursive: true });
+  }
+  return { path: target };
 }
 
 export const fileActions: Record<string, (body: Record<string, unknown>) => Promise<unknown>> = {
@@ -227,15 +254,18 @@ export const fileActions: Record<string, (body: Record<string, unknown>) => Prom
   readFile: (body) => readText(absolute(body.path), Number(body.known)),
   saveFile: (body) => saveText(absolute(body.path), String(body.text ?? ""), Number(body.mtime)),
   newFile: async (body) => {
-    await fs.promises.writeFile(await freePath(absolute(body.folder), "new-file"), "", { flag: "wx" });
-    return {};
+    const target = await freePath(absolute(body.folder), "new-file");
+    await fs.promises.writeFile(target, "", { flag: "wx" });
+    return { path: target };
   },
   renamePath: (body) => rename(absolute(body.path), plainName(body.name)),
+  movePath: (body) => move(absolute(body.path), absolute(body.folder)),
   deletePath: async (body) => {
     await fs.promises.rm(absolute(body.path), { recursive: true });
     return {};
   },
   freePath: async (body) => ({ path: await freePath(absolute(body.folder), plainName(body.name)) }),
   clipCopy: (body) => clipCopy(String(body.host), absolute(body.path)),
+  clipFiles: async () => ({ files: await clipFiles() }),
   clipPaste: (body) => clipPaste(String(body.host), absolute(body.folder)),
 };

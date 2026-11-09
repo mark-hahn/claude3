@@ -1,10 +1,15 @@
+<script lang="ts">
+// Ctrl-X's item, here because the Ctrl-V can come in any tab's tree. clip is the clipboard's name for it.
+let cut: { tab: Tab; path: string; clip: string } | null = null;
+</script>
+
 <script setup lang="ts">
 // The Files column, in the Snips' place: a VS Code-style tree on the tab's host or, in file mode,
-// one file in FileEditor. Click a folder to open it, double-click to make it the root; click a file
-// to put it on the Windows clipboard, double-click to edit it. Ctrl-click deletes, alt-click copies
-// the path, shift-click on a folder pastes the clipboard's files into it, a long press renames.
+// one file in FileEditor. Click a folder to open it, double-click to make it the root; double-click
+// a file to edit it; alt-click copies the path. One row can be selected, remembered per root: a
+// click on a file or a ctrl-click on anything toggles it, and the keys act on it (keyDown).
 // Files dragged from Explorer land on the folder under them. The header's path row stands for the
-// root folder, which has no row of its own, for paste and drop.
+// root folder, which has no row of its own, for drop.
 // The tree holds only what the backend last said: each open folder is asked for again every 2s.
 // ponytail: polling, not file watches; change it if the 2s lag or the traffic ever matters.
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
@@ -12,7 +17,7 @@ import type { HostName, Tab } from "../../shared/config.ts";
 import type { FileEntry } from "../../shared/types.ts";
 import { post, postHost, upload } from "../api.ts";
 import { copy } from "../copy.ts";
-import { foldersBetween } from "../tabList.ts";
+import { foldersBetween, sameName } from "../tabList.ts";
 import FileEditor from "./FileEditor.vue";
 import FolderPicker from "./FolderPicker.vue";
 
@@ -24,11 +29,17 @@ const roots = computed(() => props.tab.roots ?? []);
 const root = computed(() => roots.value.at(-1) ?? props.tab.path);
 const listings = reactive(new Map<string, FileEntry[]>());
 const openKey = `filesOpen:${props.tab.id}`;
-const lastKey = `filesLast:${props.tab.id}`;
+const selectKey = `filesSelected:${props.tab.id}`;
 const opened = reactive(new Set<string>(JSON.parse(localStorage.getItem(openKey) ?? "[]") as string[]));
-const last = ref(localStorage.getItem(lastKey) ?? "");
+// Each root's selected path. A selected row may be out of sight, or gone from the disk.
+const selections = reactive<Record<string, string>>(JSON.parse(localStorage.getItem(selectKey) ?? "{}"));
 watch(() => [...opened], (folders) => localStorage.setItem(openKey, JSON.stringify(folders)));
-watch(last, (folder) => localStorage.setItem(lastKey, folder));
+watch(selections, (all) => localStorage.setItem(selectKey, JSON.stringify(all)));
+const selected = computed(() => selections[root.value] ?? "");
+function select(path: string): void {
+  if (path) selections[root.value] = path;
+  else delete selections[root.value];
+}
 
 const note = ref("");
 const listProblem = ref("");
@@ -40,6 +51,7 @@ const renaming = ref("");
 const newName = ref("");
 const picker = ref<InstanceType<typeof FolderPicker>>();
 const tree = ref<HTMLElement>();
+const treeArea = ref<HTMLElement>();
 
 const rows = computed(() => {
   const out: (FileEntry & { depth: number })[] = [];
@@ -53,6 +65,16 @@ const rows = computed(() => {
   return out;
 });
 type Row = (typeof rows.value)[number];
+
+// What the keys act on: a selection out of sight counts as none.
+const selectedRow = computed(() => rows.value.find((row) => row.path === selected.value));
+// The folders that have to be open for a row under the root to show.
+const wayTo = (path: string): string[] => (foldersBetween(root.value, path) ?? []).slice(0, -1);
+// Where New and paste land: in the selected folder, beside the selected file, else in the root.
+const landing = computed(() => {
+  const row = selectedRow.value;
+  return !row ? root.value : row.dir ? row.path : (wayTo(row.path).at(-1) ?? root.value);
+});
 
 const messageOf = (problem: unknown): string => (problem instanceof Error ? problem.message : String(problem));
 const openRows = (): string[] => rows.value.filter((row) => row.dir && opened.has(row.path)).map((row) => row.path);
@@ -97,12 +119,11 @@ function attempt(work: Promise<unknown>): Promise<void> {
 // The backend's list comes back as a projects event, and with it the new root.
 const setRoots = (next: string[]): Promise<void> => attempt(post(props.tab, "setRoots", { roots: next }));
 
-function collapse(): void {
-  opened.clear();
-  last.value = "";
+function goBack(): void {
+  void setRoots(roots.value.slice(0, -1));
+  // The Back button may have just been disabled, with the focus on it.
+  treeArea.value?.focus();
 }
-
-const newFile = (): Promise<void> => attempt(post(props.tab, "newFile", { folder: opened.has(last.value) && foldersBetween(root.value, last.value) ? last.value : root.value }));
 
 // Opens the folders on the way to a row and scrolls to it.
 async function reveal(target: string, folders: string[]): Promise<void> {
@@ -112,12 +133,28 @@ async function reveal(target: string, folders: string[]): Promise<void> {
   tree.value?.querySelector(`[data-path="${CSS.escape(target)}"]`)?.scrollIntoView({ block: "nearest" });
 }
 
+function selectAndReveal(path: string): Promise<void> {
+  select(path);
+  return reveal(path, wayTo(path));
+}
+
+// With a selection: closes all but the way to it. Once that is all that's open, closes everything
+// and drops the selection. A shown row's way is open, so equal counts mean nothing else is.
+function collapse(): void {
+  const keep = selectedRow.value && openRows().length === wayTo(selected.value).length ? "" : selected.value;
+  opened.clear();
+  select(keep);
+  if (keep) void reveal(keep, wayTo(keep));
+}
+
+const newFile = (): Promise<void> => attempt(post<{ path: string }>(props.tab, "newFile", { folder: landing.value }).then((reply) => selectAndReveal(reply.path)));
+
 // A picked folder under the root is opened down to and shown; any other becomes a new root.
 async function goTo(folder: string): Promise<void> {
   if (folder === root.value) return;
   const chain = foldersBetween(root.value, folder);
   if (!chain) return setRoots([...roots.value, folder]);
-  last.value = folder;
+  select(folder);
   await reveal(folder, chain);
 }
 
@@ -126,9 +163,7 @@ async function goTo(folder: string): Promise<void> {
 // end it is heading away from. Queued, so quick presses each move on one.
 const searchText = ref("");
 const searchNodeModules = ref(false);
-const flashing = ref("");
 let foundAt = "";
-let flashTimer = 0;
 let searches: Promise<void> = Promise.resolve();
 
 async function findStep(text: string, backward: boolean): Promise<void> {
@@ -140,10 +175,7 @@ async function findStep(text: string, backward: boolean): Promise<void> {
       return;
     }
     foundAt = reply.path;
-    await reveal(reply.path, (foldersBetween(root.value, reply.path) ?? []).slice(0, -1));
-    flashing.value = reply.path;
-    window.clearTimeout(flashTimer);
-    flashTimer = window.setTimeout(() => (flashing.value = ""), 500);
+    await selectAndReveal(reply.path);
   } catch (problem) {
     note.value = messageOf(problem);
   }
@@ -156,32 +188,78 @@ function search(backward: boolean): void {
 
 // A srv tab's clipboard work is done by WSL's backend: the clipboard is on the laptop.
 const clipHost = computed<HostName>(() => (props.tab.host === "srv" ? "wsl" : props.tab.host));
-function clipboardJob(target: string, action: string, body: Record<string, unknown>): void {
-  working.value = target;
-  void attempt(postHost(clipHost.value, action, { host: props.tab.host, ...body })).finally(() => (working.value = ""));
+// One at a time and in order, or a Ctrl-V right after a Ctrl-C would paste what was there before it.
+let clipboardJobs: Promise<unknown> = Promise.resolve();
+function clipboardJob(target: string, work: () => Promise<unknown>): void {
+  clipboardJobs = clipboardJobs.then(() => {
+    working.value = target;
+    return attempt(work()).finally(() => (working.value = ""));
+  });
 }
-const paste = (folder: string): void => clipboardJob(folder, "clipPaste", { folder });
+
+function copyRow(row: Row, cutting: boolean): void {
+  clipboardJob(row.path, async () => {
+    const { clip } = await postHost<{ clip: string }>(clipHost.value, "clipCopy", { host: props.tab.host, path: row.path });
+    cut = cutting ? { tab: props.tab, path: row.path, clip } : null;
+  });
+}
+
+// A cut item moves only if it is still all the clipboard holds; otherwise this is an ordinary paste.
+async function paste(folder: string): Promise<void> {
+  let item = cut;
+  if (item) {
+    const { files } = await postHost<{ files: string[] }>(clipHost.value, "clipFiles", {});
+    if (files.length !== 1 || !sameName(files[0]!, item.clip)) item = cut = null;
+  }
+  if (item?.tab.host === props.tab.host) {
+    const reply = await post<{ path: string }>(props.tab, "movePath", { path: item.path, folder });
+    moved(item.path, reply.path);
+    cut = null;
+    return selectAndReveal(reply.path);
+  }
+  const reply = await postHost<{ path: string }>(clipHost.value, "clipPaste", { host: props.tab.host, folder });
+  if (item) {
+    await post(item.tab, "deletePath", { path: item.path });
+    cut = null;
+  }
+  await selectAndReveal(reply.path);
+}
 
 function remove(row: Row): void {
   const what = row.dir ? `the folder ${row.path} and everything in it` : row.path;
-  if (window.confirm(`Permanently delete ${what}?\n\nThis cannot be undone.`)) void attempt(post(props.tab, "deletePath", { path: row.path }));
+  if (window.confirm(`Permanently delete ${what}?\n\nThis cannot be undone.`)) void attempt(post(props.tab, "deletePath", { path: row.path }).then(() => select("")));
 }
 
-// A single click on a file waits, so the first click of a double-click doesn't replace the clipboard.
-let clickTimer = 0;
 function clickRow(row: Row, event: MouseEvent): void {
-  if (held) return;
-  if (event.ctrlKey) return remove(row);
+  if (event.shiftKey) return;
   if (event.altKey) return copy(row.path, event.currentTarget as HTMLElement);
-  if (event.shiftKey) return row.dir ? paste(row.path) : undefined;
-  if (!row.dir) {
-    window.clearTimeout(clickTimer);
-    clickTimer = window.setTimeout(() => clipboardJob(row.path, "clipCopy", { path: row.path }), 300);
-  } else if (!opened.delete(row.path)) {
+  if (event.ctrlKey || !row.dir) return select(selected.value === row.path ? "" : row.path);
+  if (!opened.delete(row.path)) {
     opened.add(row.path);
-    last.value = row.path;
     void refresh();
   }
+}
+
+// Only while the focus is in the tree's part of the column, so the keys stay ordinary everywhere else.
+function keyDown(event: KeyboardEvent): void {
+  const area = event.currentTarget as HTMLElement;
+  if ((event.target as Element).closest("input, dialog") || event.altKey || event.shiftKey) return;
+  const key = `${event.ctrlKey ? "ctrl+" : ""}${event.key.toLowerCase()}`;
+  const row = selectedRow.value;
+  // Text picked in the path row or a note is what Ctrl-C copies then.
+  const picked = window.getSelection();
+  if (key === "ctrl+c" && picked && !picked.isCollapsed && area.contains(picked.anchorNode)) return;
+  if (key === "backspace") goBack();
+  else if (key === "ctrl+v") {
+    const folder = landing.value;
+    clipboardJob(folder, () => paste(folder));
+  } else if (!row) return;
+  else if (key === "delete") remove(row);
+  else if (key === "f2") startRename(row);
+  else if (key === "ctrl+c") copyRow(row, false);
+  else if (key === "ctrl+x") copyRow(row, true);
+  else return;
+  event.preventDefault();
 }
 
 async function openRow(row: Row): Promise<void> {
@@ -197,34 +275,24 @@ async function openRow(row: Row): Promise<void> {
 }
 
 function doubleClickRow(row: Row, event: MouseEvent): void {
-  if (held || event.ctrlKey || event.altKey || event.shiftKey) return;
-  window.clearTimeout(clickTimer);
+  if (event.ctrlKey || event.altKey || event.shiftKey) return;
+  select(row.path);
   if (row.dir) void setRoots([...roots.value, row.path]);
   else void openRow(row);
 }
 
-// As on a session card: a long press renames, and the click that ends it does nothing else.
-let pressTimer = 0;
-let held = false;
-function press(row: Row, event: PointerEvent): void {
-  held = renaming.value === row.path;
-  if (held || event.button || event.ctrlKey || event.altKey || event.shiftKey) return;
-  window.clearTimeout(pressTimer);
-  pressTimer = window.setTimeout(() => {
-    held = true;
-    renaming.value = row.path;
-    newName.value = row.name;
-  }, 650);
+function startRename(row: Row): void {
+  renaming.value = row.path;
+  newName.value = row.name;
 }
-const unpress = (): void => window.clearTimeout(pressTimer);
 
-// What was open under a renamed folder is still open.
+// What was open or selected under a renamed or moved item still is.
 function moved(from: string, to: string): void {
-  const follow = (folder: string): string => (folder === from || foldersBetween(from, folder) ? to + folder.slice(from.length) : folder);
+  const follow = (item: string): string => (item === from || foldersBetween(from, item) ? to + item.slice(from.length) : item);
   const folders = [...opened].map(follow);
   opened.clear();
   folders.forEach((folder) => opened.add(folder));
-  last.value = follow(last.value);
+  for (const [folder, item] of Object.entries(selections)) selections[folder] = follow(item);
 }
 
 function finishRename(row: Row, commit: boolean): void {
@@ -264,57 +332,55 @@ function drop(event: DragEvent): void {
 
 let poller = 0;
 watch([root, () => props.fileMode], () => void refresh());
+// Back from the editor, the keys work at once. After the tick: v-show only reveals the area at the
+// end of the flush, even for a post-flush watcher, and a hidden element can't take focus.
+watch(() => props.fileMode, async (editing) => {
+  await nextTick();
+  if (!editing) treeArea.value?.focus();
+});
 onMounted(() => {
   void refresh();
+  treeArea.value?.focus();
   poller = window.setInterval(() => !document.hidden && !props.fileMode && void refresh(), 2000);
 });
-onBeforeUnmount(() => {
-  window.clearInterval(poller);
-  window.clearTimeout(flashTimer);
-  window.clearTimeout(clickTimer);
-  window.clearTimeout(pressTimer);
-});
+onBeforeUnmount(() => window.clearInterval(poller));
 </script>
 
 <template>
   <div class="files" @dragover.prevent="dragOver" @dragleave="dragLeave" @drop.prevent="drop">
     <FileEditor v-if="fileMode && file" :tab="tab" :file="file" />
-    <div v-show="!fileMode" class="files-mode">
+    <div v-show="!fileMode" ref="treeArea" class="files-mode" tabindex="-1" @keydown="keyDown">
       <div class="files-bar">
-        <button title="Back to the previous root" aria-label="Back" :disabled="!roots.length" @click="setRoots(roots.slice(0, -1))">
+        <button title="Back to the previous root" aria-label="Back" :disabled="!roots.length" @click="goBack">
           <svg viewBox="0 0 20 16"><path d="M1.5 5.5H14a4.5 4.5 0 0 1 0 9M6 10 1.5 5.5 6 1" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" /></svg>
         </button>
-        <button title="Close all folders" aria-label="Collapse" @click="collapse">
+        <button title="Close all folders but the way to the selection; pressed again, close those too and drop the selection" aria-label="Collapse" @click="collapse">
           <svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="10" height="10" rx="1" /><path d="M4 9.5h5M4.5 1.5h10v10" /></svg>
         </button>
-        <button title="New empty file in the last folder opened" @click="newFile">New</button>
+        <button title="New empty file in the selected folder, beside the selected file, or in the root" @click="newFile">New</button>
         <button title="Show a folder in the tree" @click="picker?.open(root)">Path</button>
-        <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" />
+        <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="treeArea?.focus()" />
         <label class="files-nm" title="Search inside node_modules too"><input v-model="searchNodeModules" type="checkbox" />NM</label>
       </div>
-      <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root" title="Shift-click to paste the clipboard's files here" @click.shift="paste(root)">{{ root }}</div>
+      <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root">{{ root }}</div>
       <div v-if="note || listProblem" class="files-note">{{ note || listProblem }}</div>
       <div ref="tree" class="files-tree">
         <div
           v-for="row in rows"
           :key="row.path"
           class="files-row"
-          :class="{ drop: dragTarget === row.path, working: working === row.path, flash: flashing === row.path }"
+          :class="{ drop: dragTarget === row.path, working: working === row.path, selected: selected === row.path }"
           :data-path="row.path"
           :data-drop="row.dir ? row.path : undefined"
           :title="row.path"
           role="button"
-          @pointerdown="press(row, $event)"
-          @pointerup="unpress"
-          @pointercancel="unpress"
-          @pointerleave="unpress"
           @click="clickRow(row, $event)"
           @dblclick="doubleClickRow(row, $event)"
         >
           <span v-for="depth in row.depth" :key="depth" class="files-guide"></span>
           <svg class="files-chevron" :class="{ open: opened.has(row.path) }" viewBox="0 0 16 16"><path v-if="row.dir" d="M6 3.5 10.5 8 6 12.5" /></svg>
           <svg class="files-icon" viewBox="0 0 16 16"><path :d="row.dir ? 'M1.5 13.5v-11h4.5l1.5 2h7v9z' : 'M3.5 1.5h6l3 3v10h-9zM9.5 1.5v3h3'" /></svg>
-          <input v-if="renaming === row.path" v-model="newName" v-focus class="files-rename" spellcheck="false" @pointerdown.stop @click.stop @dblclick.stop @keydown.enter.prevent="finishRename(row, true)" @keydown.esc.prevent="finishRename(row, false)" @blur="finishRename(row, true)" />
+          <input v-if="renaming === row.path" v-model="newName" v-focus class="files-rename" spellcheck="false" @click.stop @dblclick.stop @keydown.enter.prevent="finishRename(row, true); treeArea?.focus()" @keydown.esc.prevent="finishRename(row, false); treeArea?.focus()" @blur="finishRename(row, true)" />
           <span v-else class="files-name">{{ row.name }}</span>
         </div>
       </div>
@@ -325,7 +391,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .files { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-left: 1px solid var(--border); background: var(--page); }
-.files-mode { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.files-mode { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; outline: none; }
 .files-bar { flex: none; display: flex; align-items: center; gap: 6px; }
 .files-bar button { min-height: 0; padding: 3px 10px; }
 .files-bar svg { display: block; width: 20px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
@@ -335,11 +401,13 @@ onBeforeUnmount(() => {
 .files-nm { flex: none; display: flex; align-items: center; gap: 3px; margin-right: 15px; cursor: pointer; user-select: none; }
 .files-root { flex: none; padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
 .files-note { flex: none; background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 4px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.files-tree { flex: 1; min-height: 0; overflow: auto; padding: 4px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); user-select: none; }
-.files-row { display: flex; align-items: center; width: max-content; min-width: 100%; height: 24px; padding: 0 8px 0 6px; cursor: pointer; white-space: nowrap; }
+/* A grid so every row is as wide as the widest, and a selection's colour reaches the far edge when scrolled. */
+.files-tree { flex: 1; min-height: 0; overflow: auto; padding: 4px 0; display: grid; align-content: start; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); user-select: none; }
+.files-row { display: flex; align-items: center; height: 24px; padding: 0 8px 0 6px; cursor: pointer; white-space: nowrap; }
 .files-row:hover { background: var(--wash); }
-.files-row.flash { background: var(--yellow); }
-.files-row.working, .files-root.working { background: #fbf3c4; }
+.files-row.selected { background: var(--yellow); }
+/* Not yellow: the row being copied is usually the selected one. */
+.files-row.working, .files-root.working { background: #ffd9a8; }
 .files-row.drop, .files-root.drop { background: #cfe8ff; box-shadow: inset 0 0 0 1px #8fb8e0; }
 /* VS Code's indent guides: shown while the pointer is over the tree, under the parent's chevron. */
 .files-guide { flex: none; align-self: stretch; width: 12px; }

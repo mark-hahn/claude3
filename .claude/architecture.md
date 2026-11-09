@@ -23,7 +23,7 @@ on the laptop, and talks to each backend directly.
   follow-up into a background wait, titles, the model list, `contextUsage` for Ctx. Also
   `cheapestModel` from claude2's modelInfo.ts.
 - `server/contextStats.ts`: the Ctx popup's table, copied unchanged from claude2.
-- `server/files.ts`: the Files pane's actions (`fileActions`) and `POST /upload`: folder listings, a text file read and saved, new, rename, delete, and the Windows clipboard's files (PowerShell, scp for srv).
+- `server/files.ts`: the Files pane's actions (`fileActions`) and `POST /upload`: folder listings, a text file read and saved, new, rename, move, delete, and the Windows clipboard's files (PowerShell, scp for srv).
 - `server/login.ts`: claude2's Re-Auth as steps the page drives: this host's `claude auth login`,
   its URL, the pasted code on its stdin, then `claude auth status` for who signed in.
 - `src/App.vue`: the tab strip and the list of every project; open ones have a tab, sorted by name
@@ -59,7 +59,9 @@ on the laptop, and talks to each backend directly.
 - `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane
   (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude2-stats (`/snips` on
   hahnca.com:7301), reached through the backend's `snips` action; read on open and window focus,
-  saved 500ms after typing stops. Ctrl+Enter hands the selection to the `addToPrompt` prop, Pane's
+  saved 500ms after typing stops. Each tab mounts its own the first time it opens them and after that only hides
+  it (`shown` prop), so the cursor and selections last until the page reloads; its `shown` watcher does what a remount
+  would (re-read while read-only, save at once, font size), and restores the scroll, since a hidden editor is 0x0. Ctrl+Enter hands the selection to the `addToPrompt` prop, Pane's
   exposed `appendPrompt`, which appends it to the draft and focuses the prompt box; if that took
   it, the selection is deleted from the Snips and the blank lines at or beside it come down to one
   (`src/blankLines.ts`; a trashed session's prompt takes nothing, so nothing is deleted and they stay open), then the
@@ -184,16 +186,18 @@ on the laptop, and talks to each backend directly.
   under its `set -e`.
 - **Files.** The tree's root is the top of `Tab.roots` (kept in `projects.json`, `setRoots`, back
   through a `projects` event) or else the project folder; open folders are per tab in localStorage
-  (`filesOpen:<tab>`, `filesLast:<tab>`). Every open folder is listed again every 2s, so outside
-  changes appear. A click on a file waits 300ms (a double-click must not replace the clipboard),
-  then the backend puts it on the real Windows clipboard with `Set-Clipboard`; shift-click reads
-  `Get-Clipboard -Format FileDropList` and copies. The clipboard is on the laptop, so a srv tab asks
+  (`filesOpen:<tab>`), and one selected row per root (`filesSelected:<tab>`). Every open folder is listed again every 2s, so outside
+  changes appear. The keys (`keyDown`) work only while focus is in the tree's part of the column, outside its text boxes and
+  the Path dialog; a selection out of sight counts as none for them. Ctrl-C puts the selection on the real
+  Windows clipboard with `Set-Clipboard`, Ctrl-V reads `Get-Clipboard -Format FileDropList` and copies. Ctrl-X is a
+  Ctrl-C remembered page-wide (`cut`, with the clipboard's name for it): if that is still all the clipboard holds, the next Ctrl-V
+  in any tab moves it (`movePath` on its own host, else paste then `deletePath`). The clipboard is on the laptop, so a srv tab asks
   WSL's backend (`clipHost`), which carries the files with scp: fetched ones wait in
   `~/.claude3/clipboard/`, and for a paste it asks the srv backend's `freePath` for the name. Clashes on new,
-  paste and drop take `name(<idx>).ext`; nothing is overwritten. Drops stream raw to `POST /upload`.
+  paste, move and drop take `name(<idx>).ext`; nothing is overwritten. Drops stream raw to `POST /upload`.
   The search box's Enter (Ctrl-Enter going backward) asks `findFile` for the next name after the last
   found, walked on the backend so closed folders count and skipping node_modules unless NM is
-  ticked; the page opens the way to it and flashes its row.
+  ticked; the page opens the way to it and selects its row. Esc there moves focus to the tree.
   **File mode:** Saved 500ms after typing, and read again if the file's mtime changes. `saveFile`
   carries the mtime it read and is refused if the file has moved on; the editor then stops saving
   until Reload.
@@ -277,10 +281,10 @@ on the laptop, and talks to each backend directly.
 - Monaco's `addCommand` keys are page-wide and every tab has its own editor, so editor keys are
   `addAction`s. Monaco is about 4MB of the built page. Its theme and `addKeybindingRules` are page-wide
   too: the Files editor is stock Monaco (plus word wrap and the line dots) but must use the `claude2` theme, and is kept out of the
-  user's key rules, all but Ctrl-D, by its `stockEditor` context key. Its ctrl-wheel font size is its own
-  handler, since Monaco's `mouseWheelZoom` is page-wide too.
+  user's key rules, all but Ctrl-D, by its `stockEditor` context key. The ctrl-wheel font size of it and of the Snips is
+  `addWheelZoom` in `monaco.ts`, each editor with its own remembered size, since Monaco's `mouseWheelZoom` is page-wide too.
 - Every page element follows CLAUDE.md's display rules: font sizes 14–18px only (the one exception,
-  at the user's asking, is the Files editor's ctrl-wheel size, which has no limits), text solid black
+  at the user's asking, is the ctrl-wheel size of the Files editor and the Snips, which has no limits), text solid black
   or a colour, never grey. Monaco's markdown keeps the stock light theme's token colours (blue
   headings), and its one grey token is pinned to black in `monaco.ts`. A disabled button shows by its dashed grey
   border, a paused quota age by its background; only status icons (tab dot, card clocks) keep colour.
