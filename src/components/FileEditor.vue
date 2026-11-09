@@ -3,8 +3,8 @@
 // box's and Snips' custom keys only Ctrl-D, uncoloured, wrapped, their line dots in place of line numbers, no minimap. Live as Snips are: saved half a second after the
 // typing stops and at once on close, and read again when the file changes on disk. A save is
 // refused if the file changed since it was read, and then nothing more is saved until Reload.
-// With the file's last line in view it is in tail mode: changes arrive as they happen and the view
-// stays at the bottom. Nothing else differs, so an unchanging file looks the same in and out of it.
+// With the file's last line in view it is in tail mode, shown by the header's path going yellow:
+// changes arrive as they happen and the view stays at the bottom.
 // ponytail: out of tail mode asks every 2s, not a file watch; change it if that lag ever matters.
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import type { Tab } from "../../shared/config.ts";
@@ -24,7 +24,7 @@ let dirty = false;
 let saving = false;
 let saveTimer = 0;
 let poller = 0;
-let tail = false;
+const tail = ref(false);
 // While text from disk goes in, whose scrolling isn't the user's.
 let settingText = false;
 let following = false;
@@ -76,7 +76,7 @@ function show(reply: { mtime: number; text?: string | null }): void {
     settingText = true;
     editor.setValue(reply.text);
     editor.restoreViewState(view);
-    if (tail) editor.setScrollTop(editor.getContentHeight() - editor.getLayoutInfo().height);
+    if (tail.value) editor.setScrollTop(editor.getContentHeight() - editor.getLayoutInfo().height);
     settingText = false;
   }
 }
@@ -108,7 +108,7 @@ async function poll(action = "readFile"): Promise<boolean> {
 async function follow(): Promise<void> {
   if (following) return;
   following = true;
-  while (tail && (await poll("waitFile")));
+  while (tail.value && (await poll("waitFile")));
   following = false;
 }
 
@@ -138,12 +138,12 @@ onMounted(() => {
   // Only the scroll position moving decides this, so a column resize doesn't.
   editor.onDidScrollChange((event) => {
     if (!event.scrollTopChanged || settingText) return;
-    tail = atBottom();
+    tail.value = atBottom();
     void follow();
   });
-  tail = atBottom();
+  tail.value = atBottom();
   void follow();
-  poller = window.setInterval(() => void (tail ? follow() : poll()), 2000);
+  poller = window.setInterval(() => void (tail.value ? follow() : poll()), 2000);
 });
 onBeforeUnmount(() => {
   window.clearInterval(poller);
@@ -154,11 +154,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <div class="file-path" :class="{ tail }">{{ tab.host }}: {{ file.path }}</div>
   <div v-if="note" class="file-note">{{ note }} <button v-if="refused" @click="reload">Reload</button></div>
   <div class="file-text"><div ref="host"></div></div>
 </template>
 
 <style scoped>
+.file-path { flex: none; padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+.file-path.tail { background: var(--yellow); }
 .file-note { flex: none; background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 4px 8px; overflow-wrap: anywhere; }
 .file-note button { min-height: 0; padding: 1px 8px; }
 .file-text { position: relative; flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }

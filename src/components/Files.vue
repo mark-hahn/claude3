@@ -386,6 +386,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
 
 <template>
   <div class="files" @dragover.prevent="dragOver" @dragleave="dragLeave" @drop.prevent="drop">
+    <div v-if="fileMode && file?.rendered" class="files-root">{{ tab.host }}: {{ file.path }}</div>
     <div v-if="fileMode && file?.rendered && listProblem" class="files-note">{{ listProblem }}</div>
     <!-- Inside a .pane for Pane.vue's global markdown styles. -->
     <div v-if="fileMode && file?.rendered" class="pane files-rendered" @click.capture="copyCodeBlock">
@@ -408,7 +409,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
         <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="treeArea?.focus()" />
         <label class="files-nm" title="Search inside node_modules too"><input v-model="searchNodeModules" type="checkbox" />NM</label>
       </div>
-      <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root">{{ root }}</div>
+      <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root">{{ tab.host }}: {{ root }}</div>
       <div v-if="note || listProblem" class="files-note">{{ note || listProblem }}</div>
       <div ref="tree" class="files-tree">
         <div

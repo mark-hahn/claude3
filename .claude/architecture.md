@@ -203,7 +203,7 @@ on the laptop, and talks to each backend directly.
   The search box's Enter (Ctrl-Enter going backward) asks `findFile` for the next name after the last
   found, walked on the backend so closed folders count and skipping node_modules unless NM is
   ticked; the page opens the way to it and selects its row. Esc there moves focus to the tree.
-  **File mode:** Ctrl-double-click on a `.md` shows it rendered and read-only in the editor's place (`renderMarkdown`, inside a `.pane` div for Pane.vue's global markdown styles), read again every 2s if its mtime changes. In the editor: saved 500ms after typing, and read again if the file's mtime changes, asked every 2s. With the last line in view it is in tail mode: the read is `waitFile`, which the backend answers on an `fs.watch` event or after 2s (where a watch can't see the change), and the view sticks to the bottom when text arrives. `saveFile`
+  **File mode:** A header row shows the path after the host, as the tree's path row does. Ctrl-double-click on a `.md` shows it rendered and read-only in the editor's place (`renderMarkdown`, inside a `.pane` div for Pane.vue's global markdown styles), read again every 2s if its mtime changes. In the editor: saved 500ms after typing, and read again if the file's mtime changes, asked every 2s. With the last line in view it is in tail mode, the header's path yellow: the read is `waitFile`, which the backend answers on an `fs.watch` event or after 2s (where a watch can't see the change), and the view sticks to the bottom when text arrives. `saveFile`
   carries the mtime it read and is refused if the file has moved on; the editor then stops saving
   until Reload.
 - **Delete for good.** Picked trashed cards → `POST /api/delete`, after a `window.confirm`. The
