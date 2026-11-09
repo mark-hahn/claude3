@@ -8,11 +8,17 @@ export const byName = (a: Tab, b: Tab): number => a.label.localeCompare(b.label,
 // A path's last folder, as the path writes it, on either OS's paths.
 export const folderName = (path: string): string => path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
 
+// A folder's path ending in its separator, on either OS's paths.
+export function withSeparator(folder: string): string {
+  const separator = folder.includes("\\") ? "\\" : "/";
+  return folder.endsWith(separator) ? folder : folder + separator;
+}
+
 // The folders from just under root down to folder, on either OS's paths, or null when folder isn't
 // under root.
 export function foldersBetween(root: string, folder: string): string[] | null {
-  const separator = root.includes("\\") ? "\\" : "/";
-  const base = root.endsWith(separator) ? root : root + separator;
+  const base = withSeparator(root);
+  const separator = base.at(-1)!;
   if (!folder.startsWith(base)) return null;
   const parts = folder.slice(base.length).split(separator);
   return parts.map((_, index) => base + parts.slice(0, index + 1).join(separator));

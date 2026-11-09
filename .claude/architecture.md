@@ -191,7 +191,7 @@ on the laptop, and talks to each backend directly.
   under its `set -e`.
 - **Files.** The tree's root is `Tab.roots[Tab.rootIdx]` (kept in `projects.json`, `setRoots`, back
   through a `projects` event) or else the project folder. Back and Fwd only move the index; a new root drops the entries past it first. Open folders are per tab in localStorage
-  (`filesOpen:<tab>`), and one selected row per root (`filesSelected:<tab>`). Every open folder is listed again every 2s, so outside
+  (`filesOpen:<tab>`), and one selected row per root (`filesSelected:<tab>`), scrolled into view on a new root, on opening the column or leaving file mode, and when a key puts the focus on the tree (`focusTree`), but not on a mouse press, which would move the row being clicked. Every open folder is listed again every 2s, so outside
   changes appear. The keys (`keyDown`) work only while focus is in the tree's part of the column, outside its text boxes and
   the Path dialog; a selection out of sight counts as none for them. Ctrl-C puts the selection on the real
   Windows clipboard with `Set-Clipboard`, Ctrl-V reads `Get-Clipboard -Format FileDropList` and copies. Ctrl-X is a

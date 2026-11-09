@@ -18,7 +18,7 @@ import type { FileEntry } from "../../shared/types.ts";
 import { post, postHost, upload } from "../api.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
 import { renderMarkdown } from "../render.ts";
-import { foldersBetween, sameName } from "../tabList.ts";
+import { foldersBetween, sameName, withSeparator } from "../tabList.ts";
 import FileEditor from "./FileEditor.vue";
 import FolderPicker from "./FolderPicker.vue";
 
@@ -71,6 +71,8 @@ type Row = (typeof rows.value)[number];
 
 // What the keys act on: a selection out of sight counts as none.
 const selectedRow = computed(() => rows.value.find((row) => row.path === selected.value));
+// Its path below the root.
+const selectedBelowRoot = computed(() => selectedRow.value?.path.slice(withSeparator(root.value).length) ?? "");
 // The folders that have to be open for a row under the root to show.
 const wayTo = (path: string): string[] => (foldersBetween(root.value, path) ?? []).slice(0, -1);
 // Where New and paste land: in the selected folder, beside the selected file, else in the root.
@@ -143,6 +145,16 @@ async function reveal(target: string, folders: string[]): Promise<void> {
 function selectAndReveal(path: string): Promise<void> {
   select(path);
   return reveal(path, wayTo(path));
+}
+
+// After any listing under way has landed. A selection in a closed folder stays out of sight.
+const showSelection = (): Promise<void> => reveal(selected.value, []);
+
+// Not from the element's focus event: a mouse press also focuses the tree, and scrolling then would
+// move the row being clicked.
+function focusTree(): void {
+  treeArea.value?.focus();
+  void showSelection();
 }
 
 // The tree as a collapse that kept the selection left it. Opening a folder or selecting another
@@ -365,7 +377,7 @@ function drop(event: DragEvent): void {
 }
 
 let poller = 0;
-watch([root, () => props.fileMode], () => void refresh());
+watch([root, () => props.fileMode], () => void showSelection());
 // Back from the editor, the keys work at once. After the tick: v-show only reveals the area at the
 // end of the flush, even for a post-flush watcher, and a hidden element can't take focus.
 watch(() => props.fileMode, async (editing) => {
@@ -373,8 +385,7 @@ watch(() => props.fileMode, async (editing) => {
   if (!editing) treeArea.value?.focus();
 });
 onMounted(() => {
-  void refresh();
-  treeArea.value?.focus();
+  focusTree();
   poller = window.setInterval(() => {
     if (document.hidden) return;
     if (!props.fileMode) void refresh();
@@ -406,10 +417,10 @@ onBeforeUnmount(() => window.clearInterval(poller));
         </button>
         <button title="New empty file in the selected folder, beside the selected file, or in the root" @click="newFile">New</button>
         <button title="Show a folder in the tree" @click="picker?.open(root)">Path</button>
-        <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="treeArea?.focus()" />
+        <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="focusTree()" />
         <label class="files-nm" title="Search inside node_modules too"><input v-model="searchNodeModules" type="checkbox" />NM</label>
       </div>
-      <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root">{{ tab.host }}: {{ root }}</div>
+      <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root">{{ tab.host }}: {{ withSeparator(root) }}<span class="files-relative">{{ selectedBelowRoot }}</span></div>
       <div v-if="note || listProblem" class="files-note">{{ note || listProblem }}</div>
       <div ref="tree" class="files-tree">
         <div
@@ -427,7 +438,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
           <span v-for="depth in row.depth" :key="depth" class="files-guide"></span>
           <svg class="files-chevron" :class="{ open: opened.has(row.path) }" viewBox="0 0 16 16"><path v-if="row.dir" d="M6 3.5 10.5 8 6 12.5" /></svg>
           <svg class="files-icon" viewBox="0 0 16 16"><path :d="row.dir ? 'M1.5 13.5v-11h4.5l1.5 2h7v9z' : 'M3.5 1.5h6l3 3v10h-9zM9.5 1.5v3h3'" /></svg>
-          <input v-if="renaming === row.path" v-model="newName" v-focus class="files-rename" spellcheck="false" @click.stop @dblclick.stop @keydown.enter.prevent="finishRename(row, true); treeArea?.focus()" @keydown.esc.prevent="finishRename(row, false); treeArea?.focus()" @blur="finishRename(row, true)" />
+          <input v-if="renaming === row.path" v-model="newName" v-focus class="files-rename" spellcheck="false" @click.stop @dblclick.stop @keydown.enter.prevent="finishRename(row, true); focusTree()" @keydown.esc.prevent="finishRename(row, false); focusTree()" @blur="finishRename(row, true)" />
           <span v-else class="files-name">{{ row.name }}</span>
         </div>
       </div>
@@ -450,6 +461,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
 .files-bar .tabs-input { padding: 3px 8px; }
 .files-nm { flex: none; display: flex; align-items: center; gap: 3px; margin-right: 15px; cursor: pointer; user-select: none; }
 .files-root { flex: none; padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+.files-relative { background: #fffbdf; }
 .files-note { flex: none; background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 4px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* A grid so every row is as wide as the widest, and a selection's colour reaches the far edge when scrolled. */
 .files-tree { flex: 1; min-height: 0; overflow: auto; padding: 4px 0; display: grid; align-content: start; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); user-select: none; }
