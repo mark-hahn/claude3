@@ -138,13 +138,22 @@ function selectAndReveal(path: string): Promise<void> {
   return reveal(path, wayTo(path));
 }
 
-// With a selection: closes all but the way to it. Once that is all that's open, closes everything
-// and drops the selection. A shown row's way is open, so equal counts mean nothing else is.
+// The tree as a collapse that kept the selection left it. Opening a folder or selecting another
+// row makes the tree differ from this, which ends the partially collapsed state.
+let partiallyCollapsed = "";
+const treeState = (): string => JSON.stringify([root.value, selected.value, [...opened]]);
+
+// With a selection, the first press closes all but the way to it, even if that changes nothing.
+// The next press, with the tree as that one left it, closes everything and drops the selection.
 function collapse(): void {
-  const keep = selectedRow.value && openRows().length === wayTo(selected.value).length ? "" : selected.value;
+  const keep = treeState() === partiallyCollapsed ? "" : selected.value;
   opened.clear();
   select(keep);
-  if (keep) void reveal(keep, wayTo(keep));
+  partiallyCollapsed = "";
+  if (keep) {
+    void reveal(keep, wayTo(keep));
+    partiallyCollapsed = treeState();
+  }
 }
 
 const newFile = (): Promise<void> => attempt(post<{ path: string }>(props.tab, "newFile", { folder: landing.value }).then((reply) => selectAndReveal(reply.path)));
