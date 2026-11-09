@@ -235,8 +235,10 @@ async function loadModels(): Promise<void> {
   }
 }
 
-// Each model's window as the CLI last reported it; until then the default.
-const windows: Record<string, number> = {};
+// Each model's window as the CLI last reported it; until then the default. The CLI reports it only
+// when a run ends, so it is kept on disk or every first run after a restart would start on the default.
+const WINDOWS_FILE = path.join(DATA_DIR, "windows.json");
+const windows = (fs.existsSync(WINDOWS_FILE) ? JSON.parse(fs.readFileSync(WINDOWS_FILE, "utf8")) : {}) as Record<string, number>;
 // The run in progress per session, so a new prompt can wait for a stopped one to settle.
 const runs = new Map<string, Promise<void>>();
 // One per backend; its token-refresh probe runs in DATA_DIR so no project gets its transcript.
@@ -383,8 +385,11 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
     // After /clear this session goes on resuming its own id, so that transcript has to become the
     // cleared conversation. If the swap fails Claude keeps its context, and so does the gauge.
     const cleared = result.clearedInto !== null && swapSessionTranscripts(workspacePath, session.id, result.clearedInto);
-    if (result.modelWindow) {
+    if (result.modelWindow && result.modelWindow !== windows[MODEL]) {
       windows[MODEL] = result.modelWindow;
+      const temp = `${WINDOWS_FILE}.tmp`;
+      fs.writeFileSync(temp, JSON.stringify(windows));
+      fs.renameSync(temp, WINDOWS_FILE);
     }
     Object.assign(turn, {
       response: markAnswer(streamed || result.text, result.stopped ? "" : result.answer),

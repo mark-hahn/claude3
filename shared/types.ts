@@ -2,7 +2,7 @@
 // writes into a response for the pane to find.
 import type { Tab } from "./config.ts";
 
-export const DEFAULT_CONTEXT_WINDOW = 256000;
+export const DEFAULT_CONTEXT_WINDOW = 1000000;
 
 // The CLI never lets the context reach the window: it holds back up to 20,000 tokens for the reply
 // and a further 13,000 of headroom, and auto-compacts the conversation at what is left. That figure,

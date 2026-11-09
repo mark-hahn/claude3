@@ -167,7 +167,7 @@ on the laptop, and talks to each backend directly.
 - **Session ↔ transcript.** A session id is the CLI session id; `--resume` or `--session-id` is
   picked by whether the transcript exists (claude2's rule). `/clear` swaps transcript files so the
   session keeps its id.
-- **Storage.** `~/.claude3/projects.json` is each host's list of projects. `~/.claude3/sessions/<project path as a file name>.json` on each host, outside the
+- **Storage.** `~/.claude3/projects.json` is each host's list of projects. `~/.claude3/windows.json` is each model's context window as the CLI last reported it (only a run's end reports it, so a run starts from this file). `~/.claude3/sessions/<project path as a file name>.json` on each host, outside the
   project folders, written whole through a temp file at turn start and end and on every change.
   `~/.claude3/<host>.log` is the backend's log; `~/.claude3/debug/` holds the runner's per-session
   spawn records.
