@@ -153,6 +153,7 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
       <select v-model="host" aria-label="Host"><option v-for="entry in HOST_NAMES" :key="entry">{{ entry }}</option></select>
       <button @click="openPicker">Path</button>
       <span class="tabs-path">{{ path }}</span>
+      <button @click="dialog?.close()">Close</button>
     </section>
     <section class="tabs-row">
       <input v-model="name" class="tabs-input" placeholder="Project name" aria-label="Project name" spellcheck="false" @input="edited = !!($event.target as HTMLInputElement).value" @keydown.enter.prevent="create" />
