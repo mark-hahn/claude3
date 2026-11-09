@@ -459,8 +459,6 @@ onBeforeUnmount(() => window.clearInterval(poller));
 .files-bar button { min-height: 0; padding: 3px 10px; }
 .files-bar svg { display: block; width: 20px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .files-bar .files-flip { transform: scaleX(-1); }
-/* Icons stay black like all text, so a disabled one shows by its thin line. */
-.files-bar button:disabled path { stroke-width: 0.75; }
 .files-bar .tabs-input { padding: 3px 8px; }
 .files-nm { flex: none; display: flex; align-items: center; gap: 3px; margin-right: 15px; cursor: pointer; user-select: none; }
 .files-root { flex: none; padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }

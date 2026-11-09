@@ -1316,15 +1316,13 @@ onBeforeUnmount(() => {
 .pane .status { white-space: nowrap; }
 .pane .context { cursor: pointer; }
 .pane .context.over { background: #ffd0d0; border-radius: 4px; padding: 0 5px; margin: 0 -5px; }
-/* Every dock control keeps a white fill and says "unavailable" by a dashed grey border (style.css). */
+/* Every dock control keeps a white fill. */
 .pane .dock-controls button { background: #fff; }
 .pane .dock-controls button:hover:not(:disabled) { background: #fff; border-color: #000; }
-.pane .dock-controls button:disabled { background: #fff; border-color: #bfbfbf; }
 /* The Git button's dirty colours (Git.vue). After the hover rule and as specific, so its border stays. */
 .pane .dock-controls button.deploy-due:not(:disabled) { background: #fbd9d9; border-color: #e4a7a7; }
 .pane .dock-controls button.deploy-due:hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), #fbd9d9; }
-.pane .stop { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
-.pane .stop:not(:disabled) { color: #000; border-color: #000; }
+.pane .stop { display: inline-flex; align-items: center; justify-content: center; line-height: 1; color: #000; border-color: #000; }
 /* Stop asks the CLI to finish the message it is on, so the run keeps streaming for a moment. */
 .pane .stop.stopping:not(:disabled) { background: #ffd4d4; }
 .pane .indicator { border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; font-weight: 700; white-space: nowrap; }

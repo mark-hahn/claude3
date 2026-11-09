@@ -176,5 +176,4 @@ function onMessageKey(event: KeyboardEvent): void {
 .git-buttons { display: flex; gap: 8px; }
 .git-commit { flex: 1; background: #cfe8ff; border-color: #8fb8e0; }
 .git-commit:hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), #cfe8ff; }
-.git-commit:disabled { background: var(--surface); border-color: #bfbfbf; }
 </style>

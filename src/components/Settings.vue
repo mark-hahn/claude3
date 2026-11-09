@@ -422,7 +422,6 @@ onBeforeUnmount(() => {
 /* claude2's Quotas pane styles at zoom 1, under .settings. */
 .settings { --blue: #2457d6; --red: #c62828; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding: 4px 32px 28px; border-left: 1px solid var(--border); background: var(--page); font-size: 16px; line-height: 1.4; overflow: hidden; }
 .settings button { padding: 7px 8px; min-height: 34px; }
-.settings button:disabled { background: var(--wash); cursor: default; }
 /* The tabs and actions on the first line, the month's costs and the reading's age on the second. */
 .settings .title { display: flex; flex-direction: column; align-items: flex-start; gap: 15px; flex: none; padding-top: 6px; }
 .settings .title-row { display: flex; align-items: center; gap: 15px 30px; }

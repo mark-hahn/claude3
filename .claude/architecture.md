@@ -294,5 +294,5 @@ on the laptop, and talks to each backend directly.
 - Every page element follows CLAUDE.md's display rules: font sizes 14–18px only (the one exception,
   at the user's asking, is the ctrl-wheel size of the Files editor and the Snips, which has no limits), text solid black
   or a colour, never grey. Monaco's markdown keeps the stock light theme's token colours (blue
-  headings), and its one grey token is pinned to black in `monaco.ts`. A disabled button shows by its dashed grey
-  border, a paused quota age by its background; only status icons (tab dot, card clocks) keep colour.
+  headings), and its one grey token is pinned to black in `monaco.ts`. A disabled button keeps its enabled look under a 50% white
+  overlay (`style.css`, at the user's asking, though it pales the label), a paused quota age by its background; only status icons (tab dot, card clocks) keep colour.
