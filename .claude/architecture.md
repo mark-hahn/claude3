@@ -146,7 +146,9 @@ on the laptop, and talks to each backend directly.
   any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Deploy
   (same as "r" below, the prompt stays unsent in the box), Continue or Cancel. No script or no
   stamp yet means no warning. The touch lines live in each project's own
-  script (claude3, claude2, tv, finance on hahnca.com). The footer's Run button is highlighted
+  script (claude3, claude2, tv, finance on hahnca.com). A script can write paths into the stamp
+  and then only those count: claude3's writes `server shared`, what `--if-stale` hashes, so
+  docs and page-only edits don't ask for a deploy. The footer's Run button is highlighted
   while the same check finds files; it is re-read for the tab on show on showing, window focus,
   session events, and a ./run's result.
 - **"r".** A prompt of just `r`, or the footer's Run button (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the

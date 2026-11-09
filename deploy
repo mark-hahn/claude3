@@ -28,7 +28,10 @@ WIN_NODE='C:\nvm4w\nodejs\node.exe'
 SRV_DIR=/root/dev/apps/claude3Srv
 # package.json only for its "type": "module", which makes Node read the .ts files as ES modules.
 FILES=(package.json server shared)
-VERSION=$(find server shared -type f -print0 | sort -z | xargs -0 sha1sum | sha1sum | cut -c1-12)
+# What the version hashes: only a change here makes --if-stale deploy. Written into .deployed so
+# the page's Run highlight and deploy warning count the same files.
+SOURCES=(server shared)
+VERSION=$(find "${SOURCES[@]}" -type f -print0 | sort -z | xargs -0 sha1sum | sha1sum | cut -c1-12)
 
 # What the host's backend answers at /version; empty when nothing answers.
 running() {
@@ -66,7 +69,7 @@ if [ "${1:-}" = "--if-stale" ]; then
     # Its own process, so set -e stops that host's steps and the other hosts still get theirs.
     "$0" "$host" || echo "!! $host deploy failed" >&2
   done
-  touch .deployed # claude3's page warns before a prompt when files are newer than this
+  echo "${SOURCES[@]}" > .deployed # claude3's page warns before a prompt when those files are newer than this
   exit 0
 fi
 
@@ -141,4 +144,4 @@ EOF
   esac
 done
 echo "== done =="
-touch .deployed # claude3's page warns before a prompt when files are newer than this
+echo "${SOURCES[@]}" > .deployed # claude3's page warns before a prompt when those files are newer than this

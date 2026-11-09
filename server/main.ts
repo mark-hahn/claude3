@@ -703,18 +703,22 @@ function runResult(project: Project): { done: boolean; code: number; output: str
 
 // Whether the project needs a deploy before a prompt: its ./deploy (or ./run when it has none)
 // touches .deployed when it finishes, and any git-visible file newer than that is undeployed.
-// A project with neither script, or no stamp yet, never needs one. ponytail: every file counts, docs included.
+// A script can write paths into .deployed, what its deploy depends on, and then only those count.
+// A project with neither script, or no stamp yet, never needs one. ponytail: an empty stamp counts every file, docs included.
 async function deployNeeded(project: Project): Promise<{ script: string; files: string[] }> {
   const cwd = project.tab.path;
   const script = ["deploy", "run"].find((name) => fs.existsSync(path.join(cwd, name))) ?? "";
   if (!script) return { script, files: [] };
   let stamp: number;
+  let paths: string[];
   try {
-    stamp = fs.statSync(path.join(cwd, ".deployed")).mtimeMs;
+    const deployed = path.join(cwd, ".deployed");
+    stamp = fs.statSync(deployed).mtimeMs;
+    paths = fs.readFileSync(deployed, "utf8").split(/\s+/).filter(Boolean);
   } catch {
     return { script, files: [] }; // never stamped: unknown, so no warning
   }
-  const listed = (await git(project, "ls-files", "-z", "--cached", "--others", "--exclude-standard")).split("\0").filter(Boolean);
+  const listed = (await git(project, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...paths)).split("\0").filter(Boolean);
   const files = [...new Set(listed)].filter((file) => {
     try {
       return fs.statSync(path.join(cwd, file)).mtimeMs > stamp;
