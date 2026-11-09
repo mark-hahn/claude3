@@ -28,6 +28,9 @@ on the laptop, and talks to each backend directly.
   closed ones too. The Snips and
   gear (Settings) toggles are here, at the row's right end, one each for every tab; they share one
   column (`side`: "", "snips" or "settings"), the tab on show draws it, and picking a tab closes it.
+  The circle left of the Tabs button is the tab on show's state: green with a session active, else
+  the Run button's highlight colour when its Git or Run button is highlighted (`dirty` and
+  `deployDue` come up through Project's `highlighted`), else hollow.
 - `src/components/Tabs.vue`: the row's Tabs button and its `<dialog>`: host, Path (a second
   `<dialog>`, the VS Code-style folder picker on every host, fed by the backend's `folders`), name
   and Create above the list of every project, where a click opens or closes one, a hold renames and

@@ -9,7 +9,7 @@ import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
 
 const props = defineProps<{ tab: Tab; active: boolean; version: number }>();
-const emit = defineEmits<{ closed: [] }>();
+const emit = defineEmits<{ closed: []; dirty: [dirty: boolean] }>();
 
 // One `git status --porcelain` entry: x is the index's letter, y the work tree's.
 interface GitFile {
@@ -30,6 +30,7 @@ const button = ref<HTMLButtonElement>();
 const staged = computed(() => files.value.filter((file) => !" ?".includes(file.x)).map((file) => ({ ...file, letter: file.x })));
 const changed = computed(() => files.value.filter((file) => file.y !== " ").map((file) => ({ ...file, letter: file.y === "?" ? "U" : file.y })));
 const canCommit = computed(() => !committing.value && !describing.value && !!message.value.trim() && files.value.length > 0);
+watch(() => files.value.length > 0, (dirty) => emit("dirty", dirty));
 
 const messageOf = (problem: unknown): string => (problem instanceof Error ? problem.message : String(problem));
 const nameOf = (path: string): string => path.slice(path.lastIndexOf("/") + 1);

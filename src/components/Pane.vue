@@ -16,7 +16,7 @@ import { loadWaiting, saveWaiting, type Waiting } from "../waitingImages.ts";
 
 // active: this pane's tab is the one on show, so the page-wide keys are its.
 const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: RunningStatus | null; version: number; active: boolean; ceilings: number }>();
-const emit = defineEmits<{ started: [sessionId: string] }>();
+const emit = defineEmits<{ started: [sessionId: string]; deployDue: [due: boolean] }>();
 
 const historyEl = ref<HTMLElement>();
 const ctxPopEl = ref<HTMLElement>();
@@ -533,6 +533,7 @@ async function deployOk(): Promise<boolean> {
 // The Run button is highlighted while that same check finds changed files. Re-read like the Git
 // button's count, only while the tab is up, and after a ./run, which resets the check.
 const deployDue = ref(false);
+watch(deployDue, (due) => emit("deployDue", due));
 let deployTimer = 0;
 function checkDeploySoon(): void {
   if (!props.active) return;

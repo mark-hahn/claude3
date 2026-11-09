@@ -17,7 +17,7 @@ import Snips from "./Snips.vue";
 // ("", "snips" or "settings"; one for every tab). focusAsked: a change puts the cursor in the
 // prompt box of the tab on show.
 const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number }>();
-const emit = defineEmits<{ busy: [count: number]; closeSide: [] }>();
+const emit = defineEmits<{ busy: [count: number]; closeSide: []; highlighted: [on: boolean] }>();
 
 // Plain objects mutated in place as text streams in; `version` tells Vue when the shape changed.
 let sessions: ClaudeSession[] = [];
@@ -224,6 +224,10 @@ watch(selectedId, (id) => localStorage.setItem(selectedKey, id));
 // Only a trashed card on show can stay picked, so the delete button never reaches one out of sight.
 watch(visible, (list) => (picked.value = new Set(list.filter((session) => session.trashed && picked.value.has(session.id)).map((session) => session.id))));
 watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => status.active).length));
+// The Git and Run buttons' highlights, for the indicator in App's tab strip.
+const gitDirty = ref(false);
+const deployDue = ref(false);
+watch(() => gitDirty.value || deployDue.value, (on) => emit("highlighted", on));
 // Picking a tab puts the cursor in its prompt box; post, so the tab is on show by then.
 watch(() => props.active, (active) => active && focusPrompt(), { flush: "post" });
 watch(() => props.side, (open) => !open && props.active && focusPrompt(), { flush: "post" });
@@ -245,7 +249,7 @@ onBeforeUnmount(() => stopListening());
           <button class="new" title="New session" @click="newSession">
             <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
           </button>
-          <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" />
+          <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" />
         </div>
         <div class="row">
           <button v-if="showTrash" class="delete" title="Permanently delete the selected trashed sessions. Ctrl-click or shift-click a card to select more" :disabled="!picked.size" @click="deletePicked">&#x1F5D1;{{ picked.size ? ` ${picked.size}` : "" }}</button>
@@ -296,7 +300,7 @@ onBeforeUnmount(() => stopListening());
       </div>
     </aside>
     <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
-    <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" @started="select" />
+    <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" @started="select" @deploy-due="(due) => (deployDue = due)" />
     <Snips v-if="side === 'snips' && active" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings' && active" :tab="tab" @close="emit('closeSide')" />
   </div>

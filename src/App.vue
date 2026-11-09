@@ -35,6 +35,8 @@ watch([toShow, sorted], () => {
 const focusAsked = ref(0);
 // Sessions responding per tab, so a tab out of sight still shows it is working.
 const busy = reactive<Record<string, number>>({});
+// Per tab: its Git or Run button is highlighted.
+const highlighted = reactive<Record<string, boolean>>({});
 // The Snips and Settings share the column right of the pane, one at a time: "" (closed), "snips"
 // or "settings". One toggle each here, for every tab; the tab on show draws the column, and
 // picking a tab closes it, as if it were a tab of its own.
@@ -71,6 +73,7 @@ provide("onPreviousTab", onPreviousTab);
 <template>
   <div class="app">
     <nav class="tabs">
+      <span class="indicator" :class="busy[current] ? 'active' : highlighted[current] ? 'due' : ''"></span>
       <Tabs :tabs="sorted" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
       <button v-for="tab in opened" :key="tab.id" class="tab" :class="{ selected: tab.id === current }" :title="`${tab.path} (${tab.host})`" @click="current = tab.id">
         <span v-if="busy[tab.id]" class="tab-busy" title="Responding">&#x25CF;</span>{{ tab.label }}
@@ -78,7 +81,7 @@ provide("onPreviousTab", onPreviousTab);
       <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" :disabled="!currentTab" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
       <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" :disabled="!currentTab" title="Open or close the Settings: quotas" aria-label="Settings" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
-    <Project v-for="tab in sorted" v-show="tab.id === current" :key="tab.id" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" :side="side" :focus-asked="focusAsked" @close-side="side = ''" />
+    <Project v-for="tab in sorted" v-show="tab.id === current" :key="tab.id" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" :side="side" :focus-asked="focusAsked" @close-side="side = ''" />
   </div>
 </template>
 
@@ -86,6 +89,10 @@ provide("onPreviousTab", onPreviousTab);
 .app { height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .tabs .tab { min-height: 0; padding: 3px 12px; }
+/* Buttons are about 28px high. With the row's 10px padding and 6px gap, 12px each side: what the Tabs button has on its right. */
+.tabs .indicator { align-self: center; width: 17.6px; height: 17.6px; margin: 0 6px 0 2px; border: 1px solid #000; border-radius: 50%; background: #fff; }
+.tabs .indicator.due { background: #fbd9d9; border-color: #e4a7a7; }
+.tabs .indicator.active { background: lightgreen; border-color: lightgreen; }
 .tabs .tab.selected { background: #fbf3c4; border-color: #ddd08a; }
 .tabs .snips-toggle { margin-left: auto; }
 .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
