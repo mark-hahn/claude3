@@ -6,7 +6,45 @@ import { extraBlankLines, headingEnter } from "./blankLines.ts";
 import { cropRect } from "./cropRect.ts";
 import { pick } from "./pick.ts";
 import { answerText, renderMarkdown } from "./render.ts";
-import { byName, folderName, nextTab, sameName } from "./tabList.ts";
+import { byName, folderName, foldersBetween, nextTab, sameName } from "./tabList.ts";
+import { fileActions, numberedName } from "../server/files.ts";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
+// The Files pane: a clash's index goes before the extension, and a picked folder opens down from the root.
+assert.equal(numberedName("new-file", 0), "new-file");
+assert.equal(numberedName("new-file", 2), "new-file(2)");
+assert.equal(numberedName("report.pdf", 1), "report(1).pdf");
+assert.equal(numberedName(".bashrc", 1), ".bashrc(1)");
+assert.deepEqual(foldersBetween("/a/b", "/a/b/c/d"), ["/a/b/c", "/a/b/c/d"]);
+assert.deepEqual(foldersBetween("/", "/a"), ["/a"]);
+assert.deepEqual(foldersBetween("C:\\x", "C:\\x\\y"), ["C:\\x\\y"]);
+assert.equal(foldersBetween("/a/b", "/a/bc"), null, "a sibling with the root's name in it");
+assert.equal(foldersBetween("/a/b", "/a/b"), null);
+
+// On disk: nothing is overwritten, folders sort first, and a stale save is refused.
+const folder = fs.mkdtempSync(path.join(os.tmpdir(), "claude3-files-"));
+await fileActions.newFile({ folder });
+await fileActions.newFile({ folder });
+fs.mkdirSync(path.join(folder, "zdir"));
+fs.mkdirSync(path.join(folder, ".git"));
+const { listings } = await fileActions.listFiles({ paths: [folder] });
+assert.deepEqual(listings[folder].map((entry) => entry.name), ["zdir", "new-file", "new-file(1)"]);
+await assert.rejects(async () => fileActions.renamePath({ path: path.join(folder, "new-file"), name: "new-file(1)" }), /already exists/);
+await assert.rejects(async () => fileActions.renamePath({ path: path.join(folder, "new-file"), name: "../out" }), /can't be a file name/);
+await assert.rejects(async () => fileActions.deletePath({ path: "relative" }), /not a full path/);
+const edited = path.join(folder, "new-file");
+const { mtime } = await fileActions.readFile({ path: edited });
+const saved = await fileActions.saveFile({ path: edited, text: "mine", mtime });
+assert.deepEqual((await fileActions.saveFile({ path: edited, text: "stale", mtime: saved.mtime - 5000 })).conflict, true);
+assert.equal(fs.readFileSync(edited, "utf8"), "mine");
+assert.equal((await fileActions.readFile({ path: edited, known: saved.mtime })).text, undefined, "unchanged: no text");
+fs.writeFileSync(edited, Buffer.from([0x61, 0x00]));
+assert.equal((await fileActions.readFile({ path: edited })).text, null, "binary");
+fs.writeFileSync(edited, Buffer.from([0xe9]));
+assert.equal((await fileActions.readFile({ path: edited })).text, null, "not UTF-8");
+fs.rmSync(folder, { recursive: true });
 
 // The CLI's own words for a login that's gone send the prompt back; any other failure keeps its turn.
 assert.ok(AUTH_FAILED.test("Failed to authenticate: OAuth session expired and could not be refreshed"));

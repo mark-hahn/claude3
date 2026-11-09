@@ -15,6 +15,8 @@ export interface Tab {
   path: string;
   // A closed project keeps its state and its running sessions; only its tab and UI are hidden.
   open: boolean;
+  // The Files tree's stack of roots above the project folder, the last one on show.
+  roots?: string[];
 }
 
 // What a backend starts from until it has a list of its own. Their ids are the labels they had

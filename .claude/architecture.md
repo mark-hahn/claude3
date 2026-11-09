@@ -8,7 +8,7 @@ on the laptop, and talks to each backend directly.
 
 ## Layout
 
-- `shared/config.ts`: the `Tab` record of a project (id, label, host, path, open), `FIRST_TABS`
+- `shared/config.ts`: the `Tab` record of a project (id, label, host, path, open, the Files tree's roots), `FIRST_TABS`
   (what a backend starts from until it has its own list), each host's port/URL/bind address/allowed
   Host names/picker folder, and `ORIGINS`, the page origins the backends accept. Read by both
   sides; the deploy copies it with the server.
@@ -23,18 +23,22 @@ on the laptop, and talks to each backend directly.
   follow-up into a background wait, titles, the model list, `contextUsage` for Ctx. Also
   `cheapestModel` from claude2's modelInfo.ts.
 - `server/contextStats.ts`: the Ctx popup's table, copied unchanged from claude2.
+- `server/files.ts`: the Files pane's actions (`fileActions`) and `POST /upload`: folder listings, a text file read and saved, new, rename, delete, and the Windows clipboard's files (PowerShell, scp for srv).
 - `server/login.ts`: claude2's Re-Auth as steps the page drives: this host's `claude auth login`,
   its URL, the pasted code on its stdin, then `claude auth status` for who signed in.
 - `src/App.vue`: the tab strip and the list of every project; open ones have a tab, sorted by name
   (`src/tabList.ts`, checked by `npm test`), and every project's `Project` stays mounted (`v-show`),
-  closed ones too. The Snips and
+  closed ones too. The Files, Snips and
   gear (Settings) toggles are here, at the row's right end, one each for every tab; they share one
-  column (`side`: "", "snips" or "settings"), the tab on show draws it, and picking a tab closes it.
+  column (`side`: "", "files", "file", "snips" or "settings"), the tab on show draws it, and picking a tab closes it.
   The circle left of the Tabs button is the tab on show's state: green with a session active, else
   the Run button's highlight colour when its Git or Run button is highlighted (`dirty` and
   `deployDue` come up through Project's `highlighted`), else hollow.
-- `src/components/Tabs.vue`: the row's Tabs button and its `<dialog>`: host, Path (a second
-  `<dialog>`, the VS Code-style folder picker on every host, fed by the backend's `folders`), name
+- `src/components/FolderPicker.vue`: the VS Code-style folder picker `<dialog>` on any host, fed by
+  the backend's `folders`; used by the Tabs dialog and the Files pane. Its styles are Tabs.vue's, unscoped for that.
+- `src/components/Files.vue`: the Files column: header rows and a tree of the tab's host, with
+  `FileEditor.vue` in its place in file mode. Holds only what the backend last listed.
+- `src/components/Tabs.vue`: the row's Tabs button and its `<dialog>`: host, Path (the folder picker), name
   and Create above the list of every project, where a click opens or closes one, a hold renames and
   ctrl-click deletes. It keeps no copy of the list: changes go to the backend and come back as a
   `projects` event. The dialog stays open after Create or opening a project, with that project's
@@ -177,6 +181,18 @@ on the laptop, and talks to each backend directly.
   `runResult` once a second until they're there (resuming after a reload, via sessionStorage).
   `deploy` sends its own output through `tee`, so a caller's pipe vanishing can't fail an echo
   under its `set -e`.
+- **Files.** The tree's root is the top of `Tab.roots` (kept in `projects.json`, `setRoots`, back
+  through a `projects` event) or else the project folder; open folders are per tab in localStorage
+  (`filesOpen:<tab>`, `filesLast:<tab>`). Every open folder is listed again every 2s, so outside
+  changes appear. A click on a file waits 300ms (a double-click must not replace the clipboard),
+  then the backend puts it on the real Windows clipboard with `Set-Clipboard`; shift-click reads
+  `Get-Clipboard -Format FileDropList` and copies. The clipboard is on the laptop, so a srv tab asks
+  WSL's backend (`clipHost`), which carries the files with scp: fetched ones wait in
+  `~/.claude3/clipboard/`, and for a paste it asks the srv backend's `freePath` for the name. Clashes on new,
+  paste and drop take `name(<idx>).ext`; nothing is overwritten. Drops stream raw to `POST /upload`.
+  **File mode:** Saved 500ms after typing, and read again if the file's mtime changes. `saveFile`
+  carries the mtime it read and is refused if the file has moved on; the editor then stops saving
+  until Reload.
 - **Delete for good.** Picked trashed cards → `POST /api/delete`, after a `window.confirm`. The
   backend takes only trashed ids, stops and awaits any run still going (its settling would post
   the session back), removes them and their debug records, and posts `removed`. The CLI's
@@ -255,7 +271,9 @@ on the laptop, and talks to each backend directly.
 - Snips stay read-only until the shared copy has been read, and a server answer of `null` (claude2
   never saved one there) keeps them so: nothing typed in claude3 may replace claude2's copy unseen.
 - Monaco's `addCommand` keys are page-wide and every tab has its own editor, so editor keys are
-  `addAction`s. Monaco is about 4MB of the built page.
+  `addAction`s. Monaco is about 4MB of the built page. Its theme and `addKeybindingRules` are page-wide
+  too: the Files editor is stock Monaco but must use the `claude2` theme, and is kept out of the
+  user's key rules by its `stockEditor` context key.
 - Every page element follows CLAUDE.md's display rules: font sizes 14–18px only, text solid black
   or a colour, never grey. Monaco's markdown keeps the stock light theme's token colours (blue
   headings), and its one grey token is pinned to black in `monaco.ts`. A disabled button shows by its dashed grey

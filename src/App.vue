@@ -37,9 +37,10 @@ const focusAsked = ref(0);
 const busy = reactive<Record<string, number>>({});
 // Per tab: its Git or Run button is highlighted.
 const highlighted = reactive<Record<string, boolean>>({});
-// The Snips and Settings share the column right of the pane, one at a time: "" (closed), "snips"
-// or "settings". One toggle each here, for every tab; the tab on show draws the column, and
-// picking a tab closes it, as if it were a tab of its own.
+// The Files, Snips and Settings share the column right of the pane, one at a time: "" (closed),
+// "files" (the tree), "file" (its editor), "snips" or "settings". One toggle each here, for every
+// tab; the tab on show draws the column, and picking a tab closes it, as if it were a tab of its
+// own. The toggle's name being "files", the Files button takes the editor back to the tree.
 const side = ref("");
 const toggle = (name: string): void => void (side.value = side.value === name ? "" : name);
 // The sidebar width every tab shares; Project's divider drag sets it.
@@ -78,10 +79,11 @@ provide("onPreviousTab", onPreviousTab);
       <button v-for="tab in opened" :key="tab.id" class="tab" :class="{ selected: tab.id === current }" :title="`${tab.path} (${tab.host})`" @click="current = tab.id">
         <span v-if="busy[tab.id]" class="tab-busy" title="Responding">&#x25CF;</span>{{ tab.label }}
       </button>
+      <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" title="Open or close the Files: a tree of the project's folder, and an editor" @click="toggle('files')">Files</button>
       <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" :disabled="!currentTab" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
       <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" :disabled="!currentTab" title="Open or close the Settings: quotas" aria-label="Settings" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
-    <Project v-for="tab in sorted" v-show="tab.id === current" :key="tab.id" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" :side="side" :focus-asked="focusAsked" @close-side="side = ''" />
+    <Project v-for="tab in sorted" v-show="tab.id === current" :key="tab.id" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" :side="side" :focus-asked="focusAsked" @close-side="side = ''" @open-file="side = 'file'" />
   </div>
 </template>
 
@@ -94,7 +96,7 @@ provide("onPreviousTab", onPreviousTab);
 .tabs .indicator.due { background: #fbd9d9; border-color: #e4a7a7; }
 .tabs .indicator.active { background: lightgreen; border-color: lightgreen; }
 .tabs .tab.selected { background: #fbf3c4; border-color: #ddd08a; }
-.tabs .snips-toggle { margin-left: auto; }
-.tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
+.tabs .files-toggle { margin-left: auto; }
+.tabs .files-toggle.active, .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
 .tabs .tab-busy { color: #1a8f2e; margin-right: 6px; }
 </style>

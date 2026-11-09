@@ -8,6 +8,7 @@ import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { typedPrompt, type ClaudeSession, type RunningStatus, type ServerEvent } from "../../shared/types.ts";
 import { authNeeded, listen, post } from "../api.ts";
 import { pick } from "../pick.ts";
+import Files from "./Files.vue";
 import Git from "./Git.vue";
 import Pane from "./Pane.vue";
 import ReAuth from "./ReAuth.vue";
@@ -15,10 +16,10 @@ import Settings from "./Settings.vue";
 import Snips from "./Snips.vue";
 
 // active: this is the tab on show. side: what App's column toggles have open right of the pane
-// ("", "snips" or "settings"; one for every tab). focusAsked: a change puts the cursor in the
-// prompt box of the tab on show.
+// ("", "snips", "settings", "files" for the tree or "file" for its editor; one for every tab).
+// focusAsked: a change puts the cursor in the prompt box of the tab on show.
 const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number }>();
-const emit = defineEmits<{ busy: [count: number]; closeSide: []; highlighted: [on: boolean] }>();
+const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; highlighted: [on: boolean] }>();
 
 // Plain objects mutated in place as text streams in; `version` tells Vue when the shape changed.
 let sessions: ClaudeSession[] = [];
@@ -310,6 +311,7 @@ onBeforeUnmount(() => stopListening());
     <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" @started="select" @deploy-due="(due) => (deployDue = due)" />
     <Snips v-if="side === 'snips' && active" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings' && active" :tab="tab" @close="emit('closeSide')" />
+    <Files v-if="side.startsWith('file') && active" :tab="tab" :file-mode="side === 'file'" @open-file="emit('openFile')" @close="emit('closeSide')" />
   </div>
 </template>
 

@@ -20,15 +20,17 @@ monaco.editor.defineTheme("claude2", { base: "vs", inherit: true, rules: [{ toke
 // The user's own VS Code editing keys. Ctrl-D is otherwise Monaco's add-next-match, and
 // shift-alt-left/right its smart select.
 const { KeyMod, KeyCode } = monaco;
-const writable = "textInputFocus && !editorReadonly";
+// These rules are page-wide; the Files pane's editor is stock Monaco, marked by this context key.
+const typing = "textInputFocus && !stockEditor";
+const writable = `${typing} && !editorReadonly`;
 monaco.editor.addKeybindingRules([
   { keybinding: KeyMod.CtrlCmd | KeyCode.KeyD, command: "editor.action.deleteLines", when: writable },
   { keybinding: KeyMod.CtrlCmd | KeyCode.KeyJ, command: "editor.action.joinLines", when: writable },
   { keybinding: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyD, command: "editor.action.duplicateSelection", when: writable },
   { keybinding: KeyMod.CtrlCmd | KeyMod.Shift | KeyMod.Alt | KeyCode.KeyU, command: "editor.action.transformToUppercase", when: writable },
   { keybinding: KeyMod.CtrlCmd | KeyMod.Shift | KeyMod.Alt | KeyCode.KeyL, command: "editor.action.transformToLowercase", when: writable },
-  { keybinding: KeyMod.Shift | KeyMod.Alt | KeyCode.LeftArrow, command: "cursorUndo", when: "textInputFocus" },
-  { keybinding: KeyMod.Shift | KeyMod.Alt | KeyCode.RightArrow, command: "cursorRedo", when: "textInputFocus" },
+  { keybinding: KeyMod.Shift | KeyMod.Alt | KeyCode.LeftArrow, command: "cursorUndo", when: typing },
+  { keybinding: KeyMod.Shift | KeyMod.Alt | KeyCode.RightArrow, command: "cursorRedo", when: typing },
 ]);
 
 export const editorOptions: monaco.editor.IStandaloneEditorConstructionOptions = {

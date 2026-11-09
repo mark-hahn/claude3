@@ -10,13 +10,14 @@ import * as os from "os";
 import * as path from "path";
 
 export const PNG_DATA_URI = "data:image/png;base64,";
+export const POWERSHELL = process.platform === "win32" ? "powershell.exe" : "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe";
 
 export async function captureScreen(hideWindow: boolean): Promise<string> {
   const name = `claude3-cap-${randomUUID()}.png`;
   const windows = process.platform === "win32";
   // PowerShell writes on the Windows side of the mount; the same file reads back through /mnt/c.
   const local = windows ? path.join(os.tmpdir(), name) : `/mnt/c/Windows/Temp/${name}`;
-  await runPowershell(windows ? "powershell.exe" : "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe", windows ? local : `C:\\Windows\\Temp\\${name}`, hideWindow);
+  await runPowershell(POWERSHELL, windows ? local : `C:\\Windows\\Temp\\${name}`, hideWindow);
   const png = await fs.promises.readFile(local);
   await fs.promises.rm(local, { force: true }).catch(() => undefined);
   return PNG_DATA_URI + png.toString("base64");

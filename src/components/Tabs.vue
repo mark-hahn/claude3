@@ -6,20 +6,16 @@
 import { computed, ref, watch } from "vue";
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { post, postHost } from "../api.ts";
-import { folderName, sameName } from "../tabList.ts";
+import { closeOnBackdrop, folderName, sameName } from "../tabList.ts";
+import FolderPicker from "./FolderPicker.vue";
 
 // Every project, in name order.
 const props = defineProps<{ tabs: Tab[] }>();
 const emit = defineEmits<{ show: [host: HostName, path: string]; closed: [] }>();
 
-interface Folders {
-  path: string;
-  entries: { name: string; path: string }[];
-}
-
 const HOST_NAMES = Object.keys(HOSTS) as HostName[];
 const dialog = ref<HTMLDialogElement>();
-const picker = ref<HTMLDialogElement>();
+const picker = ref<InstanceType<typeof FolderPicker>>();
 const host = ref<HostName>("wsl");
 const path = ref("");
 const name = ref("");
@@ -29,14 +25,8 @@ const creating = ref(false);
 const error = ref("");
 const editing = ref("");
 const editName = ref("");
-// The picker's box, and the backend's answer for the text it was last asked about.
-const pickerPath = ref("");
-const found = ref<Folders & { asked: string }>({ asked: "", path: "", entries: [] });
-const pickerError = ref("");
 
 const canCreate = computed(() => !!path.value && !!name.value.trim() && !creating.value);
-// Only when the answer is about what the box says now.
-const canPick = computed(() => !!found.value.path && found.value.asked === pickerPath.value);
 
 const messageOf = (problem: unknown): string => (problem instanceof Error ? problem.message : String(problem));
 const taken = (label: string, except = ""): boolean => props.tabs.some((tab) => tab.id !== except && sameName(tab.label, label));
@@ -50,14 +40,6 @@ watch(host, () => setPath(""));
 function open(): void {
   error.value = "";
   dialog.value?.showModal();
-}
-
-// Pointerdown, not click: a text selection dragged out of a box must not close the dialog. The
-// target test leaves the dialog's contents out, the box test its padding.
-function closeOnBackdrop(event: PointerEvent): void {
-  const shown = event.currentTarget as HTMLDialogElement;
-  const box = shown.getBoundingClientRect();
-  if (event.target === shown && (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom)) shown.close();
 }
 
 function attempt(work: Promise<unknown>): void {
@@ -80,30 +62,6 @@ async function create(): Promise<void> {
     error.value = messageOf(problem);
   }
   creating.value = false;
-}
-
-async function list(folder: string): Promise<void> {
-  pickerPath.value = folder;
-  pickerError.value = "";
-  try {
-    const reply = await postHost<Folders>(host.value, "folders", { path: folder });
-    if (folder === pickerPath.value) found.value = { asked: folder, ...reply };
-  } catch (problem) {
-    found.value = { asked: folder, path: "", entries: [] };
-    pickerError.value = messageOf(problem);
-  }
-}
-
-function openPicker(): void {
-  found.value = { asked: "", path: "", entries: [] };
-  void list(HOSTS[host.value].appsFolder);
-  picker.value?.showModal();
-}
-
-function pick(): void {
-  if (!canPick.value) return;
-  setPath(found.value.path);
-  picker.value?.close();
 }
 
 // As on a session card: a long press renames, and the click that ends it does nothing else.
@@ -152,7 +110,7 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
   <dialog ref="dialog" class="tabs-pop" @pointerdown="closeOnBackdrop" @close="emit('closed')">
     <section class="tabs-row">
       <select v-model="host" aria-label="Host"><option v-for="entry in HOST_NAMES" :key="entry">{{ entry }}</option></select>
-      <button @click="openPicker">Path</button>
+      <button @click="picker?.open(HOSTS[host].appsFolder)">Path</button>
       <span class="tabs-path">{{ path }}</span>
       <button @click="dialog?.close()">Close</button>
     </section>
@@ -191,19 +149,11 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
       </div>
     </section>
   </dialog>
-  <dialog ref="picker" class="tabs-pop tabs-picker" @pointerdown="closeOnBackdrop">
-    <div class="tabs-row">
-      <input class="tabs-input" :value="pickerPath" autofocus spellcheck="false" aria-label="Folder path" @input="list(($event.target as HTMLInputElement).value)" @keydown.enter.prevent="pick" />
-      <button :disabled="!canPick" @click="pick">Ok</button>
-    </div>
-    <div v-if="pickerError" class="tabs-error">{{ pickerError }}</div>
-    <div class="tabs-folders">
-      <button v-for="entry in found.entries" :key="entry.path" class="tabs-folder" @click="list(entry.path)">{{ entry.name }}</button>
-    </div>
-  </dialog>
+  <FolderPicker ref="picker" :host="host" @pick="setPath" />
 </template>
 
-<style scoped>
+<!-- Not scoped: FolderPicker's dialog wears these too, wherever it is used. -->
+<style>
 /* With the row's 6px gap, twice the space the tabs have between them. */
 .tabs-toggle { margin-right: 6px; }
 .tabs-toggle svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }

@@ -3,6 +3,10 @@
 //   GET  /events               -> server-sent events (StreamEvent) for all this host's projects: the list, then each one's full state
 //   POST /api/<action>         body: { tab, sessionId?, ... } -> JSON (tab is the project's id; the actions about the host ignore it)
 //        folders { path } -> { path, entries: [{ name, path }] } (the folders in a folder; path is "" when it isn't one)
+//        listFiles { paths } -> { listings: { [folder]: entries | null } } | readFile { path, known? } -> { mtime, text? }
+//        saveFile { path, text, mtime } -> { mtime } | { conflict } | newFile { folder } | renamePath { path, name } -> { path } | deletePath { path }
+//        freePath { folder, name } -> { path } | clipCopy { host, path } | clipPaste { host, folder } (the Files pane, server/files.ts)
+//        setRoots { roots } -> {} (the Files tree's stack of roots)
 //        createProject { label, path } -> {} | renameProject { label } -> {} | openProject { open } -> {}
 //        deleteProject -> {} (the project, its sessions and what they keep on disk; never its folder)
 //        prompt  { prompt, images? } -> { sessionId } (an empty sessionId starts a session; images are PNG data URIs)
@@ -24,6 +28,7 @@
 //        speechmatics { month, rescan } -> { payload } (the tv project's Speechmatics spend)
 //        login -> { url } (starts this host's `claude auth login`) | loginCode { code } -> {} | loginCancel -> {}
 //        loginResult -> { done, account, error } (the page polls this; error is "" on success)
+//   POST /upload?folder=&name= body: the file's bytes -> {} (a file dropped on the Files tree)
 //   GET  /version             -> the deployed version, the hash ./deploy wrote ("dev" in the repo)
 //   GET  anything else         -> the built page in dist/, when there is one (the WSL backend's)
 import { execFile, spawn } from "child_process";
@@ -38,6 +43,7 @@ import { ANSWER_MARK, AUTH_FAILED, DEFAULT_CONTEXT_WINDOW, imageNote, typedPromp
 import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, swapSessionTranscripts, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
+import { fileActions, upload } from "./files.ts";
 import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
 import { checkCosts, QuotaService, speechmaticsCost } from "./quota.ts";
 
@@ -531,6 +537,9 @@ function removeSessions(project: Project, ids: string[]): void {
 
 async function action(name: string, body: Record<string, unknown>): Promise<unknown> {
   // About the host, not one project, so they still work when it has none.
+  if (Object.hasOwn(fileActions, name)) {
+    return await fileActions[name](body);
+  }
   if (name === "folders") {
     return await folders(String(body.path ?? ""));
   }
@@ -570,6 +579,11 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   const project = projects.get(String(body.tab));
   if (!project) {
     throw new Error(`No tab ${JSON.stringify(body.tab)} on ${hostName}.`);
+  }
+  if (name === "setRoots") {
+    project.tab.roots = Array.isArray(body.roots) ? body.roots.map(String) : [];
+    saveTabs();
+    return {};
   }
   if (name === "renameProject") {
     project.tab.label = String(body.label ?? "").trim() || project.tab.label;
@@ -939,9 +953,8 @@ const server = createServer((req, res) => {
     req.on("close", () => clients.delete(res));
     return;
   }
-  if (req.method === "POST" && url.pathname.startsWith("/api/")) {
-    readBody(req)
-      .then((body) => action(url.pathname.slice(5), body))
+  if (req.method === "POST" && (url.pathname === "/upload" || url.pathname.startsWith("/api/"))) {
+    (url.pathname === "/upload" ? upload(req, url.searchParams) : readBody(req).then((body) => action(url.pathname.slice(5), body)))
       .then((result) => res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(result)))
       .catch((error) => res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: errorText(error) })));
     return;

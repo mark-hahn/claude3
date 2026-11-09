@@ -7,15 +7,25 @@ import type { ServerEvent, StreamEvent } from "../shared/types.ts";
 // The backends whose Claude login needs renewing, as each last said.
 export const authNeeded = reactive<Record<HostName, boolean>>({ wsl: false, win: false, srv: false });
 
+async function answer<T>(host: HostName, res: Response): Promise<T> {
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (!res.ok) throw new Error(data.error || `${host} backend: ${res.status} ${res.statusText}`);
+  return data;
+}
+
 export async function postHost<T = Record<string, unknown>>(host: HostName, action: string, body: Record<string, unknown>): Promise<T> {
   const res = await fetch(`${HOSTS[host].url}/api/${action}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new Error(data.error || `${host} backend: ${res.status} ${res.statusText}`);
-  return data;
+  return await answer<T>(host, res);
+}
+
+// A file dropped on the Files tree, its bytes streamed as they are.
+export async function upload(tab: Tab, folder: string, file: File): Promise<void> {
+  const query = new URLSearchParams({ folder, name: file.name });
+  await answer(tab.host, await fetch(`${HOSTS[tab.host].url}/upload?${query}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: file }));
 }
 
 export function post<T = Record<string, unknown>>(tab: Tab, action: string, body: Record<string, unknown>): Promise<T> {

@@ -147,3 +147,10 @@ export type ServerEvent =
 // A backend's one event stream: its list of projects and whether its Claude login needs renewing,
 // on connect and at every change, and each project's events marked with its id.
 export type StreamEvent = { type: "projects"; tabs: Tab[] } | { type: "auth"; needed: boolean } | (ServerEvent & { tab: string });
+
+// One line of the Files tree.
+export interface FileEntry {
+  name: string;
+  path: string;
+  dir: boolean;
+}
