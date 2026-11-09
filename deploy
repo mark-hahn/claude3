@@ -15,6 +15,9 @@ set -euo pipefail
 # restarts). Output goes through tee, which carries on, so a lost reader can't fail an echo here
 # and let set -e stop the deploy before the remaining hosts.
 exec > >(tee --output-error=warn-nopipe /dev/null) 2>&1
+# The last thing printed, success or failure. Not when run by ./run, which has more to print and
+# ends with its own, or for the hosts --if-stale runs as their own processes: it comes once, at the end.
+[ -n "${DEPLOY_NESTED:-}" ] || trap 'echo; echo "====== ENDED ======"' EXIT
 cd "$(dirname "$0")"
 # The prompt box's "r" runs this under the WSL backend's systemd service, whose PATH has none of
 # WSL's Windows directories, so reg.exe, powershell.exe and conhost.exe weren't found.
@@ -67,7 +70,7 @@ if [ "${1:-}" = "--if-stale" ]; then
     fi
     echo "== $host backend running ${now:-nothing}; deploying $VERSION"
     # Its own process, so set -e stops that host's steps and the other hosts still get theirs.
-    "$0" "$host" || echo "!! $host deploy failed" >&2
+    DEPLOY_NESTED=1 "$0" "$host" || echo "!! $host deploy failed" >&2
   done
   echo "${SOURCES[@]}" > .deployed # claude3's page warns before a prompt when those files are newer than this
   exit 0

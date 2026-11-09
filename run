@@ -12,7 +12,9 @@
 # the log so far, and exits.
 cd "$(dirname "$0")"
 vite="$PWD/node_modules/.bin/vite"
-./deploy --if-stale
+# The last thing printed, so deploy is told to leave it to this script.
+trap 'echo; echo "====== ENDED ======"' EXIT
+DEPLOY_NESTED=1 ./deploy --if-stale
 if [[ $RESTART_VITE == 1 ]] && pkill -f "$vite"; then
   for _ in {1..25}; do pgrep -f "$vite" >/dev/null || break; sleep 0.2; done
 fi
