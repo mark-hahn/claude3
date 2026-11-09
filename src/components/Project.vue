@@ -2,14 +2,15 @@
 // One tab: claude2's sidebar column (ported from sidebarHtml) beside one conversation pane. The
 // sessions come down the tab's event stream; picking a card shows that session in the pane, and
 // the others keep running and show their clocks here. Left out for now: search, management,
-// Close, Re-Auth.
+// Close.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { HOSTS, type Tab } from "../../shared/config.ts";
+import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { typedPrompt, type ClaudeSession, type RunningStatus, type ServerEvent } from "../../shared/types.ts";
-import { listen, post } from "../api.ts";
+import { authNeeded, listen, post } from "../api.ts";
 import { pick } from "../pick.ts";
 import Git from "./Git.vue";
 import Pane from "./Pane.vue";
+import ReAuth from "./ReAuth.vue";
 import Settings from "./Settings.vue";
 import Snips from "./Snips.vue";
 
@@ -50,6 +51,8 @@ const counts = computed(() => {
   const trashed = sessions.filter((session) => session.trashed).length;
   return { active: sessions.length - trashed, trashed };
 });
+// The hosts whose Claude login has expired, any of which raises Re-Auth in every tab.
+const expired = computed(() => (Object.keys(authNeeded) as HostName[]).filter((host) => authNeeded[host]).join(", "));
 const busy = (session: ClaudeSession): string => {
   const status = statuses.value[session.id];
   return status?.active ? (status.phase === "background" ? "background" : "running") : "";
@@ -86,6 +89,8 @@ function onEvent(event: ServerEvent): void {
     version.value++;
   } else if (event.type === "ceilings") {
     ceilings.value = event.count;
+  } else if (event.type === "returned") {
+    pane.value?.returnPrompt(event.sessionId, event.prompt, event.images);
   }
 }
 
@@ -250,6 +255,7 @@ onBeforeUnmount(() => stopListening());
             <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
           </button>
           <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" />
+          <ReAuth :needed="!!expired" @closed="focusPrompt" />
         </div>
         <div class="row">
           <button v-if="showTrash" class="delete" title="Permanently delete the selected trashed sessions. Ctrl-click or shift-click a card to select more" :disabled="!picked.size" @click="deletePicked">&#x1F5D1;{{ picked.size ? ` ${picked.size}` : "" }}</button>
@@ -258,6 +264,7 @@ onBeforeUnmount(() => stopListening());
           <span class="counts" title="Active sessions / trashed sessions">{{ counts.active }}/{{ counts.trashed }}</span>
         </div>
         <div v-if="!connected" class="offline">No answer from the {{ tab.host }} backend at {{ HOSTS[tab.host].url }}. Retrying.</div>
+        <div v-if="expired" class="offline">Authorization expired on {{ expired }}. Click Re-Auth to sign in again.</div>
       </div>
       <div class="sessions">
         <div v-if="!visible.length" class="empty">{{ showTrash ? "Trash is empty" : "No sessions yet" }}</div>

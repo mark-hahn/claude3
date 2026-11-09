@@ -401,7 +401,21 @@ function appendPrompt(text: string): boolean {
   return true;
 }
 const focusPrompt =(): void => (promptMarkdown.value ? promptMdEl.value : promptBox)?.focus();
-defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt });
+// claude2's promptReturned: the prompt never ran, so the box the send emptied takes it back. Anything
+// typed since outranks it and stays. A session not on show holds it as its draft.
+function returnPrompt(sessionId: string, text: string, pictures: string[]): void {
+  if (pictures.length) {
+    waiting[sessionId] = [...pictures.map((picture) => [picture]), ...(waiting[sessionId] ?? [])];
+    storeImages();
+  }
+  if (sessionId === sessionKey()) {
+    if (!draft.value) draft.value = text;
+  } else if (!drafts.get(sessionId)) {
+    drafts.set(sessionId, text);
+    localStorage.setItem(draftKey(sessionId), text);
+  }
+}
+defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt, returnPrompt });
 
 // ---- the dock ----
 

@@ -1,7 +1,11 @@
 // The page's side of a backend (server/main.ts): commands go up as POSTs, everything else comes
 // down the backend's event stream, one for all its projects.
+import { reactive } from "vue";
 import { HOSTS, type HostName, type Tab } from "../shared/config.ts";
 import type { ServerEvent, StreamEvent } from "../shared/types.ts";
+
+// The backends whose Claude login needs renewing, as each last said.
+export const authNeeded = reactive<Record<HostName, boolean>>({ wsl: false, win: false, srv: false });
 
 export async function postHost<T = Record<string, unknown>>(host: HostName, action: string, body: Record<string, unknown>): Promise<T> {
   const res = await fetch(`${HOSTS[host].url}/api/${action}`, {
@@ -52,6 +56,7 @@ function openStream(host: HostName, stream: Stream): void {
   source.onmessage = (message) => {
     const event = JSON.parse(message.data as string) as StreamEvent;
     if (event.type === "projects") return onTabs(host, event.tabs);
+    if (event.type === "auth") return void (authNeeded[host] = event.needed);
     const listener = stream.listeners.get(event.tab);
     if (listener) listener.onEvent(event);
     else if (event.type === "state") stream.held.set(event.tab, event);

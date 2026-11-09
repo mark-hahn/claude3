@@ -1,12 +1,17 @@
 // Self-check for the markdown renderer, answer text and trash-list picking ported from claude2: `node src/render.check.mjs`.
 // The ports un-doubled every backslash of claude2's template-literal source, so a missed one shows here.
 import assert from "node:assert/strict";
-import { imageNote, typedPrompt } from "../shared/types.ts";
+import { AUTH_FAILED, imageNote, typedPrompt } from "../shared/types.ts";
 import { extraBlankLines, headingEnter } from "./blankLines.ts";
 import { cropRect } from "./cropRect.ts";
 import { pick } from "./pick.ts";
 import { answerText, renderMarkdown } from "./render.ts";
 import { byName, folderName, nextTab, sameName } from "./tabList.ts";
+
+// The CLI's own words for a login that's gone send the prompt back; any other failure keeps its turn.
+assert.ok(AUTH_FAILED.test("Failed to authenticate: OAuth session expired and could not be refreshed"));
+assert.ok(AUTH_FAILED.test("Not logged in · Please run /login"));
+assert.ok(!AUTH_FAILED.test("Claude CLI exited with code 1."));
 
 // A new project's default name is its folder's, written as the path writes it, on either host's paths.
 assert.equal(folderName("/root/apps/MyProj/"), "MyProj");

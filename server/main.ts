@@ -22,7 +22,9 @@
 //        quota { force } -> { readAt, rows, state, apiCosts } (the Quotas pane; force is its Update)
 //        quotaSync { readAt, error } -> { payload } (null when the pane already shows the newest)
 //        speechmatics { month, rescan } -> { payload } (the tv project's Speechmatics spend)
-//   GET  /version              -> the deployed version, the hash ./deploy wrote ("dev" in the repo)
+//        login -> { url } (starts this host's `claude auth login`) | loginCode { code } -> {} | loginCancel -> {}
+//        loginResult -> { done, account, error } (the page polls this; error is "" on success)
+//   GET  /version             -> the deployed version, the hash ./deploy wrote ("dev" in the repo)
 //   GET  anything else         -> the built page in dist/, when there is one (the WSL backend's)
 import { execFile, spawn } from "child_process";
 import { randomUUID } from "crypto";
@@ -32,10 +34,11 @@ import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { FIRST_TABS, HOSTS, ORIGINS, type HostName, type Tab } from "../shared/config.ts";
-import { ANSWER_MARK, DEFAULT_CONTEXT_WINDOW, imageNote, typedPrompt, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
+import { ANSWER_MARK, AUTH_FAILED, DEFAULT_CONTEXT_WINDOW, imageNote, typedPrompt, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
 import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, swapSessionTranscripts, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
+import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
 import { checkCosts, QuotaService, speechmaticsCost } from "./quota.ts";
 
 const hostName = process.argv[2] as HostName;
@@ -244,6 +247,33 @@ const runs = new Map<string, Promise<void>>();
 // One per backend; its token-refresh probe runs in DATA_DIR so no project gets its transcript.
 const quota = new QuotaService(DATA_DIR, DATA_DIR, () => models, log);
 
+// claude2's authNeeded, per host as each host has its own login: set when a turn dies on an
+// expired login, cleared by a sign-in or an answered turn. A file, so it outlasts a restart.
+// ponytail: only this backend writes it; watch it if claude2 ever uses the same file.
+const AUTH_FLAG = path.join(DATA_DIR, "auth-needed");
+let authNeeded = fs.existsSync(AUTH_FLAG);
+function setAuthNeeded(value: boolean): void {
+  if (authNeeded === value) {
+    return;
+  }
+  authNeeded = value;
+  if (value) {
+    fs.writeFileSync(AUTH_FLAG, "");
+  } else {
+    fs.rmSync(AUTH_FLAG, { force: true });
+  }
+  broadcast({ type: "auth", needed: value });
+}
+
+// A returned prompt's pictures, as the page holds them, gone from the session's folder.
+function returnImages(files: string[]): string[] {
+  return files.map((file) => {
+    const dataUri = PNG_DATA_URI + fs.readFileSync(file).toString("base64");
+    fs.rmSync(file, { force: true });
+    return dataUri;
+  });
+}
+
 async function submitPrompt(project: Project, body: Record<string, unknown>): Promise<{ sessionId: string }> {
   const prompt = String(body.prompt ?? "");
   const images = Array.isArray(body.images) ? body.images.map(String) : [];
@@ -382,6 +412,10 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
         queue();
       },
     });
+    // A turn that got an answer proves the login works, however it was renewed (a terminal, claude2).
+    if (!result.stopped) {
+      setAuthNeeded(false);
+    }
     // After /clear this session goes on resuming its own id, so that transcript has to become the
     // cleared conversation. If the swap fails Claude keeps its context, and so does the gauge.
     const cleared = result.clearedInto !== null && swapSessionTranscripts(workspacePath, session.id, result.clearedInto);
@@ -410,9 +444,23 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
       modelId: last.status?.modelId ?? "",
     });
   } catch (error) {
+    const text = errorText(error);
+    if (AUTH_FAILED.test(text)) {
+      setAuthNeeded(true);
+      // claude2's rule: an auth-failed turn is noise, so the conversation reads as if it was never
+      // sent and the prompt goes back in the box. A turn the API had started answering keeps its
+      // work and shows the error. /compact is the gauge's, never the box's.
+      if (!last.status?.modelId) {
+        session.turns = session.turns.filter((entry) => entry !== turn);
+        if (prompt !== "/compact") {
+          send(project, { type: "returned", sessionId: session.id, prompt: typedPrompt(prompt), images: returnImages(images) });
+        }
+        return;
+      }
+    }
     const status = last.status;
     Object.assign(turn, {
-      error: errorText(error),
+      error: text,
       completedAt: Date.now(),
       contextUsed: status?.contextTokens || priorContext,
       durationMs: Math.max(0, Date.now() - turn.createdAt),
@@ -504,6 +552,20 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "speechmatics") {
     return { payload: await speechmaticsCost(String(body.month ?? ""), body.rescan === true, log) };
+  }
+  if (name === "login") {
+    return { url: await startLogin(DATA_DIR, () => setAuthNeeded(false)) };
+  }
+  if (name === "loginCode") {
+    sendLoginCode(String(body.code ?? "").trim());
+    return {};
+  }
+  if (name === "loginResult") {
+    return loginResult();
+  }
+  if (name === "loginCancel") {
+    cancelLogin();
+    return {};
   }
   const project = projects.get(String(body.tab));
   if (!project) {
@@ -868,7 +930,7 @@ const server = createServer((req, res) => {
   }
   if (req.method === "GET" && url.pathname === "/events") {
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
-    const events: StreamEvent[] = [{ type: "projects", tabs: tabList() }, ...[...projects.values()].map((project): StreamEvent => ({ type: "state", tab: project.tab.id, sessions: project.sessions, statuses: statuses(project) }))];
+    const events: StreamEvent[] = [{ type: "projects", tabs: tabList() }, { type: "auth", needed: authNeeded }, ...[...projects.values()].map((project): StreamEvent => ({ type: "state", tab: project.tab.id, sessions: project.sessions, statuses: statuses(project) }))];
     res.write(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""));
     clients.add(res);
     for (const project of projects.values()) {

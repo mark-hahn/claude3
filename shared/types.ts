@@ -27,6 +27,9 @@ export const imageNote = (file: string): string => `[A screenshot of the user's 
 // A stored prompt as it was typed, without those sentences: a prompt bar draws icons for them.
 export const typedPrompt = (prompt: string): string => prompt.replace(/\n\n\[A screenshot of the user's desktop is attached\. Read the image file [^\]]* to view it\.\]/g, "");
 
+// What the CLI says when this host's Claude login is gone: claude2's test, plus its words for no login at all.
+export const AUTH_FAILED = /failed to authenticate|oauth session expired|not logged in/i;
+
 // One ponytail skip line out of a response: "skipped: <x>, add when <y>".
 export interface PonySkip {
   x: string;
@@ -137,8 +140,10 @@ export type ServerEvent =
   // Sessions gone for good (empty ones swept away).
   | { type: "removed"; ids: string[] }
   // How many "ponytail:" comments the project holds; on connect and when a turn ends.
-  | { type: "ceilings"; count: number };
+  | { type: "ceilings"; count: number }
+  // A prompt that never ran because the login had expired, for its session's box. Pictures as PNG data URIs.
+  | { type: "returned"; sessionId: string; prompt: string; images: string[] };
 
-// A backend's one event stream: its list of projects, on connect and at every change, and each
-// project's events marked with its id.
-export type StreamEvent = { type: "projects"; tabs: Tab[] } | (ServerEvent & { tab: string });
+// A backend's one event stream: its list of projects and whether its Claude login needs renewing,
+// on connect and at every change, and each project's events marked with its id.
+export type StreamEvent = { type: "projects"; tabs: Tab[] } | { type: "auth"; needed: boolean } | (ServerEvent & { tab: string });

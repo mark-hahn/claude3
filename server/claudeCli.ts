@@ -1251,7 +1251,7 @@ function countCodeLines(text: string): number {
   return codeMatches.reduce((total, block) => total + block.split("\n").length - 2, 0);
 }
 
-function collectProcess(command: string, args: string[], workspacePath: string, timeoutMs: number, stdinText: string | null): Promise<string> {
+export function collectProcess(command: string, args: string[], workspacePath: string, timeoutMs: number, stdinText: string | null): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd: workspacePath, env: childEnv(), stdio: ["pipe", "pipe", "pipe"] });
     child.stdin.on("error", () => undefined);

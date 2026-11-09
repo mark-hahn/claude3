@@ -23,6 +23,8 @@ on the laptop, and talks to each backend directly.
   follow-up into a background wait, titles, the model list, `contextUsage` for Ctx. Also
   `cheapestModel` from claude2's modelInfo.ts.
 - `server/contextStats.ts`: the Ctx popup's table, copied unchanged from claude2.
+- `server/login.ts`: claude2's Re-Auth as steps the page drives: this host's `claude auth login`,
+  its URL, the pasted code on its stdin, then `claude auth status` for who signed in.
 - `src/App.vue`: the tab strip and the list of every project; open ones have a tab, sorted by name
   (`src/tabList.ts`, checked by `npm test`), and every project's `Project` stays mounted (`v-show`),
   closed ones too. The Snips and
@@ -48,6 +50,8 @@ on the laptop, and talks to each backend directly.
   uncommitted diff and untracked files' text to `claude -p` on Opus 5.5 and puts its reply (at most
   2 short sentences) in the message box. Status is re-read only for the tab on show: on showing, window focus, and
   session events (a turn starting or ending).
+- `src/components/ReAuth.vue`: the sidebar's red Re-Auth button and its `<dialog>`, which walks
+  every backend through a sign-in: a link to that host's sign-in page, the code box, Skip.
 - `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane
   (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude2-stats (`/snips` on
   hahnca.com:7301), reached through the backend's `snips` action; read on open and window focus,
@@ -146,6 +150,14 @@ on the laptop, and talks to each backend directly.
   A bar's icon asks `image` for the file, read-only. Ctrl-click on an icon in the prompt box
   removes that waiting picture. A sent one is permanent in its session: no way to remove it
   short of deleting the session for good, which removes the folder.
+- **Re-Auth.** A turn whose error matches `AUTH_FAILED` sets its host's flag (`~/.claude3/auth-needed`,
+  sent as an `auth` stream event, held in `authNeeded` in `src/api.ts`). If the API never started
+  answering, the turn is dropped and its prompt and pictures go back to the page (`returned`,
+  `Pane.returnPrompt`); otherwise it keeps its text and shows the error. Any host's flag raises
+  Re-Auth in every tab, and one click signs in on wsl, win and srv in turn, each with its own page
+  and code: `login` gives the URL, `loginCode` sends the code, and `loginResult` is polled once a
+  second (Firefox gives up on a response after 5 minutes). The poll also ends when the CLI's own
+  browser tab finished the sign-in with no code. A sign-in or an answered turn clears that host's flag.
 - **Deploy warning.** Before sending a prompt the pane asks `deployNeeded`: the project's
   `./deploy` (or `./run` when it has none) touches `.deployed` (gitignored) when it finishes, and
   any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Deploy
@@ -196,7 +208,7 @@ on the laptop, and talks to each backend directly.
 - One event stream per backend, not per project: each open stream holds a connection, browsers
   allow about 6 per server over HTTP/1.1, and closed projects stay mounted, so per-project streams
   would hang the page at a host's 6th project.
-- Actions about the host (`folders`, `createProject`, `capture`, `snips`, the quota ones) come before
+- Actions about the host (`folders`, `createProject`, `capture`, `snips`, the quota and login ones) come before
   `action`'s project lookup, so they work on a host with no projects.
 - The page and backends change the stream format together. A page ahead of its backends shows
   every tab as "No answer" with POSTs still working, and picks up by itself after the deploy.
@@ -235,8 +247,11 @@ on the laptop, and talks to each backend directly.
   typing goes nowhere; `src/main.ts` blurs and refocuses on every dialog's close. Monaco's own
   focus call doesn't help, since the textarea already has focus.
 - Not ported yet from claude2: search, fork, pasted images, File, export, presets (M),
-  Stats/Models/Instructions/Settings tabs, login/auth, the git changes check, prompt
+  Stats/Models/Instructions/Settings tabs, the git changes check, prompt
   suggestions, the restored prompt, arrow-key navigation, styled tooltips.
+- claude2's per-host auth flag (`authNeeded.<remote>` in VS Code's globalState) can't be shared: it
+  sits in VS Code's own database on the Windows side, out of hahnca.com's reach, and a running
+  VS Code rewrites it from memory. Each app clears its own flag on its next answered turn.
 - Snips stay read-only until the shared copy has been read, and a server answer of `null` (claude2
   never saved one there) keeps them so: nothing typed in claude3 may replace claude2's copy unseen.
 - Monaco's `addCommand` keys are page-wide and every tab has its own editor, so editor keys are
