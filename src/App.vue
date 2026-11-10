@@ -92,7 +92,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
   <div class="app">
     <nav class="tabs">
       <Tabs ref="tabsDialog" :tabs="sorted" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
-      <button v-for="tab in opened" :key="tab.id" class="tab" :class="{ selected: tab.id === current }" :title="`${tab.path} (${tab.host}). Ctrl-click: close`" @click="clickTab(tab, $event)">
+      <button v-for="tab in opened" :key="tab.id" class="tab" :class="[tab.host, { selected: tab.id === current }]" :title="`${tab.path} (${tab.host}). Ctrl-click: close`" @click="clickTab(tab, $event)">
         <span v-if="busy[tab.id] || highlighted[tab.id]" class="tab-dot" :class="{ due: !busy[tab.id] }" :title="busy[tab.id] ? 'Responding' : 'Git or Run is highlighted'">&#x25CF;</span>{{ tab.label }}
       </button>
       <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" title="Open or close the Files: a tree of the project's folder, and an editor" @click="toggle('files')">Files</button>
@@ -113,6 +113,9 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .tabs .tab { min-height: 0; padding: 3px 12px; }
 .tabs .tab.selected { background: #fbf3c4; border-color: #ddd08a; }
+.tabs .tab.wsl { color: green; }
+.tabs .tab.win { color: blue; }
+.tabs .tab.srv { color: brown; }
 .tabs .files-toggle { margin-left: auto; }
 .tabs .files-toggle.active, .tabs .git-toggle.active, .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
 /* 20% over the tab's 14px. The line-height keeps the bigger glyph from making its tab taller. */
