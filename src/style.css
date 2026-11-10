@@ -8,3 +8,5 @@ button:hover:not(:disabled), select:hover:not(:disabled) { background: linear-gr
 /* Disabled looks just like enabled, under a half-white cover. -1px reaches over the border. */
 button:disabled { position: relative; cursor: default; }
 button:disabled::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; background: rgba(255, 255, 255, 0.5); }
+/* tooltip.ts. 12px at the user's asking, under the 14px minimum. */
+#tip { inset: 0 auto auto 0; margin: 0; max-width: 60ch; padding: 4px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 2px 8px rgba(0,0,0,0.18); pointer-events: none; }

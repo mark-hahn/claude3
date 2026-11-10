@@ -85,6 +85,7 @@ on the laptop, and talks to each backend directly.
   `selectBottomBlock`) selects and opens the last block; pressed again it toggles that box.
 - `server/capture.ts`: claude2's PowerShell screen shot, returned as a PNG data URI.
 - `src/copy.ts`: every alt-click's copy, with its light-red flash.
+- `src/tooltip.ts` (`#tip` in `style.css`): every `title` on the page drawn as the page's own bubble, since a native one can't be sized. One delegated `mouseover`, nothing to add per element. A host's title sits in `data-tip` only while the mouse is on it. A manual popover, so it shows above modal `<dialog>`s.
 - `src/waitingImages.ts`: unsent pictures per tab in IndexedDB. `src/cropRect.ts`: the crop's
   arithmetic, checked by `npm test`.
 - `src/monaco.ts` (+ `monaco.css`): claude2's Monaco setup (its webviews.ts `monacoScript` /
@@ -282,7 +283,7 @@ on the laptop, and talks to each backend directly.
   focus call doesn't help, since the textarea already has focus.
 - Not ported yet from claude2: search, fork, pasted images, File, export, presets (M),
   Stats/Models/Instructions/Settings tabs, the git changes check, prompt
-  suggestions, the restored prompt, arrow-key navigation, styled tooltips.
+  suggestions, the restored prompt, arrow-key navigation.
 - claude2's per-host auth flag (`authNeeded.<remote>` in VS Code's globalState) can't be shared: it
   sits in VS Code's own database on the Windows side, out of hahnca.com's reach, and a running
   VS Code rewrites it from memory. Each app clears its own flag on its next answered turn.
@@ -294,8 +295,8 @@ on the laptop, and talks to each backend directly.
   user's key rules, all but Ctrl-D, by its `stockEditor` context key. The ctrl-wheel font size of it and of the Snips is
   `addWheelZoom` in `monaco.ts`, each editor with its own remembered size, since Monaco's `mouseWheelZoom` is page-wide too.
   The Files tree (with its rendered markdown) and the Git pane aren't Monaco: `src/wheelZoom.ts` does the same with a remembered CSS variable on the root, one per pane.
-- Every page element follows CLAUDE.md's display rules: font sizes 14–18px only (the one exception,
-  at the user's asking, is the ctrl-wheel size of the Files pane, the Git pane and the Snips, which has no limits), text solid black
+- Every page element follows CLAUDE.md's display rules: font sizes 14–18px only (the exceptions,
+  at the user's asking, are the ctrl-wheel size of the Files pane, the Git pane and the Snips, which has no limits, and the 12px tooltip `#tip`), text solid black
   or a colour, never grey. Monaco's markdown keeps the stock light theme's token colours (blue
   headings), and its one grey token is pinned to black in `monaco.ts`. A disabled button keeps its enabled look under a 50% white
   overlay (`style.css`, at the user's asking, though it pales the label), a paused quota age by its background; only status icons (tab dot, card clocks) keep colour.
