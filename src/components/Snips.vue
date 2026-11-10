@@ -4,13 +4,13 @@
 // every tab on every host edits the same copy. Read when it opens and whenever the window gets focus back; saved half a
 // second after the typing stops, and at once on close. Esc closes it; Ctrl+Enter moves the selected text
 // to the end of the prompt and the cursor there, takes the blank lines around the removed text
-// down to one and closes the Snips; with nothing selected it just closes them. A Monaco editor with
+// down to one and closes the Snips; with nothing selected it types two bare newlines, no margin or dash. A Monaco editor with
 // claude2's editing (src/monaco.ts).
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
 import { extraBlankLines } from "../blankLines.ts";
-import { addLineDots, addListKeys, addWheelZoom, applyWheelZoom, editorOptions, monaco, untab } from "../monaco.ts";
+import { addLineDots, addListKeys, addWheelZoom, applyWheelZoom, editorOptions, monaco, typeEdits, untab } from "../monaco.ts";
 
 // addToPrompt answers whether the prompt took the text: a trashed session's doesn't.
 const props = defineProps<{ tab: Tab; shown: boolean; addToPrompt: (text: string) => boolean }>();
@@ -106,7 +106,8 @@ onMounted(() => {
     run: (ed) => {
       const model = ed.getModel()!;
       const picked = ed.getSelections()!.filter((s) => !s.isEmpty());
-      if (!picked.length) return emit("close");
+      // No selection: two bare newlines at each caret (a blank line between), no margin and no dash (unlike enterLines).
+      if (!picked.length) return typeEdits(ed, ed.getSelections()!.map((range) => ({ range, text: "\n\n" })));
       const added = props.addToPrompt(picked.map((s) => model.getValueInRange(s)).join("\n"));
       console.log("snips ctrl+enter: prompt took the text:", added);
       if (!added) return;

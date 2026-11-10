@@ -143,7 +143,7 @@ export function addWheelZoom(editor: Editor, key: string): void {
 export const untab = (text: string): string => text.replace(/\t/g, "  ");
 
 // Tab makes list items (tabLines) instead of inserting anything, Shift-Tab steps them back the
-// same way, Enter starts the next one (enterLines), Backspace takes a dash back off
+// same way, Enter starts the next one, dashed or numbered (enterLines), Backspace takes a dash back off
 // (backspaceDashes) and # turns an empty one into a heading (typeHash). Tab, Shift-Tab and Enter
 // are left to Monaco while a completion list or a snippet is up, where they mean something else,
 // and Enter on a read-only box, which answers with its message. Pasted text loses its tab chars,
@@ -245,7 +245,7 @@ function enterLines(editor: Editor): void {
 
 // One undo step, each caret landing after its new text. Unlike Monaco's own typing, an edit
 // doesn't scroll to the caret.
-function typeEdits(editor: Editor, edits: monaco.editor.IIdentifiedSingleEditOperation[]): void {
+export function typeEdits(editor: Editor, edits: monaco.editor.IIdentifiedSingleEditOperation[]): void {
   editor.pushUndoStop();
   editor.executeEdits("claude2", edits, (undo) => undo.map(({ range }) => monaco.Selection.fromPositions(monaco.Range.lift(range).getEndPosition())));
   editor.pushUndoStop();
@@ -253,10 +253,14 @@ function typeEdits(editor: Editor, edits: monaco.editor.IIdentifiedSingleEditOpe
 }
 
 // What Enter starts the new line with, given the line it leaves and the text it takes along: that
-// line's margin, and a dash if that line is an item or a heading, unless the text is already one itself.
+// line's margin, and then the next number if that line is a numbered item ("7. " gives "8. "), or a
+// dash if it is an item or a heading, unless the text is already one of those itself.
 function enterStart(line: string, rest: string): string {
-  const dash = /^ *(- |#+ )/.test(line) && !/^(-( |$)|#+ )/.test(rest);
-  return line.match(/^ */)![0] + (dash ? "- " : "");
+  const margin = line.match(/^ */)![0];
+  if (/^(-( |$)|#+ |\d+\.( |$))/.test(rest)) return margin;
+  const num = line.match(/^ *(\d+)\.( |$)/);
+  if (num) return margin + (Number(num[1]) + 1) + ". ";
+  return margin + (/^ *(- |#+ )/.test(line) ? "- " : "");
 }
 
 // Backspace right after a line's "- " takes both chars, for the odd line that isn't a list item:

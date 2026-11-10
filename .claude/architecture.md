@@ -64,7 +64,7 @@ on the laptop, and talks to each backend directly.
   reached through the backend's `snips` action; read on open and window focus,
   saved 500ms after typing stops. Each tab mounts its own the first time it opens them and after that only hides
   it (`shown` prop), so the cursor and selections last until the page reloads; its `shown` watcher does what a remount
-  would (re-read while read-only, save at once, font size), and restores the scroll, since a hidden editor is 0x0. Ctrl+Enter hands the selection to the `addToPrompt` prop, Pane's
+  would (re-read while read-only, save at once, font size), and restores the scroll, since a hidden editor is 0x0. Ctrl+Enter with nothing selected types two bare newlines (no margin, no dash); with a selection it hands it to the `addToPrompt` prop, Pane's
   exposed `appendPrompt`, which appends it to the draft and focuses the prompt box; if that took
   it, the selection is deleted from the Snips and the blank lines at or beside it come down to one
   (`src/blankLines.ts`; a trashed session's prompt takes nothing, so nothing is deleted and they stay open), then the
