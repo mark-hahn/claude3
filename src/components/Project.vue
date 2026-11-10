@@ -60,10 +60,11 @@ const hitCounts = computed(() => {
   if (needle) for (const session of sessions) tally.set(session.id, matchCount(session.turns, needle));
   return tally;
 });
+const matches = (session: ClaudeSession): boolean => !!hitCounts.value.get(session.id) || nameMatches(session);
 const visible = computed(() => {
   void version.value;
-  // A search takes in both lists.
-  const listed = (session: ClaudeSession): boolean => (searchText.value ? !!hitCounts.value.get(session.id) || nameMatches(session) : session.trashed === showTrash.value);
+  // A search takes in both lists. A running card is in every list (see running).
+  const listed = (session: ClaudeSession): boolean => !!busy(session) || (searchText.value ? matches(session) : session.trashed === showTrash.value);
   // Newest first by the time each card shows.
   return sessions.filter(listed).sort((a, b) => b.updatedAt - a.updatedAt);
 });
@@ -78,6 +79,9 @@ const busy = (session: ClaudeSession): string => {
   const status = statuses.value[session.id];
   return status?.active ? (status.phase === "background" ? "background" : "running") : "";
 };
+// A session running or waiting on a background task. Its card stays on show (only Ctrl-B hides
+// it): Clean, Trash and its own 🗑 are off, one starting leaves the trash list, and a search shows it.
+const running = computed(() => Object.values(statuses.value).some((status) => status.active));
 
 function setStatus(id: string, status: RunningStatus | null): void {
   const next = { ...statuses.value };
@@ -187,7 +191,7 @@ function setSearch(text: string): void {
   searchText.value = text;
   if (!text) return;
   showTrash.value = false;
-  void stepSearch(visible.value[0]?.id ?? "", true);
+  void stepSearch(visible.value.find(matches)?.id ?? "", true);
 }
 
 // What a top button does to a search: typing not yet searched for stays in the box.
@@ -390,6 +394,7 @@ watch(() => !showTrash.value && !searchText.value && selected.value?.trashed, (s
 });
 // Picks outlive leaving the trash list; only a card restored or deleted drops out. The delete button
 // exists only on that list, where every trashed card is on show, so it never reaches one out of sight.
+watch(running, (on) => on && (showTrash.value = false));
 watch(visible, () => (picked.value = new Set(sessions.filter((session) => session.trashed && picked.value.has(session.id)).map((session) => session.id))));
 watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => status.active).length));
 // The Git and Run buttons' highlights, for the dot on this project's tab in App's tab strip.
@@ -443,8 +448,8 @@ onBeforeUnmount(() => {
       <div class="top">
         <div class="head">
           <button v-if="showTrash" class="delete" title="Permanently delete the selected trashed sessions. Ctrl-click or shift-click a card to select more" :disabled="!picked.size" @click="deletePicked">&#x1F5D1;{{ picked.size ? ` ${picked.size}` : "" }}</button>
-          <button v-else class="clean" title="Move every session to the trash" :disabled="!visible.some((session) => session.turns.length)" @click="clean">Clean</button>
-          <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="toggleTrash">Trash</button>
+          <button v-else class="clean" title="Move every session to the trash. Off while a session is running" :disabled="running || !visible.some((session) => session.turns.length)" @click="clean">Clean</button>
+          <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions. Off while a session is running'" :disabled="running" @click="toggleTrash">Trash</button>
           <div class="row">
             <span class="counts" title="Active sessions / trashed sessions. Ctrl-click: fake an expired login on this tab's host, to test Re-Auth" @click.ctrl="fakeExpiry">{{ counts.active }}/{{ counts.trashed }}</span>
             <ReAuth :needed="!!expired" @closed="focusPrompt" />
@@ -458,7 +463,7 @@ onBeforeUnmount(() => {
         <div v-if="expired" class="offline">Authorization expired on {{ expired }}. Click Re-Auth to sign in again.</div>
       </div>
       <div class="sessions">
-        <div v-if="!visible.length" class="empty">{{ searchText ? "No matches" : showTrash ? "Trash is empty" : "No sessions yet" }}</div>
+        <div v-if="searchText ? !visible.some(matches) : !visible.length" class="empty">{{ searchText ? "No matches" : showTrash ? "Trash is empty" : "No sessions yet" }}</div>
         <div
           v-for="session in visible"
           :key="session.id"
@@ -491,7 +496,7 @@ onBeforeUnmount(() => {
             <span v-if="busy(session)" class="card-clock" :class="busy(session)" :title="busy(session) === 'background' ? 'Waiting on a background task (Stop ends it)' : 'Responding'">
               <svg viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
             </span>
-            <button v-if="!session.trashed" class="card-trash" title="Move this session to the trash" @pointerdown.stop @click.stop="trash(session, true)">&#x1F5D1;</button>
+            <button v-if="!session.trashed" v-show="!busy(session)" class="card-trash" title="Move this session to the trash" @pointerdown.stop @click.stop="trash(session, true)">&#x1F5D1;</button>
             <button v-else class="card-restore" title="Move this session out of the trash" @pointerdown.stop @click.stop="trash(session, false)">R</button>
             <span class="card-turns" title="Prompt turns">{{ session.turns.length }}</span>
           </div>
