@@ -93,9 +93,9 @@ async function poll(): Promise<void> {
   polling = false;
 }
 let poller = 0;
-// Ctrl-G opens or closes the popup from anywhere on the page, as the button does; in the message box
-// with text in it, it commits instead. Capture phase, so an editor holding the cursor never gets the
-// key (Monaco's go-to-line, the browser's find-next).
+// Ctrl-G opens or closes the popup from anywhere on the page, as the button does; it never commits.
+// Capture phase, so an editor holding the cursor never gets the key (Monaco's go-to-line, the
+// browser's find-next).
 function onPageKey(event: KeyboardEvent): void {
   if (!props.active || event.code !== "KeyG" || !event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
   event.preventDefault();
@@ -103,8 +103,7 @@ function onPageKey(event: KeyboardEvent): void {
   if (event.repeat || committing.value) return;
   if (!dialog.value?.open) {
     if (!noRepo.value) open();
-  } else if (document.activeElement === messageBox.value && message.value.trim()) void commit();
-  else dialog.value.close();
+  } else dialog.value.close();
 }
 onMounted(() => {
   poller = window.setInterval(() => void poll(), 2000);
