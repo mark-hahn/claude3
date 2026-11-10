@@ -20,9 +20,9 @@ on the laptop, and talks to each backend directly.
   listed at its top.
 - `server/claudeCli.ts`: `ClaudeCliRunner`, claude2's runner nearly verbatim: spawns the CLI,
   parses its stream into the response text (tool lines with marks, details), stop by interrupt,
-  follow-up into a background wait, titles, the model list, `contextUsage` for Ctx. Also
+  follow-up into a background wait, titles, the model list, `contextUsage` for the `ctx` action. Also
   `cheapestModel` from claude2's modelInfo.ts.
-- `server/contextStats.ts`: the Ctx popup's table, copied unchanged from claude2.
+- `server/contextStats.ts`: the `ctx` action's table, copied unchanged from claude2. Nothing on the page asks for it since the footer's Ctx button and popup went.
 - `server/files.ts`: the Files pane's actions (`fileActions`) and `POST /upload`: folder listings, a text file read and saved, new, rename, move, delete, and the Windows clipboard's files (PowerShell, scp for srv).
 - `server/login.ts`: claude2's Re-Auth as steps the page drives: this host's `claude auth login`,
   its URL, the pasted code on its stdin, then `claude auth status` for who signed in.
@@ -76,8 +76,8 @@ on the laptop, and talks to each backend directly.
   and the poll lease live on claude2-stats (hahnca.com:7301), shared with claude2's windows; local
   fallback files in `~/.claude3/quota-*.json`. No footer 95% alert, no reading after a turn.
 - `src/components/Pane.vue`: claude2's conversation pane. History (bars and boxes) is built
-  imperatively, as claude2 builds it; the dock (prompt box, pill, stop, Run, Cap, Ctx, stats) is a
-  template. Also the Ctx popup and the image popup. The prompt box is a Monaco editor whose text is mirrored into the
+  imperatively, as claude2 builds it; the dock (prompt box, pill, stop, Run, Cap, stats) is a
+  template. Also the image popup. The prompt box is a Monaco editor whose text is mirrored into the
   `draft` ref both ways. claude2's big prompt editor: Ctrl-Alt-click in the box or Ctrl-Alt-Z
   (the tab on show only, via the `active` prop) puts the box full height left of the history,
   per session in localStorage (`bigPrompt:<tab>:<session id>`); Ctrl-Alt-X there shows it

@@ -20,12 +20,10 @@ const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: Run
 const emit = defineEmits<{ started: [sessionId: string]; deployDue: [due: boolean] }>();
 
 const historyEl = ref<HTMLElement>();
-const ctxPopEl = ref<HTMLElement>();
 const runPopEl = ref<HTMLDialogElement>();
 const runText = ref("");
 const deployPopEl = ref<HTMLDialogElement>();
 const deployText = ref("");
-const ctxButtonEl = ref<HTMLButtonElement>();
 const promptHostEl = ref<HTMLElement>();
 const promptMdEl = ref<HTMLElement>();
 let promptBox: monaco.editor.IStandaloneCodeEditor | null = null;
@@ -912,167 +910,6 @@ const pill = computed(() => {
   };
 });
 
-// ---- the Ctx popup: tokens by source, from the transcript and the CLI's own counts ----
-
-interface CtxRow { depth: number; label: string; now: number; lastIn: number; lastOut: number; allIn: number; allOut: number }
-interface CacheSplit { read: number; write: number; fresh: number }
-// server/contextStats.ts ContextTable, as it arrives.
-interface CtxTable { rows: CtxRow[]; calls: { last: number; all: number }; cache: { now: CacheSplit; last: CacheSplit; all: CacheSplit }; measured: boolean }
-
-let ctxAsk = 0;
-let ctxNotesOpen = false;
-const ctxOpenRows = new Set<string>();
-// Every count is whole thousands, with no unit letters. Only a true zero is left blank.
-const fmtCtx = (n: number): string => (!n ? "" : String(Math.round(n / 1000)));
-
-function placeCtxPop(): void {
-  const pop = ctxPopEl.value!;
-  const rect = ctxButtonEl.value!.getBoundingClientRect();
-  const paneLeft = historyEl.value!.getBoundingClientRect().left;
-  pop.style.left = paneLeft + 8 + "px";
-  pop.style.right = Math.max(8, innerWidth - rect.right) + "px";
-  pop.style.bottom = innerHeight - rect.top + 6 + "px";
-  pop.style.maxHeight = Math.max(120, rect.top - 14) + "px";
-}
-
-function ctxLine(text: string, className: string): void {
-  const line = document.createElement("div");
-  line.className = className;
-  line.textContent = text;
-  ctxPopEl.value!.append(line);
-}
-
-function foldCtx(items: { line: HTMLTableRowElement; depth: number; key: string; twist: HTMLElement | null }[]): void {
-  let cut = Infinity;
-  for (const item of items) {
-    item.line.hidden = item.depth > cut;
-    if (item.line.hidden) continue;
-    const open = ctxOpenRows.has(item.key);
-    cut = item.twist && !open ? item.depth : Infinity;
-    if (item.twist) item.twist.textContent = open ? "▾" : "▸";
-  }
-}
-
-function showCtx(table: CtxTable | null): void {
-  const pop = ctxPopEl.value!;
-  pop.replaceChildren();
-  if (!table) return ctxLine("Nothing to count yet: Claude has no transcript for this session.", "ctx-head");
-  const subagents = table.rows.some((row) => row.depth === 0 && row.label === "Subagents");
-  const notes = document.createElement("div");
-  notes.className = "ctx-notes";
-  notes.hidden = !ctxNotesOpen;
-  for (const text of [
-    "All counts are thousands of tokens.",
-    "Now is the latest API call’s whole context, split by source. Its total is the footer’s figure, which counts towards " + Math.round(compactAt.value / 1000) + ", where the conversation is compacted.",
-    "In counts each call’s whole context again, cache reads included. API calls: " + table.calls.last + " in the last prompt, " + table.calls.all + " in the conversation.",
-    "The cache rows split each column’s input by how it was billed: a cache read costs about a tenth of fresh input, a cache write more than fresh input.",
-    "Totals and thinking are exact; the rest of the split is estimated.",
-    ...(subagents ? ["Subagents are conversations of their own, left out of the session’s token stats."] : []),
-    ...(table.measured ? [] : ["The CLI gave no counts of its own, so the system prompt and tool rows are estimates too."]),
-  ]) {
-    const line = document.createElement("div");
-    line.textContent = text;
-    notes.append(line);
-  }
-  const bar = document.createElement("div");
-  bar.className = "ctx-bar";
-  const notesButton = document.createElement("button");
-  notesButton.textContent = "Notes";
-  notesButton.addEventListener("click", () => {
-    ctxNotesOpen = !ctxNotesOpen;
-    notes.hidden = !ctxNotesOpen;
-    placeCtxPop();
-  });
-  const closeButton = document.createElement("button");
-  closeButton.textContent = "Close";
-  closeButton.addEventListener("click", () => (pop.hidden = true));
-  bar.append(notesButton, closeButton);
-  pop.append(bar, notes);
-  const grid = document.createElement("table");
-  const head = grid.createTHead();
-  const spans = head.insertRow();
-  const unit = head.insertRow();
-  const th = (row: HTMLTableRowElement, text: string, cols = 0, rows = 0): void => {
-    const cell = document.createElement("th");
-    cell.textContent = text;
-    if (cols) cell.colSpan = cols;
-    if (rows) cell.rowSpan = rows;
-    row.append(cell);
-  };
-  th(spans, "Source", 0, 2);
-  th(spans, "Now", 0, 2);
-  th(spans, "Last prompt", 2);
-  th(spans, "Conversation", 2);
-  for (const text of ["in", "out", "in", "out"]) th(unit, text);
-  const body = grid.createTBody();
-  // The rows come depth first, so a row's contents are the deeper rows right after it. Each row is
-  // keyed by its path of labels, which keeps an opened row open.
-  const items: { line: HTMLTableRowElement; depth: number; key: string; twist: HTMLElement | null }[] = [];
-  const path: string[] = [];
-  table.rows.forEach((row, index) => {
-    const line = body.insertRow();
-    line.className = index === table.rows.length - 1 ? "total" : row.depth === 0 && index > 0 ? "top" : "";
-    if (index < table.rows.length - 1 && row.depth === 0) line.classList.add("subtotal");
-    path.length = row.depth;
-    path.push(row.label);
-    const key = JSON.stringify(path);
-    const opens = index + 1 < table.rows.length && table.rows[index + 1]!.depth > row.depth;
-    const name = line.insertCell();
-    const twist = document.createElement("span");
-    twist.className = "ctx-twist";
-    name.append(twist);
-    row.label.split(/(?<=[\\/])/).forEach((part, at) => {
-      if (at) name.append(document.createElement("wbr"));
-      name.append(part);
-    });
-    name.style.paddingLeft = `calc(8px + ${row.depth * 1.2 + 1}em)`;
-    for (const value of [row.now, row.lastIn, row.lastOut, row.allIn, row.allOut]) line.insertCell().textContent = fmtCtx(value);
-    if (opens) {
-      line.classList.add("opens");
-      line.addEventListener("click", () => {
-        if (!ctxOpenRows.delete(key)) ctxOpenRows.add(key);
-        foldCtx(items);
-        placeCtxPop();
-      });
-    }
-    items.push({ line, depth: row.depth, key, twist: opens ? twist : null });
-  });
-  foldCtx(items);
-  // How each column's input was billed, as shares of it; the out columns have no caching.
-  const pct = (split: CacheSplit, key: keyof CacheSplit): string => {
-    const whole = split.read + split.write + split.fresh;
-    return whole ? ((100 * split[key]) / whole).toFixed(1) + "%" : "";
-  };
-  ([["Cache read", "read"], ["Cache write", "write"], ["Uncached", "fresh"]] as const).forEach(([label, key], index) => {
-    const line = body.insertRow();
-    line.className = index === 0 ? "cache-first" : "";
-    const name = line.insertCell();
-    name.textContent = label;
-    name.style.paddingLeft = "calc(8px + 1em)";
-    for (const value of [pct(table.cache.now, key), pct(table.cache.last, key), "", pct(table.cache.all, key), ""]) line.insertCell().textContent = value;
-  });
-  pop.append(grid);
-  placeCtxPop();
-}
-
-function toggleCtx(): void {
-  const pop = ctxPopEl.value!;
-  if (!pop.hidden || !props.session) {
-    pop.hidden = true;
-    return;
-  }
-  const ask = ++ctxAsk;
-  ctxNotesOpen = false;
-  ctxOpenRows.clear();
-  pop.replaceChildren();
-  ctxLine("Reading the transcript…", "ctx-head");
-  pop.hidden = false;
-  placeCtxPop();
-  post<{ table: CtxTable | null }>(props.tab, "ctx", { sessionId: props.session.id })
-    .then((answer) => ask === ctxAsk && !pop.hidden && showCtx(answer.table))
-    .catch((error) => ask === ctxAsk && ctxLine(`Ctx failed: ${error instanceof Error ? error.message : String(error)}`, "ctx-head"));
-}
-
 // ---- wiring ----
 
 let switchedFrom: string | null = null;
@@ -1098,7 +935,6 @@ watch(
       boxScrolls = {};
       expandedPrompts = new Set();
       openToolCalls = new Set();
-      if (ctxPopEl.value) ctxPopEl.value.hidden = true;
       bigPrompt.value = localStorage.getItem(bigKey(id)) === "1";
       setPromptMarkdown(false);
       showImageChars();
@@ -1129,10 +965,6 @@ watch(() => props.session?.trashed, lockPrompt);
 
 let ticker = 0;
 let resize: ResizeObserver | null = null;
-function closeCtxOutside(event: MouseEvent): void {
-  const pop = ctxPopEl.value;
-  if (pop && !pop.hidden && !pop.contains(event.target as Node) && !ctxButtonEl.value?.contains(event.target as Node)) pop.hidden = true;
-}
 
 onMounted(() => {
   status = props.status;
@@ -1179,14 +1011,12 @@ onMounted(() => {
     const clamped = Math.min(bounds.max, Math.max(bounds.min, historyEl.value!.scrollTop));
     if (clamped !== historyEl.value!.scrollTop) historyEl.value!.scrollTop = clamped;
   });
-  document.addEventListener("mousedown", closeCtxOutside, true);
   window.addEventListener("focus", checkDeploySoon);
 });
 onBeforeUnmount(() => {
   window.removeEventListener("focus", checkDeploySoon);
   window.clearInterval(ticker);
   resize?.disconnect();
-  document.removeEventListener("mousedown", closeCtxOutside, true);
   window.removeEventListener("keydown", onPageKey, true);
   promptBox?.dispose();
 });
@@ -1195,7 +1025,6 @@ onBeforeUnmount(() => {
 <template>
   <div class="pane" :class="{ 'big-prompt-editor': bigPrompt }" @click.capture="copyCodeBlock">
     <div ref="historyEl" class="history" tabindex="-1"></div>
-    <div ref="ctxPopEl" class="ctx-pop" hidden></div>
     <dialog ref="runPopEl" class="run-pop" @close="runClosed">
       <pre>{{ runText }}</pre>
       <form method="dialog"><button autofocus>OK</button></form>
@@ -1227,7 +1056,6 @@ onBeforeUnmount(() => {
             <button class="stop" :class="{ stopping: stopping && active }" title="Stop" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
             <button :class="{ 'deploy-due': deployDue }" title="Run the project's ./run, the same as the prompt r. Ctrl-click: the same as the prompt v" @mousedown.prevent @click="runScript($event.ctrlKey)">Run</button>
             <button title="Capture the screen for this prompt, hiding this window for the shot. Ctrl-click: this window stays up. Alt-click: the previous tab is shown for the shot" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
-            <button ref="ctxButtonEl" title="Tokens by source, for the last prompt and the whole conversation, in and out" :disabled="!session?.turns.length" @click="toggleCtx">Ctx</button>
           </div>
         </div>
         <div class="stats">
@@ -1331,8 +1159,6 @@ onBeforeUnmount(() => {
 .pane .indicator.done { background: #fff; }
 .pane .indicator.active { border-color: #e2a3a3; background: #fde0e0; }
 .pane .indicator.active.waiting { border-color: #a5d6a7; background: #e3f6e4; }
-/* The Ctx popup, opening upward from its button; placed by script. */
-.pane .ctx-pop { position: fixed; z-index: 50; overflow: auto; padding: 8px 10px; border: 1px solid #000; border-radius: 8px; background: #fff; color: #000; font-size: 14px; box-shadow: 0 4px 14px rgba(0,0,0,0.2); }
 /* The ./run result. */
 /* The top is pinned, so a growing ./run log doesn't re-centre the dialog on every line. */
 .pane .run-pop { margin-top: 10vh; max-width: 80vw; max-height: 80vh; padding: 12px 16px; border: 1px solid #000; border-radius: 8px; color: #000; font-size: 14px; }
@@ -1353,22 +1179,4 @@ onBeforeUnmount(() => {
 .pane .img-frame.readonly { cursor: default; }
 .pane .img-frame img { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; touch-action: none; }
 .pane .img-sel { position: absolute; border: 2px solid #1a6fd4; background: rgba(26,111,212,0.16); pointer-events: none; }
-.pane .ctx-pop table { width: 100%; border-collapse: collapse; }
-.pane .ctx-pop th, .pane .ctx-pop td { padding: 1px 8px; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
-.pane .ctx-pop thead tr:first-child th:first-child, .pane .ctx-pop td:first-child { text-align: left; }
-.pane .ctx-pop td:first-child { white-space: normal; overflow-wrap: anywhere; }
-.pane .ctx-pop tr.opens { cursor: pointer; }
-.pane .ctx-pop .ctx-twist { display: inline-block; width: 1em; margin-left: -1em; }
-.pane .ctx-pop th[colspan] { text-align: center; }
-.pane .ctx-pop th { font-weight: 700; vertical-align: bottom; }
-.pane .ctx-pop thead tr:last-child th, .pane .ctx-pop th[rowspan] { border-bottom: 1px solid #000; }
-.pane .ctx-pop tr.top td { border-top: 1px solid var(--border); }
-.pane .ctx-pop tr.subtotal td { background: var(--yellow); }
-.pane .ctx-pop tr.total td { font-weight: 700; border-top: 1px solid #000; }
-.pane .ctx-pop tr.cache-first td { padding-top: 6px; }
-.pane .ctx-pop .ctx-head { margin-bottom: 6px; font-weight: 700; }
-.pane .ctx-pop .ctx-bar { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 4px; }
-.pane .ctx-pop .ctx-bar button { min-height: 0; padding: 2px 8px; }
-.pane .ctx-pop .ctx-notes { margin-bottom: 8px; max-width: 64ch; white-space: normal; }
-.pane .ctx-pop .ctx-notes > div { margin-bottom: 4px; }
 </style>
