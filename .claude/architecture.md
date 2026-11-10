@@ -317,6 +317,9 @@ on the laptop, and talks to each backend directly.
 - Chromium hands focus back after a mouse-closed `<dialog>` without the text box's caret, so
   typing goes nowhere; `src/main.ts` blurs and refocuses on every dialog's close. Monaco's own
   focus call doesn't help, since the textarea already has focus.
+- Enter in any modal `<dialog>` presses its `autofocus` button, or its only button (`src/main.ts`,
+  window capture, ahead of Pane's Enter), unless focus is on a button, input, textarea, select or link.
+  A click on a dialog's text leaves focus on the body, where Pane's Enter would act behind the dialog.
 - Not ported yet from claude2: pasted images, File, export, presets (M),
   Stats/Models/Instructions/Settings tabs, the git changes check, prompt
   suggestions, arrow-key navigation.
