@@ -3,7 +3,7 @@
 // on it, which keeps the native bubble away, and back when the mouse leaves (Vue can change or
 // drop a title between hovers, so no copy outlives the hover). A popover, not a z-index: only the
 // top layer shows above a modal <dialog>.
-const DELAY = 400;
+const DELAY = 750;
 const EDGE = 6;
 
 const tip = document.createElement("div");
@@ -13,7 +13,6 @@ document.body.append(tip);
 
 let host: HTMLElement | null = null;
 let timer = 0;
-let warmUntil = 0;
 let mouseX = 0;
 
 const tipUp = () => tip.matches(":popover-open");
@@ -50,8 +49,6 @@ document.addEventListener("mouseover", (event) => {
   const node = event.target instanceof Element ? event.target.closest<HTMLElement>("[title], [data-tip]") : null;
   // Moving between a host's own children.
   if (node && node === host) return;
-  // A tip that is up hands straight over to the next host, the way native ones do.
-  if (tipUp()) warmUntil = Date.now() + 500;
   release();
   const text = node?.getAttribute("title");
   if (!node || !text) return;
@@ -63,7 +60,7 @@ document.addEventListener("mouseover", (event) => {
     if (!node.isConnected) return;
     tip.textContent = text;
     place(node);
-  }, Date.now() < warmUntil ? 0 : DELAY);
+  }, DELAY);
 });
 
 document.addEventListener("mouseout", (event) => {
