@@ -150,7 +150,8 @@ on the laptop, and talks to each backend directly.
   '' for the new-session draft, removed on send), so it is back in its box after a reload and
   `Pane.drafted` still spares its session from the sweep. Separately, text a session switch or
   reload takes out of the box is kept (`clearedDraft`, `lostPrompt:<tab>`, one per tab, removed
-  on send); Ctrl+Enter in an empty box puts it back.
+  on send); Ctrl+Enter in an empty box puts it back. When the settling `session` event arrives and the page lacks focus
+  (`document.hasFocus()`), Project shows a browser notification (a Windows toast) named for the project. Permission is asked on the first click after a load (`src/main.ts`); only `localhost`-style origins can have it, which `ORIGINS` already are.
 - **Screen capture.** The footer's Cap → `POST /api/capture`, always on a laptop backend (a tab on
   srv asks WSL's), which runs PowerShell and answers a PNG data URI. Plain click minimizes the
   foreground window (the page's) for the shot; ctrl-click leaves it up; alt-click calls App's

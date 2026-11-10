@@ -78,6 +78,12 @@ function onEvent(event: ServerEvent): void {
     version.value++;
   } else if (event.type === "session") {
     const at = sessions.findIndex((session) => session.id === event.session.id);
+    const before = sessions[at]?.turns.at(-1);
+    const turn = event.session.turns.at(-1);
+    // tag: a second page open on the same browser replaces this one's notification, not adds to it.
+    if (turn?.finished && before?.id === turn.id && !before.finished && !document.hasFocus() && Notification.permission === "granted") {
+      new Notification(`${props.tab.label}: turn finished`, { body: event.session.name, tag: turn.id });
+    }
     if (at >= 0) sessions[at] = event.session;
     else sessions.unshift(event.session);
     setStatus(event.session.id, event.status);

@@ -12,4 +12,9 @@ document.addEventListener('close', () => {
   }
 }, true)
 
+// Firefox refuses this outside a click. Asked again each page load until answered.
+if (Notification.permission === 'default') {
+  document.addEventListener('click', () => void Notification.requestPermission(), { capture: true, once: true })
+}
+
 createApp(App).mount('#app')
