@@ -1021,6 +1021,65 @@ export function copySessionTranscript(workspacePath: string, fromId: string, toI
   }
 }
 
+// Forking a conversation only means anything to Claude if the CLI forgets the dropped runs too:
+// the next prompt resumes from this file, so it is cut at the prompt that starts the first dropped
+// run. keepPrompts is how many prompts stay; droppedPrompt is the text of the first one to go, used
+// to confirm the cut lands where the pane thinks it does. The old file is kept alongside as .bak.
+export function truncateSessionTranscript(workspacePath: string, sessionId: string, keepPrompts: number, droppedPrompt: string): boolean {
+  const file = transcriptPath(workspacePath, sessionId);
+  let lines: string[];
+  try {
+    lines = fs.readFileSync(file, "utf8").split("\n");
+  } catch {
+    return false;
+  }
+  // The real prompts, in order, with their text. Tool results and subagent traffic are user entries
+  // too, so a prompt is the narrower thing: top-level, text only, and sourced from a caller.
+  const prompts: { index: number; text: string }[] = [];
+  lines.forEach((line, index) => {
+    if (!line.trim()) {
+      return;
+    }
+    try {
+      const entry = JSON.parse(line) as Record<string, unknown>;
+      const text = promptText((entry.message as { content?: unknown } | undefined)?.content);
+      if (entry.type === "user" && entry.isSidechain !== true && entry.promptSource && text !== null) {
+        prompts.push({ index, text });
+      }
+    } catch {
+      // A half-written line is not a prompt; the scan carries on past it.
+    }
+  });
+  // The prompt at the keep boundary, unless the transcript disagrees with the pane's count — then
+  // the first later prompt whose text matches the run being dropped.
+  let cut = prompts.length > keepPrompts ? prompts[keepPrompts] : undefined;
+  if (droppedPrompt && cut?.text !== droppedPrompt) {
+    cut = prompts.find((prompt) => prompt.text === droppedPrompt);
+  }
+  if (!cut) {
+    return false;
+  }
+  try {
+    fs.copyFileSync(file, `${file}.bak`);
+    fs.writeFileSync(file, lines.slice(0, cut.index).join("\n") + "\n", "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// A prompt's text as the transcript holds it: a plain string, or a list of blocks (the form
+// userMessage sends) whose text blocks are joined. Null for content with a tool result in it, or
+// no text at all: that entry is not a prompt.
+function promptText(content: unknown): string | null {
+  if (typeof content === "string") {
+    return content;
+  }
+  const blocks = Array.isArray(content) ? content.map(recordOf) : [];
+  const text = blocks.filter((block) => stringOf(block?.type) === "text");
+  return text.length && !blocks.some((block) => stringOf(block?.type) === "tool_result") ? text.map((block) => stringOf(block?.text)).join("") : null;
+}
+
 function userMessage(text: string): string {
   return JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text }] }, parent_tool_use_id: null }) + "\n";
 }

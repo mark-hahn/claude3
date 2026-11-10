@@ -13,6 +13,7 @@
 //        capture { hideWindow } -> { dataUri } (a shot of the desktop; laptop backends only)
 //        image { turnId, index } -> { dataUri } (a sent picture)
 //        stop | rename { name } | trash { trashed } | ctx -> { table }
+//        fork { turnId } -> { warning } (copy the session, then drop every run after that one; warning is "" when Claude's transcript went along)
 //        new { keep } -> { session } (an empty "New session"; sweeps other empty ones, as discard does)
 //        discard { keep } -> {} (drop every session with no turns, except the ids in keep)
 //        open -> { session } (for a page with none open: any empty card, or a new one; sweeps nothing)
@@ -46,7 +47,7 @@ import { fileURLToPath } from "url";
 import { FIRST_TABS, HOSTS, ORIGINS, STATS_URL, type HostName, type Tab } from "../shared/config.ts";
 import { ANSWER_MARK, AUTH_FAILED, DEFAULT_CONTEXT_WINDOW, imageNote, modelChoice, typedPrompt, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
 import { captureScreen, PNG_DATA_URI } from "./capture.ts";
-import { cheapestModel, ClaudeCliRunner, swapSessionTranscripts, type RunLimits } from "./claudeCli.ts";
+import { cheapestModel, ClaudeCliRunner, copySessionTranscript, swapSessionTranscripts, truncateSessionTranscript, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
 import { fileActions, upload } from "./files.ts";
 import { GRAPH_ARGS, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "./gitGraph.ts";
@@ -539,6 +540,51 @@ function addSession(project: Project): ClaudeSession {
   return session;
 }
 
+// claude2's fork, the mark on a bar: the whole conversation is kept as a copy beside this session,
+// and this one goes back to just after that run, here and in the CLI's transcript, so its next
+// prompt goes on as if the dropped runs never happened. On the last bar it is only the copy.
+function forkSession(project: Project, session: ClaudeSession, turnId: string): { warning: string } {
+  const index = session.turns.findIndex((turn) => turn.id === turnId);
+  if (index < 0) {
+    throw new Error("No such prompt.");
+  }
+  if (runs.has(session.id) || runner.status(session.id)?.active) {
+    throw new Error("Claude is still responding in this session; stop it before forking.");
+  }
+  const base = session.name.replace(/ \(\d+\)$/, "");
+  let version = 2;
+  while (project.sessions.some((entry) => entry.name === `${base} (${version})`)) {
+    version += 1;
+  }
+  // Every mention of the old id is swapped, the pictures' folder in each prompt too, and the
+  // pictures copied, so deleting either session for good leaves the other's pictures in place.
+  // The trash can show a session, and a fork of one is a live session of its own.
+  const id = randomUUID();
+  const copy = { ...JSON.parse(JSON.stringify(session).split(session.id).join(id)), name: `${base} (${version})`, trashed: false, updatedAt: Date.now() } as ClaudeSession;
+  const images = path.join(DATA_DIR, "images", session.id);
+  if (fs.existsSync(images)) {
+    fs.cpSync(images, path.join(DATA_DIR, "images", id), { recursive: true });
+  }
+  project.sessions.unshift(copy);
+  sendSession(project, copy);
+  // The copy's transcript has to be taken while the source's still holds every run.
+  const problems: string[] = [];
+  if (!copySessionTranscript(project.tab.path, session.id, id)) {
+    problems.push(`No Claude transcript was copied for "${copy.name}", so it starts without Claude's context.`);
+  }
+  const dropped = session.turns[index + 1];
+  if (dropped) {
+    session.turns = session.turns.slice(0, index + 1);
+    session.updatedAt = Date.now();
+    if (!truncateSessionTranscript(project.tab.path, session.id, index + 1, dropped.prompt)) {
+      problems.push(`Claude's transcript of "${session.name}" wasn't cut, so the dropped runs may still be in Claude's context.`);
+    }
+    sendSession(project, session);
+  }
+  save(project);
+  return { warning: problems.join("\n\n") };
+}
+
 function removeSessions(project: Project, ids: string[]): void {
   if (!ids.length) {
     return;
@@ -703,6 +749,8 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
       return { stopped: runner.stop(session.id) };
     case "ctx":
       return await ctxTable(project, session);
+    case "fork":
+      return forkSession(project, session, String(body.turnId ?? ""));
     case "image": {
       const file = session.turns.find((turn) => turn.id === body.turnId)?.images?.[Number(body.index)];
       if (!file) {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The conversation pane, ported from claude2's conversationHtml. The history (bars and boxes) is
 // built imperatively, as claude2 builds it, so streaming refills one box rather than re-rendering
-// the pane; the dock is an ordinary template. Left out for now: search, fork, pasted images, File,
+// the pane; the dock is an ordinary template. Left out for now: search, pasted images, File,
 // export, presets (M), arrow-key navigation and the frozen pane, the restored prompt.
 // The prompt box is a Monaco editor with claude2's editing (src/monaco.ts), and has claude2's big
 // prompt editor.
@@ -162,6 +162,12 @@ function render(): void {
       arrow.style.animationDelay = -(Date.now() % 600) + "ms";
       bar.appendChild(arrow);
     }
+    // claude2's fork mark leads every bar. A span, since a bar is a button and can't hold buttons.
+    const forkIcon = document.createElement("span");
+    forkIcon.className = "bar-icon";
+    forkIcon.title = "Fork here: copy the session, then drop every block below this one";
+    forkIcon.innerHTML = '<svg viewBox="0 0 16 16"><path d="M8 1v5l-4 4v5M8 6l4 4v5M2 12.5 4 15l2-2.5M10 12.5 12 15l2-2.5"/></svg>';
+    bar.appendChild(forkIcon);
     // One icon per picture sent with this prompt, as in the prompt box.
     (turn.images ?? []).forEach((_, at) => {
       const icon = document.createElement("span");
@@ -172,6 +178,7 @@ function render(): void {
     });
     bar.appendChild(document.createTextNode(typed || (turn.images?.length ? "" : "(empty prompt)")));
     bar.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest(".bar-icon")) return void fork(turns().length - index - 1, turn.id);
       if (event.altKey) return copy(typed, bar);
       const icon = (event.target as HTMLElement).closest<HTMLElement>(".img-char");
       if (icon) return void showSentImage(turn, Number(icon.dataset.image));
@@ -494,6 +501,21 @@ defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt, returnPrompt, ste
 
 function report(error: unknown): void {
   window.alert(error instanceof Error ? error.message : String(error));
+}
+
+// A bar's fork mark. The backend keeps the whole conversation as a new session and cuts this one
+// back to just after that bar's run, Claude's transcript too; it refuses while the session runs.
+async function fork(count: number, turnId: string): Promise<void> {
+  const question = count
+    ? `Fork the conversation here, dropping the ${count} run${count === 1 ? "" : "s"} after this one?\n\nClaude forgets them too. The whole conversation is kept as a new session beside this one.`
+    : "Copy this session?\n\nThe copy is a session of its own, holding the whole conversation.";
+  if (!props.session || !window.confirm(question)) return;
+  try {
+    const { warning } = await post<{ warning: string }>(props.tab, "fork", { sessionId: props.session.id, turnId });
+    if (warning) window.alert(warning);
+  } catch (error) {
+    report(error);
+  }
 }
 
 // The backend keeps the box with the session; a failed save puts it back.
@@ -1237,6 +1259,9 @@ onBeforeUnmount(() => {
 .pane .prompt-bar:hover { background: linear-gradient(var(--wash), var(--wash)), var(--yellow); }
 .pane .prompt-bar.prompt-expanded { height: auto; min-height: 1.65em; overflow: visible; text-overflow: clip; white-space: pre-wrap; }
 .pane .prompt-bar.search-hit { background: #cfe8ff; border-color: #9cc4e8; }
+.pane .bar-icon { display: inline-block; width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 6px; border-radius: 3px; cursor: pointer; }
+.pane .bar-icon:hover { background: var(--wash); }
+.pane .bar-icon svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .pane .response .search-line { background: #cfe8ff; }
 ::highlight(search-selection) { background-color: #ffc9c9; }
 .pane .response { margin: 4px 0 8px; border-left: 3px solid var(--border); padding: 8px 10px; background: var(--surface); overflow-wrap: anywhere; overflow-x: hidden; }

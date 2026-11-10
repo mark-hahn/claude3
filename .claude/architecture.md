@@ -240,6 +240,13 @@ on the laptop, and talks to each backend directly.
   backend takes only trashed ids, stops and awaits any run still going (its settling would post
   the session back), removes them and their debug records, and posts `removed`. The CLI's
   transcripts stay, as in claude2.
+- **Fork (claude2's).** The mark leading each bar → `window.confirm` → `fork` action
+  (`forkSession`), refused while the session runs. The whole session is copied as "<name> (2)"
+  (then (3), ...) under a new id: every mention of the old id in it is swapped, the pictures' folder
+  copied, and the CLI transcript copied with the id swapped (`copySessionTranscript`). Then, unless
+  it was the last bar, the session keeps only the runs up to that bar and its transcript is cut at
+  the next prompt (`truncateSessionTranscript`, old file kept as `.bak`). A transcript that couldn't
+  be copied or cut comes back as `warning` and the page alerts it.
 - **Session ↔ transcript.** A session id is the CLI session id; `--resume` or `--session-id` is
   picked by whether the transcript exists (claude2's rule). `/clear` swaps transcript files so the
   session keeps its id.
@@ -307,7 +314,7 @@ on the laptop, and talks to each backend directly.
 - Chromium hands focus back after a mouse-closed `<dialog>` without the text box's caret, so
   typing goes nowhere; `src/main.ts` blurs and refocuses on every dialog's close. Monaco's own
   focus call doesn't help, since the textarea already has focus.
-- Not ported yet from claude2: search, fork, pasted images, File, export, presets (M),
+- Not ported yet from claude2: pasted images, File, export, presets (M),
   Stats/Models/Instructions/Settings tabs, the git changes check, prompt
   suggestions, the restored prompt, arrow-key navigation.
 - claude2's per-host auth flag (`authNeeded.<remote>` in VS Code's globalState) can't be shared: it
