@@ -47,7 +47,8 @@ on the laptop, and talks to each backend directly.
 - `src/components/Project.vue`: one tab. Listens for its project's events, holds the session list, the sidebar
   (new session +, Git; Clean, Trash; rename by long press, trash/restore, busy clocks; on the trash
   list Clean turns into a delete for good of the picked cards, picking in `src/pick.ts`), the divider
-  drag (`--sidebar-width` on the root, shared by every tab, in localStorage), and passes the
+  drag (`--sidebar-width` on the root, shared by every tab, in localStorage), Ctrl-B (hides that tab's
+  sidebar and divider; per tab, not saved, ignored on the trash list, reset when the project closes or opens), and passes the
   selected session to the pane. Picking a tab focuses its prompt box (the `active` prop), and so does a click on the tab already on show (`focusAsked`) or on a card.
 - `src/components/Git.vue`: the Git button (label counts the changed files, disabled when the project's folder is in no git repo) and its `<dialog>`, a
   small VS Code Source Control: message, staged and changed files, Commit (= `add -A`, commit,

@@ -159,6 +159,16 @@ function toggleTrash(): void {
   showTrash.value = !showTrash.value;
 }
 
+// Ctrl-B hides or shows this tab's sidebar, but never closes it on the trash list. Capture phase,
+// so an editor holding the cursor doesn't get the key.
+const sidebarHidden = ref(false);
+function onPageKey(event: KeyboardEvent): void {
+  if (!props.active || event.code !== "KeyB" || !event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (!showTrash.value) sidebarHidden.value = !sidebarHidden.value;
+}
+
 // claude2's delete for good: one question for the whole pick.
 function deletePicked(): void {
   const ids = [...picked.value];
@@ -281,17 +291,23 @@ watch(() => props.active, (active) => {
 });
 watch(() => props.side, (open) => !open && props.active && focusPrompt());
 watch(() => props.focusAsked, () => props.active && focusPrompt());
+// A project closed and opened again comes back with its sidebar open.
+watch(() => props.tab.open, () => (sidebarHidden.value = false));
 
 let stopListening = (): void => undefined;
 onMounted(() => {
   stopListening = listen(props.tab, onEvent, (up) => (connected.value = up));
   if (props.active) focusPrompt();
+  window.addEventListener("keydown", onPageKey, true);
 });
-onBeforeUnmount(() => stopListening());
+onBeforeUnmount(() => {
+  stopListening();
+  window.removeEventListener("keydown", onPageKey, true);
+});
 </script>
 
 <template>
-  <div class="project" :class="{ 'with-snips': side }">
+  <div class="project" :class="{ 'with-snips': side, 'no-sidebar': sidebarHidden }">
     <aside class="sidebar">
       <div class="top">
         <div class="row">
@@ -364,6 +380,10 @@ onBeforeUnmount(() => stopListening());
 .project { height: 100%; min-height: 0; display: grid; grid-template-columns: var(--sidebar-width, 300px) 7px minmax(0, 1fr); }
 /* The Snips (or Settings) column: half of what the sidebar leaves, the conversation pane keeping the rest. */
 .project.with-snips { grid-template-columns: var(--sidebar-width, 300px) 7px minmax(0, 1fr) calc((100vw - var(--sidebar-width, 300px)) / 2); }
+/* Ctrl-B: with the sidebar and divider out of the grid, the pane moves over to the first column. */
+.project.no-sidebar { grid-template-columns: minmax(0, 1fr); }
+.project.no-sidebar.with-snips { grid-template-columns: minmax(0, 1fr) 50vw; }
+.project.no-sidebar > .sidebar, .project.no-sidebar > .divider { display: none; }
 .sidebar { box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 10px; line-height: 1.5; }
 /* The sidebar's old right border, now a wide-enough strip to grab. */
 .project > .divider { cursor: col-resize; touch-action: none; background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat; }

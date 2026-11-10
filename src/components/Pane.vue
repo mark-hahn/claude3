@@ -899,7 +899,7 @@ const stats = computed(() => {
   const spent = list.reduce((sum, turn) => sum + (turn.durationMs || 0), 0) + (live ? live.elapsedMs + since : 0);
   const skips = list.reduce((sum, turn) => sum + (turn.ponySkips || []).length, 0) + (live ? live.ponySkips.length : 0);
   return {
-    turns: `${live ? live.turns : last?.turns ?? 0}/${live ? live.maxTurns : last?.maxTurns || 100}`,
+    turns: live ? live.turns : last?.turns ?? 0,
     graftSaved: props.session?.graftSavedUsd ?? 0,
     pony: skips,
     quiet: shortTime(live ? live.sinceEventMs + since : 0),
@@ -1069,7 +1069,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="stats">
-          <div class="status" title="Agentic turns in the last prompt / the limit">{{ stats.turns }}</div>
+          <div class="status" title="Agentic turns in the last prompt">{{ stats.turns }}</div>
           <div class="status context" :class="{ over: contextUsed > compactAt }" title="Context used / where the CLI compacts it, in thousands of tokens. Click to compact now" @click="compactNow">
             {{ Math.round((contextUsed || 0) / 1000) }}/{{ inK(compactAt) }}
           </div>
@@ -1128,8 +1128,9 @@ onBeforeUnmount(() => {
 .pane .run-arrow { font-weight: 700; margin-right: 6px; animation: run-blink 0.6s steps(1) infinite; }
 @keyframes run-blink { 50% { visibility: hidden; } }
 /* The prompt box: a frame around a Monaco editor. It grows with the text (--content-h, set by the
-   script) from two lines to six, and still stretches to the controls' height beside it. */
-.pane .prompt { position: relative; flex: 1 1 260px; min-width: 180px; min-height: min(var(--content-h, 0px), 144px); max-height: 144px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+   script) from two lines to six, and still stretches to the controls' height beside it. Basis 0:
+   in a narrow pane the controls keep their full width and the box takes what is left. */
+.pane .prompt { position: relative; flex: 1 1 0; min-width: 180px; min-height: min(var(--content-h, 0px), 144px); max-height: 144px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .pane .prompt:focus-within { outline: 2px solid var(--ink); outline-offset: -1px; border-color: transparent; }
 /* Inset just past the rounded corners, so the editor's square ones stay inside the border. */
 .pane .prompt > div { position: absolute; inset: 3px; }
@@ -1150,7 +1151,7 @@ onBeforeUnmount(() => {
 .pane .footer { display: flex; gap: 8px; align-items: center; }
 .pane .group { display: flex; gap: 6px; align-items: center; min-width: 0; flex-wrap: wrap; }
 /* Every digit one width, so a ticking stat does not resize the column. */
-.pane .stats { display: flex; gap: 1ch; align-items: center; justify-content: flex-end; margin-left: 8px; margin-right: 20px; font-variant-numeric: tabular-nums; }
+.pane .stats { display: flex; gap: 1ch; align-items: center; justify-content: flex-end; margin-left: 8px; margin-right: 5px; font-variant-numeric: tabular-nums; }
 .pane .status { white-space: nowrap; }
 .pane .context { cursor: pointer; }
 .pane .context.over { background: #ffd0d0; border-radius: 4px; padding: 0 5px; margin: 0 -5px; }
