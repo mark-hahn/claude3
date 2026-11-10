@@ -454,7 +454,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
 </template>
 
 <style scoped>
-.files { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-left: 1px solid var(--border); background: var(--page); }
+.files { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--page); }
 .files-rendered { flex: 1; min-height: 0; }
 .files-rendered-text { overflow-y: auto; }
 /* Pane.vue fixes its markdown at 14px; here the ctrl-wheel sizes it. */

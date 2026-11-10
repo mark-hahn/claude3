@@ -47,7 +47,7 @@ on the laptop, and talks to each backend directly.
 - `src/components/Project.vue`: one tab. Listens for its project's events, holds the session list, the tab row's + (new session) and Git buttons (each project teleports its pair into App's `.project-buttons` and hides it unless on show; deferred, since the row isn't in the document at first mount), the sidebar
   (Clean, Trash; rename by long press, trash/restore, busy clocks; on the trash
   list Clean turns into a delete for good of the picked cards, picking in `src/pick.ts`), the divider
-  drag (`--sidebar-width` on the root, shared by every tab, in localStorage), Ctrl-B or the tab strip's first button (`sidebarAsked`) (hides that tab's
+  drag (`--sidebar-width` on the root, shared by every tab, in localStorage), the side divider between pane and right column (there only while a column is open; `--side-share`, the column's fraction of what the sidebar leaves, likewise shared and saved; the grid gives the pane a `1fr` track (auto minimum: what its dock needs, the history being `contain: inline-size`) and the column `minmax(0, ...)`, so the column gives way whenever space runs short (drag, wider sidebar, narrower window) instead of covering the footer and box text, and the drag cuts the share back to the width the column got; the four columns draw no left border of their own), Ctrl-B or the tab strip's first button (`sidebarAsked`) (hides that tab's
   sidebar and divider; per tab, not saved, ignored on the trash list, reset when the project closes or opens), Ctrl-S (a new session, as "+"), and passes the
   selected session to the pane. Picking a tab focuses its prompt box (the `active` prop), and so does a click on the tab already on show (`focusAsked`) or on a card.
 - `src/components/Git.vue`: the Git button (label counts the changed files, disabled when the project's folder is in no git repo) and its `<dialog>`, a
@@ -60,7 +60,7 @@ on the laptop, and talks to each backend directly.
 - `src/components/ReAuth.vue`: the sidebar's red Re-Auth button and its `<dialog>`, which walks
   every backend through a sign-in: a link to that host's sign-in page, the code box, Skip.
 - `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane
-  (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude-stats (`/snips`),
+  (Project's `with-snips` grid: `--side-share`, half by default, of the width left of the sidebar, full height below the tabs). The one copy lives on claude-stats (`/snips`),
   reached through the backend's `snips` action; read on open and window focus,
   saved 500ms after typing stops. Each tab mounts its own the first time it opens them and after that only hides
   it (`shown` prop), so the cursor and selections last until the page reloads; its `shown` watcher does what a remount

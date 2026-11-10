@@ -1229,7 +1229,8 @@ onBeforeUnmount(() => {
 .pane .dock { display: flex; align-items: stretch; gap: 10px; border-top: 1px solid var(--border); background: var(--page); padding: 8px 12px; }
 .pane .dock-controls { display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 4px; flex: 0 1 auto; min-width: 0; margin-left: auto; }
 .pane .dock-controls button { min-height: 0; padding: 3px 8px; }
-.pane .history { overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 10px 12px 4px; outline: none; }
+/* contain: no long code line in a box sets the pane's minimum width; only the dock does (Project's grid). */
+.pane .history { overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 10px 12px 4px; outline: none; contain: inline-size; }
 .pane .turn { margin-bottom: 4px; }
 .pane .turn.selected .prompt-bar { outline: 2px solid #f28b82; outline-offset: -2px; }
 .pane .prompt-bar { width: 100%; height: 1.65em; border: 1px solid #eadf90; background: var(--yellow); color: var(--ink); display: block; text-align: left; padding: 1px 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; cursor: pointer; min-height: 0; font: inherit; }

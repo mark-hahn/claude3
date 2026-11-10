@@ -65,6 +65,8 @@ const side = computed(() => sides[current.value] ?? "");
 const toggle = (name: string): void => void (sides[current.value] = side.value === name ? "" : name);
 // The sidebar width every tab shares; Project's divider drag sets it.
 document.documentElement.style.setProperty("--sidebar-width", `${Number(localStorage.getItem("claude3.sidebarWidth")) || 300}px`);
+// The right column's share of what the sidebar leaves; Project's side divider drag sets it.
+document.documentElement.style.setProperty("--side-share", String(Number(localStorage.getItem("claude3.sideShare")) || 0.5));
 
 // The tab on show before this one, for Alt-Cap: it comes up for the length of the shot, then the
 // tab that asked is back, holding the picture.

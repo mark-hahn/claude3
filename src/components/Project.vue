@@ -257,6 +257,34 @@ function dragDivider(event: PointerEvent): void {
   }, { once: true });
 }
 
+// The divider between pane and the right column: dragging it sets the column's share of what the
+// sidebar leaves (--side-share on the root, shared by every tab, App.vue reads it back at load).
+// The grid stops the column where the pane's dock would no longer fit (see .with-snips); the share is
+// then cut back to the width the column got, so dragging back right moves it at once.
+function dragSideDivider(event: PointerEvent): void {
+  const divider = event.currentTarget as HTMLElement;
+  event.preventDefault();
+  divider.setPointerCapture(event.pointerId);
+  let share = 0;
+  const setShare = (width: number, room: number): void => {
+    share = width / room;
+    document.documentElement.style.setProperty("--side-share", String(share));
+  };
+  const move = (step: PointerEvent): void => {
+    const sidebar = sidebarHidden.value ? 0 : parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-width")) || 300;
+    const room = window.innerWidth - sidebar;
+    const width = Math.max(200, window.innerWidth - step.clientX);
+    setShare(width, room);
+    const got = window.innerWidth - divider.getBoundingClientRect().right;
+    if (got < width) setShare(got, room);
+  };
+  divider.addEventListener("pointermove", move);
+  divider.addEventListener("lostpointercapture", () => {
+    divider.removeEventListener("pointermove", move);
+    if (share) localStorage.setItem("claude3.sideShare", String(share));
+  }, { once: true });
+}
+
 function trash(session: ClaudeSession, trashed: boolean): void {
   // Trashing the open card opens the one below it (or above, if it was the last).
   if (trashed && session.id === selectedId.value) {
@@ -456,6 +484,7 @@ onBeforeUnmount(() => {
     </aside>
     <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
     <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" :search="searchText" @started="select" @deploy-due="(due) => (deployDue = due)" />
+    <div v-if="side" class="divider side-divider" title="Drag to change the widths of the pane and this column" @pointerdown="dragSideDivider"></div>
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
     <GitGraph v-if="side === 'git'" :tab="tab" :active="active" />
@@ -466,12 +495,14 @@ onBeforeUnmount(() => {
 <style>
 /* Ported from claude2's sidebar. */
 .project { height: 100%; min-height: 0; display: grid; grid-template-columns: var(--sidebar-width, 300px) 7px minmax(0, 1fr); }
-/* The Snips (or Settings) column: half of what the sidebar leaves, the conversation pane keeping the rest. */
-.project.with-snips { grid-template-columns: var(--sidebar-width, 300px) 7px minmax(0, 1fr) calc((100vw - var(--sidebar-width, 300px)) / 2); }
+/* The Snips (or Settings) column: --side-share (half by default, the side divider drags it) of what the sidebar leaves, the conversation pane keeping the rest.
+   The pane's 1fr keeps an auto minimum, what its dock needs, and the column's minmax(0, ...) gives way to it, so a
+   wider sidebar or a narrower window can't cover the footer or the boxes' text. */
+.project.with-snips { grid-template-columns: var(--sidebar-width, 300px) 7px 1fr 7px minmax(0, calc((100vw - var(--sidebar-width, 300px)) * var(--side-share, 0.5))); }
 /* Ctrl-B: with the sidebar and divider out of the grid, the pane moves over to the first column. */
 .project.no-sidebar { grid-template-columns: minmax(0, 1fr); }
-.project.no-sidebar.with-snips { grid-template-columns: minmax(0, 1fr) 50vw; }
-.project.no-sidebar > .sidebar, .project.no-sidebar > .divider { display: none; }
+.project.no-sidebar.with-snips { grid-template-columns: 1fr 7px minmax(0, calc(100vw * var(--side-share, 0.5))); }
+.project.no-sidebar > .sidebar, .project.no-sidebar > .divider:not(.side-divider) { display: none; }
 .sidebar { box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 10px; line-height: 1.5; }
 /* The sidebar's old right border, now a wide-enough strip to grab. */
 .project > .divider { cursor: col-resize; touch-action: none; background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat; }

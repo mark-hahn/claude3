@@ -74,6 +74,6 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
 </template>
 
 <style scoped>
-.git-graph { min-height: 0; padding: 10px 12px; overflow: auto; white-space: pre; border-left: 1px solid var(--border); background: var(--page); color: var(--ink); font: var(--git-font-size, 14px)/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.git-graph { min-height: 0; padding: 10px 12px; overflow: auto; white-space: pre; background: var(--page); color: var(--ink); font: var(--git-font-size, 14px)/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .git-graph input { padding: 0; border: 0; outline: 0; background: var(--yellow); color: inherit; font: inherit; }
 </style>

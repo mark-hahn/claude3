@@ -143,7 +143,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.snips { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-left: 1px solid var(--border); background: var(--page); }
+.snips { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--page); }
 .snips-note { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 4px 8px; }
 .snips-text { position: relative; flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .snips-text:focus-within { outline: 2px solid var(--ink); outline-offset: -1px; border-color: transparent; }
