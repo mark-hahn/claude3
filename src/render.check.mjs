@@ -239,12 +239,12 @@ assert.deepEqual(extras(["", "", "x", " ", ""], [3]), [2, 5]);
 assert.deepEqual(extras(["a", "", "", "b"], [2, 3]), [3]);
 // The Git pane: names keep the first line and the message goes under the other messages' column,
 // both lines knowing the hash. A straight history loses the column its stars leave empty.
-const when = "2026-11-09 04:13", under = " ".repeat(when.length + 1);
+const when = "2026-11-09 04:13", under = " ".repeat(when.length + 2);
 const commit = (graph, hash, names, message) => `${graph}\0${hash}\0${when}\0${names}\0${message}`;
 assert.deepEqual(layoutGraph(`${commit("* ", "aaa", " (HEAD -> master)", "two")}\n${commit("* ", "bbb", "", "one")}\n`), [
   { text: `${when} (HEAD -> master)`, hash: "aaa", message: "two" },
   { text: `${under}two`, hash: "aaa", message: "two", editable: true },
-  { text: `${when} one`, hash: "bbb", message: "one" },
+  { text: `${when}  one`, hash: "bbb", message: "one" },
 ]);
 // A branching history keeps its other lines, and a row of graph alone has no hash or message.
 assert.deepEqual(layoutGraph(`${commit("* | ", "aaa", " (x)", "m")}\n|/  `), [
@@ -253,7 +253,7 @@ assert.deepEqual(layoutGraph(`${commit("* | ", "aaa", " (x)", "m")}\n|/  `), [
   { text: "|/", hash: "", message: "" },
 ]);
 // An empty message under names can't upset the layout.
-assert.deepEqual(layoutGraph(`${commit("* ", "aaa", " (x)", "")}\n${commit("* ", "bbb", "", "n")}`).map((row) => row.text), [`${when} (x)`, under, `${when} n`]);
+assert.deepEqual(layoutGraph(`${commit("* ", "aaa", " (x)", "")}\n${commit("* ", "bbb", "", "n")}`).map((row) => row.text), [`${when} (x)`, under, `${when}  n`]);
 // Editing the newest commit's message, in a throwaway repo and remote: the body stays, a staged file
 // stays out of the commit, the remote follows, and whatever can't be done changes nothing.
 {

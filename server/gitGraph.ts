@@ -5,7 +5,7 @@
 
 // After the graph's own characters, which git puts first, the fields are split by NULs.
 // ponytail: the newest 1000 commits; page it if older history is ever wanted.
-export const GRAPH_ARGS = ["log", "--graph", "--all", "--no-color", "--date=format:%Y-%m-%d %H:%M", "--format=%x00%H%x00%ad%x00%d%x00%s", "-n", "1000"];
+export const GRAPH_ARGS = ["log", "--graph", "--all", "--no-color", "--date=format:%y-%m-%d %H:%M", "--format=%x00%H%x00%ad%x00%d%x00%s", "-n", "1000"];
 
 export function layoutGraph(out: string): { text: string; hash: string; message: string; editable?: boolean }[] {
   const rows = out.trimEnd().split("\n").flatMap((line) => {
@@ -14,8 +14,8 @@ export function layoutGraph(out: string): { text: string; hash: string; message:
     if (date === undefined) return [{ text: line, hash, message }];
     // Blank where the star was, so the other branches' lines stay where they are.
     const rails = graph.replace("*", " ");
-    if (!names) return [{ text: `${rails}${date} ${message}`, hash, message }];
-    return [{ text: `${rails}${date}${names}`, hash, message }, { text: `${rails}${" ".repeat(date.length + 1)}${message}`, hash, message, editable: names.includes("HEAD -> ") }];
+    if (!names) return [{ text: `${rails}${date}  ${message}`, hash, message }];
+    return [{ text: `${rails}${date}${names}`, hash, message }, { text: `${rails}${" ".repeat(date.length + 2)}${message}`, hash, message, editable: names.includes("HEAD -> ") }];
   });
   // A straight history is left with an empty column where its stars were.
   const indent = Math.min(...rows.map((row) => row.text.search(/\S|$/)));
