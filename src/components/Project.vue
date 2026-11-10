@@ -12,16 +12,17 @@ import { keepOpen } from "../keepOpen.ts";
 import { pick } from "../pick.ts";
 import Files from "./Files.vue";
 import Git from "./Git.vue";
+import GitGraph from "./GitGraph.vue";
 import Pane from "./Pane.vue";
 import ReAuth from "./ReAuth.vue";
 import Settings from "./Settings.vue";
 import Snips from "./Snips.vue";
 
 // active: this is the tab on show. side: what this tab has open right of the pane ("", "snips",
-// "settings", "files" for the tree or "file" for its editor), through App's column toggles.
+// "settings", "git", "files" for the tree or "file" for its editor), through App's column toggles.
 // focusAsked: a change puts the cursor in the prompt box of the tab on show.
 const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number }>();
-const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; highlighted: [on: boolean] }>();
+const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; highlighted: [on: boolean]; noRepo: [none: boolean] }>();
 
 // Plain objects mutated in place as text streams in; `version` tells Vue when the shape changed.
 let sessions: ClaudeSession[] = [];
@@ -291,7 +292,7 @@ onBeforeUnmount(() => stopListening());
           <button class="new" title="New session" @click="newSession">
             <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
           </button>
-          <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" />
+          <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" @no-repo="(none) => emit('noRepo', none)" />
           <ReAuth :needed="!!expired" @closed="focusPrompt" />
         </div>
         <div class="row">
@@ -347,6 +348,7 @@ onBeforeUnmount(() => stopListening());
     <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" @started="select" @deploy-due="(due) => (deployDue = due)" />
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
+    <GitGraph v-if="side === 'git'" :tab="tab" :active="active" />
     <Files v-if="side.startsWith('file')" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" />
   </div>
 </template>

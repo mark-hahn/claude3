@@ -10,7 +10,7 @@ import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
 
 const props = defineProps<{ tab: Tab; active: boolean; version: number }>();
-const emit = defineEmits<{ closed: []; dirty: [dirty: boolean] }>();
+const emit = defineEmits<{ closed: []; dirty: [dirty: boolean]; noRepo: [none: boolean] }>();
 
 // One `git status --porcelain` entry: x is the index's letter, y the work tree's.
 interface GitFile {
@@ -33,6 +33,7 @@ const changed = computed(() => files.value.filter((file) => file.y !== " ").map(
 const canCommit = computed(() => !committing.value && !describing.value && !!message.value.trim() && files.value.length > 0);
 const noRepo = computed(() => /not a git repository/i.test(failure.value));
 watch(() => files.value.length > 0, (dirty) => emit("dirty", dirty));
+watch(noRepo, (none) => emit("noRepo", none));
 
 const messageOf = (problem: unknown): string => (problem instanceof Error ? problem.message : String(problem));
 const nameOf = (path: string): string => path.slice(path.lastIndexOf("/") + 1);
@@ -150,8 +151,7 @@ function onMessageKey(event: KeyboardEvent): void {
     </div>
     <div class="git-buttons">
       <button class="git-commit" :disabled="!canCommit" @click="commit">{{ committing ? "Committing…" : "Commit" }}</button>
-      <button :disabled="committing" @click="dialog?.close()">Hide</button>
-      <button :disabled="committing" @click="dialog?.close()">Cancel</button>
+      <button :disabled="committing" @click="dialog?.close()">Close</button>
     </div>
   </dialog>
 </template>

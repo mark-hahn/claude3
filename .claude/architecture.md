@@ -28,9 +28,9 @@ on the laptop, and talks to each backend directly.
   its URL, the pasted code on its stdin, then `claude auth status` for who signed in.
 - `src/App.vue`: the tab strip and the list of every project; open ones have a tab, sorted by name
   (`src/tabList.ts`, checked by `npm test`), ctrl-click on one closes its project (`openProject`), and every project's `Project` stays mounted and laid out,
-  closed ones too: all in one grid cell, those not on show `visibility:hidden` (`.offstage`), never `display:none` (see Gotchas). The Files, Snips and
+  closed ones too: all in one grid cell, those not on show `visibility:hidden` (`.offstage`), never `display:none` (see Gotchas). The Files, Git, Snips and
   gear (Settings) toggles are here, at the row's right end, acting on the tab on show; they share one
-  column, each tab with its own state (`sides[id]`: "", "files", "file", "snips" or "settings"), so it is as it was left when the tab comes back.
+  column, each tab with its own state (`sides[id]`: "", "files", "file", "git", "snips" or "settings"), so it is as it was left when the tab comes back.
   Each tab's label has a dot: green with a session active, else light red when its Git or Run button
   is highlighted (`dirty` and `deployDue` come up through Project's `highlighted`), else none. Those
   two are re-read for every open project, on show or not; closed ones are skipped.
@@ -55,6 +55,7 @@ on the laptop, and talks to each backend directly.
   uncommitted diff and untracked files' text to `claude -p` on Opus 5.5 and puts its reply (at most
   2 short sentences) in the message box. Status is re-read for every open project, on show or not: on showing, session events (a turn starting or ending),
   and every 2s while the page is visible. Every backend git call sets `GIT_OPTIONAL_LOCKS=0`, so the polling never holds the index lock against a real `git add`.
+- `src/components/GitGraph.vue`: the tab row Git button's pane, unrelated to the sidebar's Git dialog: `git log --graph` (`gitGraph` action, newest 1000 commits) as text, view only, re-read every 2s while on show. The button is disabled when the sidebar's status finds no repo (`noRepo` up through Project).
 - `src/components/ReAuth.vue`: the sidebar's red Re-Auth button and its `<dialog>`, which walks
   every backend through a sign-in: a link to that host's sign-in page, the code box, Skip.
 - `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane
@@ -291,8 +292,9 @@ on the laptop, and talks to each backend directly.
   too: the Files editor is stock Monaco (plus word wrap and the line dots) but must use the `claude2` theme, and is kept out of the
   user's key rules, all but Ctrl-D, by its `stockEditor` context key. The ctrl-wheel font size of it and of the Snips is
   `addWheelZoom` in `monaco.ts`, each editor with its own remembered size, since Monaco's `mouseWheelZoom` is page-wide too.
+  The Files tree (with its rendered markdown) and the Git pane aren't Monaco: `src/wheelZoom.ts` does the same with a remembered CSS variable on the root, one per pane.
 - Every page element follows CLAUDE.md's display rules: font sizes 14–18px only (the one exception,
-  at the user's asking, is the ctrl-wheel size of the Files editor and the Snips, which has no limits), text solid black
+  at the user's asking, is the ctrl-wheel size of the Files pane, the Git pane and the Snips, which has no limits), text solid black
   or a colour, never grey. Monaco's markdown keeps the stock light theme's token colours (blue
   headings), and its one grey token is pinned to black in `monaco.ts`. A disabled button keeps its enabled look under a 50% white
   overlay (`style.css`, at the user's asking, though it pales the label), a paused quota age by its background; only status icons (tab dot, card clocks) keep colour.

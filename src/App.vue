@@ -50,8 +50,10 @@ function clickTab(tab: Tab, event: MouseEvent): void {
 const busy = reactive<Record<string, number>>({});
 // Per tab: its Git or Run button is highlighted.
 const highlighted = reactive<Record<string, boolean>>({});
-// The Files, Snips and Settings share the column right of the pane, one at a time: "" (closed),
-// "files" (the tree), "file" (its editor), "snips" or "settings". Each tab has its own, and one
+// Per tab: its folder is in no git repo, so there is no graph to open.
+const noRepo = reactive<Record<string, boolean>>({});
+// The Files, Git graph, Snips and Settings share the column right of the pane, one at a time: "" (closed),
+// "files" (the tree), "file" (its editor), "git", "snips" or "settings". Each tab has its own, and one
 // toggle each here acts on the tab on show. The toggle's name being "files", the Files button takes
 // the editor back to the tree.
 const sides = reactive<Record<string, string>>({});
@@ -94,10 +96,11 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
         <span v-if="busy[tab.id] || highlighted[tab.id]" class="tab-dot" :class="{ due: !busy[tab.id] }" :title="busy[tab.id] ? 'Responding' : 'Git or Run is highlighted'">&#x25CF;</span>{{ tab.label }}
       </button>
       <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" title="Open or close the Files: a tree of the project's folder, and an editor" @click="toggle('files')">Files</button>
+      <button class="tab git-toggle" :class="{ active: side === 'git' }" :aria-pressed="side === 'git'" :disabled="!currentTab || noRepo[current]" title="Open or close the Git pane: a graph of the project's commits" @click="toggle('git')">Git</button>
       <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" :disabled="!currentTab" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
       <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" :disabled="!currentTab" title="Open or close the Settings: quotas" aria-label="Settings" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
-    <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" />
+    <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" @no-repo="(none) => (noRepo[tab.id] = none)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" />
   </div>
 </template>
 
@@ -111,7 +114,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
 .tabs .tab { min-height: 0; padding: 3px 12px; }
 .tabs .tab.selected { background: #fbf3c4; border-color: #ddd08a; }
 .tabs .files-toggle { margin-left: auto; }
-.tabs .files-toggle.active, .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
+.tabs .files-toggle.active, .tabs .git-toggle.active, .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
 /* 20% over the tab's 14px. The line-height keeps the bigger glyph from making its tab taller. */
 .tabs .tab-dot { color: #1a8f2e; margin-right: 6px; font-size: 16.8px; line-height: 1; }
 .tabs .tab-dot.due { color: #f08080; }

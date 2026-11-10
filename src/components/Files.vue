@@ -19,6 +19,7 @@ import { post, postHost, upload } from "../api.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
 import { renderMarkdown } from "../render.ts";
 import { foldersBetween, sameName, withSeparator } from "../tabList.ts";
+import { wheelZoom } from "../wheelZoom.ts";
 import FileEditor from "./FileEditor.vue";
 import FolderPicker from "./FolderPicker.vue";
 
@@ -27,6 +28,8 @@ import FolderPicker from "./FolderPicker.vue";
 const props = defineProps<{ tab: Tab; active: boolean; fileMode: boolean }>();
 const emit = defineEmits<{ openFile: [] }>();
 const newProjectAt = inject("newProjectAt") as (host: HostName, folder: string) => void;
+// Sizes the tree and rendered markdown; FileEditor's editor keeps a size of its own.
+const zoom = wheelZoom("files-font-size");
 
 const roots = computed(() => props.tab.roots ?? []);
 const rootIdx = computed(() => props.tab.rootIdx ?? roots.value.length - 1);
@@ -398,7 +401,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
 </script>
 
 <template>
-  <div class="files" @dragover.prevent="dragOver" @dragleave="dragLeave" @drop.prevent="drop">
+  <div class="files" @wheel="(!fileMode || file?.rendered) && zoom($event)" @dragover.prevent="dragOver" @dragleave="dragLeave" @drop.prevent="drop">
     <div v-if="fileMode && file?.rendered" class="files-root">{{ tab.host }}: {{ file.path }}</div>
     <div v-if="fileMode && file?.rendered && listProblem" class="files-note">{{ listProblem }}</div>
     <!-- Inside a .pane for Pane.vue's global markdown styles. -->
@@ -454,6 +457,8 @@ onBeforeUnmount(() => window.clearInterval(poller));
 .files { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-left: 1px solid var(--border); background: var(--page); }
 .files-rendered { flex: 1; min-height: 0; }
 .files-rendered-text { overflow-y: auto; }
+/* Pane.vue fixes its markdown at 14px; here the ctrl-wheel sizes it. */
+.files .pane .files-rendered-text, .files .pane .files-rendered-text :deep(:is(h1, h2, h3, h4, h5, h6, code, table)) { font-size: var(--files-font-size, 14px); }
 .files-mode { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; outline: none; }
 .files-bar { flex: none; display: flex; align-items: center; gap: 6px; }
 .files-bar button { min-height: 0; padding: 3px 10px; }
@@ -465,8 +470,8 @@ onBeforeUnmount(() => window.clearInterval(poller));
 .files-relative { background: #fffbdf; }
 .files-note { flex: none; background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 4px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* A grid so every row is as wide as the widest, and a selection's colour reaches the far edge when scrolled. */
-.files-tree { flex: 1; min-height: 0; overflow: auto; padding: 4px 0; display: grid; align-content: start; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); user-select: none; }
-.files-row { display: flex; align-items: center; height: 24px; padding: 0 8px 0 6px; cursor: pointer; white-space: nowrap; }
+.files-tree { font-size: var(--files-font-size, 14px); flex: 1; min-height: 0; overflow: auto; padding: 4px 0; display: grid; align-content: start; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); user-select: none; }
+.files-row { display: flex; align-items: center; min-height: 24px; padding: 0 8px 0 6px; cursor: pointer; white-space: nowrap; }
 .files-row:hover { background: var(--wash); }
 .files-row.selected { background: var(--yellow); }
 /* Not yellow: the row being copied is usually the selected one. */

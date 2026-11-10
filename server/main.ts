@@ -21,7 +21,7 @@
 //        deployNeeded -> { script, files } (project files changed since .deployed; see deployNeeded)
 //        clean -> {} (every session to the trash) | git -> { files: [{ x, y, path }] } (git status)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
-//        commit { message } -> {} (add everything, commit, push)
+//        commit { message } -> {} (add everything, commit, push) | gitGraph -> { text } (git log --graph)
 //        describeChanges -> { text } (Opus 5.5's commit message for the uncommitted changes)
 //        snips { text? } -> { text } (claude2's Snips text, kept on claude2-stats; text saves it)
 //        quota { force } -> { readAt, rows, state, apiCosts } (the Quotas pane; force is its Update)
@@ -625,6 +625,10 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "git") {
     return { files: parseStatus(await git(project, "status", "--porcelain", "-z", "--untracked-files=all")) };
+  }
+  if (name === "gitGraph") {
+    // ponytail: the newest 1000 commits; page it if older history is ever wanted.
+    return { text: await git(project, "log", "--graph", "--all", "--no-color", "--date=short", "--format=%h %ad%d %s", "-n", "1000") };
   }
   if (name === "commit") {
     return await commit(project, String(body.message ?? "").trim());

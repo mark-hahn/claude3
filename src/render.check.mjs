@@ -8,6 +8,7 @@ import { keepOpen } from "./keepOpen.ts";
 import { pick } from "./pick.ts";
 import { answerText, renderMarkdown } from "./render.ts";
 import { byName, folderName, foldersBetween, nextTab, sameName } from "./tabList.ts";
+import { wheelZoom } from "./wheelZoom.ts";
 import { fileActions, numberedName } from "../server/files.ts";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -234,4 +235,23 @@ assert.deepEqual(extras(["a", "", "b"], [2]), []);
 assert.deepEqual(extras(["", "", "x", " ", ""], [3]), [2, 5]);
 // Two removals in one run name each line once, or Monaco throws on the overlap.
 assert.deepEqual(extras(["a", "", "", "b"], [2, 3]), [3]);
+// Ctrl-wheel text size: a remembered size comes back, a plain wheel is left alone, up grows and is
+// remembered, down stops at 1px.
+const cssVars = {}, stored = { "claude3.x": "2" };
+Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: (key) => stored[key] ?? null, setItem: (key, value) => (stored[key] = value) } });
+Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { style: { setProperty: (name, value) => (cssVars[name] = value) } } } });
+const zoom = wheelZoom("x");
+const wheel = (ctrlKey, deltaY) => {
+  let stopped = false;
+  zoom({ ctrlKey, deltaY, preventDefault: () => (stopped = true) });
+  return stopped;
+};
+assert.equal(cssVars["--x"], "2px");
+assert.equal(wheel(false, -1), false);
+assert.equal(cssVars["--x"], "2px");
+assert.equal(wheel(true, -1), true);
+assert.equal(cssVars["--x"], "3px");
+assert.equal(stored["claude3.x"], "3");
+for (let i = 0; i < 5; i++) wheel(true, 1);
+assert.equal(cssVars["--x"], "1px");
 console.log("render checks passed");
