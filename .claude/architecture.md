@@ -152,6 +152,10 @@ on the laptop, and talks to each backend directly.
   asks `open`, which shares any empty card or makes one. `open` never sweeps, or two pages on one
   project would sweep each other's card and open another, forever. `src/keepOpen.ts` queues it
   behind Clean's or a trash's request, which would otherwise catch the new card (`npm test`).
+- **A search (claude2's).** Sidebar Enter → `searchText` in Project, a third list covering active and trashed sessions, looking only
+  at what a bar and a default box show (`matchCount` in `src/render.ts`). Project passes the text to the pane (`search` prop), opens
+  the first card and calls `Pane.stepSearch`; a card click steps too. The pane walks its hits and paints the current one with the CSS
+  highlight API, whose name is page-wide, so only the tab on show paints. Past its last hit it wraps to its first; only a click on another card changes session. The X, an empty Enter, a card's R, "+", Clean or Trash end it, and a trashed session it opened then leaves the pane.
 - **A prompt.** Ctrl+Enter → `POST /api/prompt` → `submitPrompt` (an empty sessionId, the pane's
   draft in the moment before `ensureOpen` has a session or if it failed, creates the session; a running session is stopped first unless the
   prompt can follow up a background wait) → `runTurn` stores the turn, posts `session`, names the

@@ -7,7 +7,7 @@ import { cropRect } from "./cropRect.ts";
 import { keepOpen } from "./keepOpen.ts";
 import { MessageHistory } from "./messageHistory.ts";
 import { pick } from "./pick.ts";
-import { answerText, renderMarkdown } from "./render.ts";
+import { answerText, matchCount, occurrences, renderMarkdown } from "./render.ts";
 import { byName, folderName, foldersBetween, nextTab, sameName } from "./tabList.ts";
 import { wheelZoom } from "./wheelZoom.ts";
 import { fileActions, numberedName } from "../server/files.ts";
@@ -191,6 +191,14 @@ const response = `${T}10:00:00 **Started:** Sat\nworking prose\n\n${A}\n\nThe an
 assert.equal(answerText(response), "The answer.");
 // A run with no mark (stopped, still streaming) keeps its prose.
 assert.equal(answerText(`${T}10:00:00 **Started:** Sat\npartial text\n`), "partial text");
+
+// A search counts what a bar and a default box show: the typed prompt, the answer, a failure's reason.
+assert.equal(occurrences("aAa", "a"), 3);
+assert.equal(occurrences("aaa", "aa"), 1, "matches don't overlap");
+assert.equal(occurrences("abc", ""), 0);
+const searched = { prompt: `find it${notes}`, response: `it in the work\n${T}10:00:00 **Read** it\n${A}\nIt, the answer`, error: "it failed" };
+assert.equal(matchCount([searched], "it"), 3, "prompt, answer and error, but not the work above the answer or the tool line");
+assert.equal(matchCount([searched], "screenshot"), 0, "a picture's sentence isn't typed text");
 
 const ids = ["a", "b", "c", "d"];
 const plain = { ctrlKey: false, shiftKey: false };

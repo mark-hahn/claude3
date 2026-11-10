@@ -12,11 +12,12 @@ import { post } from "../api.ts";
 import { cropRect } from "../cropRect.ts";
 import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
-import { answerText, fillBox, renderMarkdown, withoutDetails } from "../render.ts";
+import { answerText, fillBox, occurrences, renderMarkdown, shownText, textHits, withoutDetails } from "../render.ts";
 import { loadWaiting, saveWaiting, type Waiting } from "../waitingImages.ts";
 
-// active: this pane's tab is the one on show, so the page-wide keys are its.
-const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: RunningStatus | null; version: number; active: boolean; ceilings: number }>();
+// active: this pane's tab is the one on show, so the page-wide keys are its. search: the sidebar's
+// search text; while non-empty, every bar holding it gets a light-blue wash.
+const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: RunningStatus | null; version: number; active: boolean; ceilings: number; search: string }>();
 const emit = defineEmits<{ started: [sessionId: string]; deployDue: [due: boolean] }>();
 
 const historyEl = ref<HTMLElement>();
@@ -57,6 +58,12 @@ let boxScrolls: Record<string, "bottom" | number> = {};
 let expandedPrompts = new Set<string>();
 // Tool lines showing their detail, as turn id + ':' + the line's place among the box's tool calls.
 let openToolCalls = new Set<string>();
+// The selected search hit: the nth occurrence in that turn's bar or box. A bar holding it shows its
+// whole prompt for as long as it does.
+interface SearchHit { turnId: string; bar: boolean; nth: number }
+let searchHit: SearchHit | null = null;
+// Set by a step until the hit has been scrolled to, so a later render leaves the box alone.
+let searchHitMoved = false;
 let programmaticScroll = false;
 // Unsent text per session; '' is the new-session draft. Every edit is saved in localStorage, as
 // claude2 keeps its drafts beside the sessions, so a reload puts each one back in its session's box.
@@ -133,8 +140,9 @@ function render(): void {
     wrapper.dataset.index = String(index);
     wrapper.dataset.turnId = turn.id;
     const bar = document.createElement("button");
-    bar.className = "prompt-bar" + (expandedPrompts.has(turn.id) ? " prompt-expanded" : "");
+    bar.className = "prompt-bar" + (expandedPrompts.has(turn.id) || (searchHit?.bar && searchHit.turnId === turn.id) ? " prompt-expanded" : "");
     const typed = typedText(turn);
+    if (props.search && (occurrences(typed, searchNeedle()) || occurrences(shownText(turn), searchNeedle()))) bar.classList.add("search-hit");
     // The hover leads with what this prompt actually ran under, which need not be what the dock
     // is set to now, and when it was sent.
     const ranAs = [turn.model, turn.effort, turn.advisor && `advisor ${turn.advisor}`, turn.modelId].filter(Boolean).join(" / ");
@@ -242,7 +250,7 @@ function render(): void {
 // The whole box: a run that failed part way still wrote everything up to that point, so the text
 // stays and the reason goes underneath it rather than in its place.
 function fillResponse(box: HTMLElement, turn: ClaudeTurn, tools: boolean): void {
-  fillBox(box, turn.response || "", tools, turn.id, openToolCalls);
+  fillBox(box, turn.response || "", tools, turn.id, openToolCalls, searchNeedle());
   if (!turn.error) return;
   const note = document.createElement("div");
   note.className = "error-note";
@@ -352,6 +360,7 @@ function syncSelectedBlock(boxScroll: BoxScroll): void {
   if (response) {
     response.scrollTop = boxScroll === "bottom" ? response.scrollHeight : boxScroll === "top" ? 0 : boxScroll;
   }
+  paintSearchHit();
 }
 
 function resyncSelectedBlock(): void {
@@ -409,7 +418,73 @@ function returnPrompt(sessionId: string, text: string, pictures: string[]): void
     localStorage.setItem(draftKey(sessionId), text);
   }
 }
-defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt, returnPrompt });
+
+// ---- search (claude2's) ----
+
+const searchNeedle = (): string => props.search.toLowerCase();
+
+// Every hit in the session, top to bottom, a bar's ahead of its box's. A box holding the text is
+// built offscreen to count them as rendered, since only the selected one is in the page.
+function searchHits(): SearchHit[] {
+  const needle = searchNeedle();
+  const hits: SearchHit[] = [];
+  for (const turn of turns()) {
+    const add = (bar: boolean, count: number): void => {
+      for (let nth = 0; nth < count; nth++) hits.push({ turnId: turn.id, bar, nth });
+    };
+    add(true, occurrences(typedText(turn), needle));
+    if (!occurrences(shownText(turn), needle)) continue;
+    const box = document.createElement("div");
+    fillResponse(box, turn, false);
+    add(false, textHits(box, needle).length);
+  }
+  return hits;
+}
+
+// A step from the sidebar: first lands on this session's first hit, otherwise on the one after the
+// selected hit, wrapping from the last to the first. A hit in a box opens that block alone; a hit in
+// a bar leaves every block closed.
+function stepSearch(first: boolean): void {
+  const hits = searchHits();
+  const hit = hits[(first ? 0 : hits.findIndex((entry) => entry.turnId === searchHit?.turnId && entry.bar === searchHit.bar && entry.nth === searchHit.nth) + 1) % hits.length];
+  searchHit = hit ?? null;
+  if (hit) {
+    anchorIndex = turns().findIndex((turn) => turn.id === hit.turnId);
+    boxOpen = !hit.bar;
+    toolsBox = false;
+    boxScrollNext = "restore";
+    searchHitMoved = true;
+    // A step is navigation, and it outranks what a first render or a live run would select.
+    initialized = true;
+    pendingTurnCount = 0;
+    if (status?.active) shownActiveTurn = status.turnId;
+  }
+  render();
+}
+
+// A CSS highlight, so the hit needs no element of its own in the bar or the rendered markdown. A
+// rebuild takes its range along, so this runs at the end of every sync. The highlight's name is
+// page-wide and every tab has a pane, so only the tab on show paints.
+function paintSearchHit(): void {
+  if (!props.active) return;
+  const block = searchHit ? historyEl.value?.querySelector(`[data-turn-id="${searchHit.turnId}"]`) : null;
+  const host = block?.querySelector<HTMLElement>(searchHit!.bar ? ".prompt-bar" : ".response");
+  const spot = host ? textHits(host, searchNeedle())[searchHit!.nth] : undefined;
+  if (!host || !spot) {
+    CSS.highlights.delete("search-selection");
+    return;
+  }
+  const range = new Range();
+  range.setStart(spot.node, spot.offset);
+  range.setEnd(spot.node, spot.offset + props.search.length);
+  CSS.highlights.set("search-selection", new Highlight(range));
+  if (!searchHitMoved) return;
+  searchHitMoved = false;
+  // Centred in a box or bar clamped to scroll; one showing in full ignores this.
+  host.scrollTop += range.getBoundingClientRect().top - host.getBoundingClientRect().top - host.clientHeight / 2;
+}
+
+defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt, returnPrompt, stepSearch });
 
 // ---- the dock ----
 
@@ -944,6 +1019,7 @@ watch(
       boxScrolls = {};
       expandedPrompts = new Set();
       openToolCalls = new Set();
+      searchHit = null;
       bigPrompt.value = localStorage.getItem(bigKey(id)) === "1";
       setPromptMarkdown(false);
       showImageChars();
@@ -960,6 +1036,11 @@ watch(
     if (!next?.active || next.turnId !== stopping.value) stopping.value = "";
   },
 );
+watch(() => props.search, () => {
+  searchHit = null;
+  render();
+});
+watch(() => props.active, (on) => on && paintSearchHit());
 watch(draft, (text) => {
   if (promptBox && promptBox.getValue() !== text) promptBox.setValue(untab(text));
   if (text.trim()) localStorage.setItem(lostKey(), text);
@@ -1097,6 +1178,9 @@ onBeforeUnmount(() => {
 .pane .prompt-bar { width: 100%; height: 1.65em; border: 1px solid #eadf90; background: var(--yellow); color: var(--ink); display: block; text-align: left; padding: 1px 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; cursor: pointer; min-height: 0; font: inherit; }
 .pane .prompt-bar:hover { background: linear-gradient(var(--wash), var(--wash)), var(--yellow); }
 .pane .prompt-bar.prompt-expanded { height: auto; min-height: 1.65em; overflow: visible; text-overflow: clip; white-space: pre-wrap; }
+.pane .prompt-bar.search-hit { background: #cfe8ff; border-color: #9cc4e8; }
+.pane .response .search-line { background: #cfe8ff; }
+::highlight(search-selection) { background-color: #ffc9c9; }
 .pane .response { margin: 4px 0 8px; border-left: 3px solid var(--border); padding: 8px 10px; background: var(--surface); overflow-wrap: anywhere; overflow-x: hidden; }
 .pane .response.error { border-left-color: #c62828; }
 .pane .response.markdown { font: 14px/1.5 Aptos, "Segoe UI", sans-serif; white-space: normal; }

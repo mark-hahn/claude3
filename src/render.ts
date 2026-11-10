@@ -1,7 +1,7 @@
 // Ported from claude2's conversation webview (webviews.ts): how a response's stored text becomes a
 // box. The text carries the runner's invisible marks (shared/types.ts): tool lines, their detail
 // lines, and the line where the closing answer starts.
-import { ANSWER_MARK, TOOL_DETAIL_MARK, TOOL_LINE_MARK } from "../shared/types.ts";
+import { ANSWER_MARK, TOOL_DETAIL_MARK, TOOL_LINE_MARK, typedPrompt, type ClaudeTurn } from "../shared/types.ts";
 
 // The graft plugin closes a response with a savings tally line opening with this sprout. Every
 // view of a response drops those lines.
@@ -40,10 +40,45 @@ export function answerText(text: string): string {
   return strippedText(text.split("\n" + ANSWER_MARK + "\n").pop() ?? "");
 }
 
+// The text a search goes through, shared by the sidebar, which lists the sessions holding it, and
+// the pane, which steps through it: a bar's prompt and this, everything a closed-tools box shows.
+export function shownText(turn: ClaudeTurn): string {
+  return answerText(turn.response || "") + "\n" + (turn.error || "");
+}
+
+// needle is lower-case, here and below.
+export function occurrences(text: string, needle: string): number {
+  if (!text || !needle) return 0;
+  const lower = text.toLowerCase();
+  let count = 0;
+  for (let at = lower.indexOf(needle); at !== -1; at = lower.indexOf(needle, at + needle.length)) count++;
+  return count;
+}
+
+export function matchCount(turns: ClaudeTurn[], needle: string): number {
+  return turns.reduce((sum, turn) => sum + occurrences(typedPrompt(turn.prompt), needle) + occurrences(shownText(turn), needle), 0);
+}
+
+// Where the text sits in an element, as a text node and an offset, leaving out what a bar or box
+// only adds around it: a streaming box's tool groups and a bar's marks.
+export function textHits(root: HTMLElement, needle: string): { node: Text; offset: number }[] {
+  const spots: { node: Text; offset: number }[] = [];
+  if (!needle) return spots;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    if (node.parentElement?.closest(".tool-group, .run-arrow, .img-char")) continue;
+    const lower = node.data.toLowerCase();
+    for (let at = lower.indexOf(needle); at !== -1; at = lower.indexOf(needle, at + needle.length)) spots.push({ node, offset: at });
+  }
+  return spots;
+}
+
 // Fills a box with the response. With tools hidden that is the closing answer alone. With them
 // shown, where the run marked the start of its answer, it sits under a rule of its own.
-// openCalls holds turnId:n for the tool lines showing their detail.
-export function fillBox(box: HTMLElement, text: string, tools: boolean, turnId: string, openCalls: Set<string>): void {
+// openCalls holds turnId:n for the tool lines showing their detail. search: lower-case text whose
+// tool lines get a wash.
+export function fillBox(box: HTMLElement, text: string, tools: boolean, turnId: string, openCalls: Set<string>, search = ""): void {
   box.replaceChildren();
   if (!tools) {
     box.insertAdjacentHTML("beforeend", renderMarkdown(answerText(text)));
@@ -51,7 +86,7 @@ export function fillBox(box: HTMLElement, text: string, tools: boolean, turnId: 
   }
   const parts = text.split("\n" + ANSWER_MARK + "\n");
   // Tool calls are numbered across both parts, so each keeps one key in openCalls.
-  const calls = { turnId, count: 0, openCalls };
+  const calls = { turnId, count: 0, openCalls, search };
   appendResponse(box, parts[0] ?? "", calls);
   if (parts.length > 1) {
     const rule = document.createElement("hr");
@@ -64,7 +99,7 @@ export function fillBox(box: HTMLElement, text: string, tools: boolean, turnId: 
 // Adds response text to a box as markdown, each run of tool lines sitting between the prose around
 // it as a monospace group; tool lines are plain text except for a leading **bold** tool name.
 // Blank lines do not end a group.
-function appendResponse(box: HTMLElement, text: string, calls: { turnId: string; count: number; openCalls: Set<string> }): void {
+function appendResponse(box: HTMLElement, text: string, calls: { turnId: string; count: number; openCalls: Set<string>; search: string }): void {
   let prose: string[] = [];
   let group: HTMLElement | null = null;
   // The tool call whose detail lines, if it has any, come next.
@@ -93,7 +128,7 @@ function appendResponse(box: HTMLElement, text: string, calls: { turnId: string;
         call.appendChild(long);
         call.classList.add("has-detail");
       }
-      appendFormattedLine(long, line.slice(TOOL_LINE_MARK.length + TOOL_DETAIL_MARK.length));
+      appendFormattedLine(long, line.slice(TOOL_LINE_MARK.length + TOOL_DETAIL_MARK.length), calls.search);
       continue;
     }
     if (group) group.appendChild(document.createTextNode("\n"));
@@ -108,26 +143,34 @@ function appendResponse(box: HTMLElement, text: string, calls: { turnId: string;
     if (calls.openCalls.has(calls.turnId + ":" + call.dataset.call)) call.classList.add("open");
     const short = document.createElement("span");
     short.className = "tool-short";
-    appendFormattedLine(short, line);
+    appendFormattedLine(short, line, calls.search);
     call.appendChild(short);
     group.appendChild(call);
   }
   flushProse();
 }
 
-function appendFormattedLine(box: HTMLElement, line: string): void {
+function appendFormattedLine(box: HTMLElement, line: string, search: string): void {
   if (isToolLine(line)) line = line.slice(TOOL_LINE_MARK.length);
+  // A line holding the search text builds inside a washed span, so the light blue covers exactly
+  // that line, wrapped continuations included.
+  let target = box;
+  if (search && line.toLowerCase().includes(search)) {
+    target = document.createElement("span");
+    target.className = "search-line";
+    box.appendChild(target);
+  }
   // Tool lines open with an "hh:mm:ss " timestamp ahead of the bold name.
   const bold = /^(\d\d:\d\d:\d\d )?\*\*([^*]+)\*\*/.exec(line);
   if (!bold) {
-    box.appendChild(document.createTextNode(line));
+    target.appendChild(document.createTextNode(line));
     return;
   }
-  if (bold[1]) box.appendChild(document.createTextNode(bold[1]));
+  if (bold[1]) target.appendChild(document.createTextNode(bold[1]));
   const name = document.createElement("b");
   name.textContent = bold[2] ?? "";
-  box.appendChild(name);
-  box.appendChild(document.createTextNode(line.slice(bold[0].length)));
+  target.appendChild(name);
+  target.appendChild(document.createTextNode(line.slice(bold[0].length)));
 }
 
 // The markdown renderer, deliberately small: the blocks Claude actually emits (headings, fences,

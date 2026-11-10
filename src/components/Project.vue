@@ -1,8 +1,7 @@
 <script setup lang="ts">
 // One tab: claude2's sidebar column (ported from sidebarHtml) beside one conversation pane. The
 // sessions come down the tab's event stream; picking a card shows that session in the pane, and
-// the others keep running and show their clocks here. Left out for now: search, management,
-// Close.
+// the others keep running and show their clocks here. Left out for now: management, Close.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { typedPrompt, type ClaudeSession, type RunningStatus, type ServerEvent } from "../../shared/types.ts";
@@ -10,6 +9,7 @@ import { authNeeded, listen, post } from "../api.ts";
 import { copy } from "../copy.ts";
 import { keepOpen } from "../keepOpen.ts";
 import { pick } from "../pick.ts";
+import { matchCount } from "../render.ts";
 import Files from "./Files.vue";
 import Git from "./Git.vue";
 import GitGraph from "./GitGraph.vue";
@@ -46,10 +46,26 @@ const selected = computed(() => {
   void version.value;
   return sessions.find((session) => session.id === selectedId.value) ?? null;
 });
+// claude2's search, the third list beside the active and trash ones, on while searchText is
+// non-empty. Enter in the box starts it; the X, an empty Enter, a card's R, "+", Clean or Trash ends
+// it. A card click steps through the hits instead, so it never ends it.
+const searchBox = ref("");
+const searchText = ref("");
+const nameMatches = (session: ClaudeSession): boolean => (session.name || "").toLowerCase().includes(searchText.value.toLowerCase());
+// The name is deliberately not counted: a name-only match shows the card with no tally.
+const hitCounts = computed(() => {
+  void version.value;
+  const needle = searchText.value.toLowerCase();
+  const tally = new Map<string, number>();
+  if (needle) for (const session of sessions) tally.set(session.id, matchCount(session.turns, needle));
+  return tally;
+});
 const visible = computed(() => {
   void version.value;
+  // A search takes in both lists.
+  const listed = (session: ClaudeSession): boolean => (searchText.value ? !!hitCounts.value.get(session.id) || nameMatches(session) : session.trashed === showTrash.value);
   // Newest first by the time each card shows.
-  return sessions.filter((session) => session.trashed === showTrash.value).sort((a, b) => b.updatedAt - a.updatedAt);
+  return sessions.filter(listed).sort((a, b) => b.updatedAt - a.updatedAt);
 });
 const counts = computed(() => {
   void version.value;
@@ -114,6 +130,7 @@ function select(id: string): void {
 // claude2's "+": a "New session" card, opened in the pane. Attention moving on (another card,
 // Clean, Trash, "+" again) sweeps it away while it is still empty and holds no typing.
 async function newSession(): Promise<void> {
+  clearSearch();
   try {
     openCard((await post<{ session: ClaudeSession }>(props.tab, "new", { keep: keepIds() })).session);
     showTrash.value = false;
@@ -150,14 +167,45 @@ function sweep(...keep: string[]): void {
 
 // claude2's Clean: every session to the trash, then a new one opens.
 function clean(): void {
+  clearSearch();
   sweep();
   selectedId.value = "";
   void ensureOpen(post(props.tab, "clean", {}).catch(report));
 }
 
 function toggleTrash(): void {
+  clearSearch();
   sweep(selectedId.value);
   showTrash.value = !showTrash.value;
+}
+
+// A search covers every session, so it replaces the trash list too, and lands on its first card.
+function setSearch(text: string): void {
+  searchText.value = text;
+  if (!text) return;
+  showTrash.value = false;
+  void stepSearch(visible.value[0]?.id ?? "", true);
+}
+
+// What a top button does to a search: typing not yet searched for stays in the box.
+function clearSearch(): void {
+  if (searchText.value) searchBox.value = searchText.value = "";
+}
+
+// The X, which also leaves the trash list.
+function closeSearch(): void {
+  searchBox.value = searchText.value = "";
+  showTrash.value = false;
+}
+
+// Selects a result. first lands on its first hit, otherwise the pane moves on to the next one.
+async function stepSearch(id: string, first: boolean): Promise<void> {
+  if (!id) return;
+  sweep(id);
+  selectedId.value = id;
+  // After the flush: the pane has to have this session before it can walk its hits.
+  await nextTick();
+  pane.value?.stepSearch(first);
 }
 
 // Ctrl-S opens a new session, as "+" does, leaving the sidebar as it is. Ctrl-B hides or shows this
@@ -218,6 +266,11 @@ function trash(session: ClaudeSession, trashed: boolean): void {
   }
   sweep(selectedId.value, session.id);
   void ensureOpen(post(props.tab, "trash", { sessionId: session.id, trashed }).catch(report));
+  // A card's R ends a search. Marked here first, or the end would move the pane off a restored open card.
+  if (!trashed && searchText.value) {
+    session.trashed = false;
+    clearSearch();
+  }
 }
 
 function report(error: unknown): void {
@@ -246,6 +299,12 @@ function clickCard(session: ClaudeSession, event: MouseEvent): void {
     copy(session.name || "", event.currentTarget as HTMLElement);
     if (!showTrash.value) return;
   }
+  // The open card moves on from its pane's current hit; any other card starts at its first.
+  if (searchText.value && !renamed) {
+    void stepSearch(session.id, session.id !== selectedId.value);
+    void focusPrompt();
+    return;
+  }
   sweep(session.id);
   if (renamed) return;
   if (showTrash.value && !event.altKey) pickAnchor = pick(picked.value, visible.value.map((entry) => entry.id), session.id, pickAnchor, event);
@@ -271,9 +330,10 @@ function firstPrompt(session: ClaudeSession): string {
 }
 
 watch(selectedId, (id) => localStorage.setItem(selectedKey, id));
-// Only the trash list can have a trashed session open. Off it (Trash clicked again, a reload,
-// another page trashing the open card) the newest card opens, or ensureOpen makes one.
-watch(() => !showTrash.value && selected.value?.trashed, (stale) => {
+// Only the trash list and a search can have a trashed session open. Off them (Trash clicked again,
+// a search ended, a reload, another page trashing the open card) the newest card opens, or
+// ensureOpen makes one.
+watch(() => !showTrash.value && !searchText.value && selected.value?.trashed, (stale) => {
   if (!stale) return;
   selectedId.value = visible.value[0]?.id ?? "";
   void ensureOpen();
@@ -331,11 +391,15 @@ onBeforeUnmount(() => {
           <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="toggleTrash">Trash</button>
           <span class="counts" title="Active sessions / trashed sessions">{{ counts.active }}/{{ counts.trashed }}</span>
         </div>
+        <div class="row">
+          <input v-model="searchBox" class="tabs-input" :class="{ searching: searchText }" type="text" placeholder="Search" aria-label="Search sessions" spellcheck="false" @keydown.enter.prevent="setSearch(searchBox.trim())" />
+          <button class="search-clear" title="Clear search" aria-label="Clear search" @click="closeSearch">&#x2715;</button>
+        </div>
         <div v-if="!connected" class="offline">No answer from the {{ tab.host }} backend at {{ HOSTS[tab.host].url }}. Retrying.</div>
         <div v-if="expired" class="offline">Authorization expired on {{ expired }}. Click Re-Auth to sign in again.</div>
       </div>
       <div class="sessions">
-        <div v-if="!visible.length" class="empty">{{ showTrash ? "Trash is empty" : "No sessions yet" }}</div>
+        <div v-if="!visible.length" class="empty">{{ searchText ? "No matches" : showTrash ? "Trash is empty" : "No sessions yet" }}</div>
         <div
           v-for="session in visible"
           :key="session.id"
@@ -361,8 +425,9 @@ onBeforeUnmount(() => {
             @keydown.esc.prevent="finishRename(session, false)"
             @blur="finishRename(session, true)"
           />
-          <span v-else class="card-name">{{ session.name || "New session" }}</span>
+          <span v-else class="card-name" :class="{ 'search-hit': searchText && nameMatches(session) }">{{ session.name || "New session" }}</span>
           <span class="card-meta">{{ timeLabel(session.updatedAt) }}</span>
+          <span v-if="hitCounts.get(session.id)" class="card-hits">{{ hitCounts.get(session.id) }} {{ hitCounts.get(session.id) === 1 ? "match" : "matches" }}</span>
           <div class="card-actions">
             <span v-if="busy(session)" class="card-clock" :class="busy(session)" :title="busy(session) === 'background' ? 'Waiting on a background task (Stop ends it)' : 'Responding'">
               <svg viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
@@ -375,7 +440,7 @@ onBeforeUnmount(() => {
       </div>
     </aside>
     <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
-    <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" @started="select" @deploy-due="(due) => (deployDue = due)" />
+    <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" :search="searchText" @started="select" @deploy-due="(due) => (deployDue = due)" />
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
     <GitGraph v-if="side === 'git'" :tab="tab" :active="active" />
@@ -402,6 +467,9 @@ onBeforeUnmount(() => {
 .sidebar .row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
 .sidebar .top button { height: 25px; min-height: 0; flex: none; padding: 0 8px; }
 .sidebar .trash-toggle.active { background: #fbd9d9; border-color: #e4a7a7; }
+.sidebar .tabs-input { height: 25px; padding: 0 8px; }
+.sidebar .tabs-input.searching { background: #cfe8ff; }
+.sidebar .top .search-clear { width: 25px; padding: 0; }
 .sidebar .counts { margin-left: 8px; font-size: 15px; }
 .sidebar .offline { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 6px 8px; }
 .sidebar .sessions { overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
@@ -420,5 +488,8 @@ onBeforeUnmount(() => {
 .sidebar .card-name { display: block; overflow-wrap: anywhere; padding-right: 24px; }
 .sidebar .card-rename { display: block; width: 100%; font: inherit; color: var(--ink); background: #fff; border: 1px solid #9a9a93; border-radius: 6px; padding: 1px 4px; }
 .sidebar .card-meta { display: block; }
+/* Every card whose name holds the search text at once, over the card's own yellow. */
+.sidebar .card-name.search-hit { background: #ffc9c9; }
+.sidebar .card-hits { display: block; color: #0b5ed7; }
 .sidebar .empty { border: 1px dashed var(--border); border-radius: 8px; padding: 14px 10px; text-align: center; }
 </style>
