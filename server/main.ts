@@ -19,6 +19,7 @@
 //        run -> { output } (the project's ./run, the prompt box's "r")
 //        runResult -> { done, code, output } (the last ./run's output so far and, when it's over, its exit code)
 //        deployNeeded -> { script, files } (project files changed since .deployed; see deployNeeded)
+//        lastCommit -> { at, subject } (HEAD's commit time in ms, 0 with no commits, and its subject)
 //        clean -> {} (every session to the trash) | git { log? } -> { files: [{ x, y, path }], log?: { hash, subject, messages } } (git status; log: the branch's newest commit and its last 100 messages)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
 //        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
@@ -655,6 +656,12 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "deployNeeded") {
     return await deployNeeded(project);
+  }
+  if (name === "lastCommit") {
+    // No repo or no commits yet: nothing was committed, so at is 0.
+    const line = await git(project, "log", "-1", "--format=%ct %s").catch(() => "");
+    const space = line.indexOf(" ");
+    return { at: Number(line.slice(0, space)) * 1000 || 0, subject: line.slice(space + 1).trim() };
   }
   if (name === "describeChanges") {
     return { text: await describeChanges(project) };

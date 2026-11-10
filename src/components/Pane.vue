@@ -25,6 +25,8 @@ const runPopEl = ref<HTMLDialogElement>();
 const runText = ref("");
 const deployPopEl = ref<HTMLDialogElement>();
 const deployText = ref("");
+const commitPopEl = ref<HTMLDialogElement>();
+const commitText = ref("");
 const promptHostEl = ref<HTMLElement>();
 const promptMdEl = ref<HTMLElement>();
 let promptBox: monaco.editor.IStandaloneCodeEditor | null = null;
@@ -622,6 +624,28 @@ async function deployOk(): Promise<boolean> {
   return dialog.returnValue === "continue";
 }
 
+// Before a prompt to a session with turns: when HEAD was committed after its last prompt, the
+// conversation is likely about work that's done, so a dialog asks New session (this prompt
+// starts one), Continue (send it here) or Cancel. A failed check doesn't hold the prompt up.
+async function commitChoice(): Promise<"new" | "continue" | ""> {
+  const last = turns().at(-1);
+  if (!last) return "continue";
+  let head: { at: number; subject: string };
+  try {
+    head = await post<{ at: number; subject: string }>(props.tab, "lastCommit", {});
+  } catch (error) {
+    console.warn("lastCommit check failed:", error);
+    return "continue";
+  }
+  if (head.at <= last.createdAt) return "continue";
+  commitText.value = `${props.tab.label}: a commit was made after this conversation's last prompt.\n\n${head.subject}`;
+  const dialog = commitPopEl.value!;
+  dialog.returnValue = "";
+  dialog.showModal();
+  await new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
+  return dialog.returnValue as "new" | "continue" | "";
+}
+
 // The Run button is highlighted while that same check finds changed files. Re-read like the Git
 // button's count, while the project is open, on show or not, and after a ./run, which resets the check.
 const deployDue = ref(false);
@@ -648,9 +672,12 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
   // Pictures alone are a prompt, not an empty box.
   if ((!text.trim() && (keepDraft || !images().length)) || (props.session?.trashed ?? false)) return;
   if (!keepDraft && !(await deployOk())) return;
+  const choice = keepDraft ? "continue" : await commitChoice();
+  if (!choice) return;
+  const fresh = !props.session || choice === "new";
   // Sending during a run stops that run and takes this prompt instead; a run waiting on a
   // background task takes it as a follow-up.
-  if (props.status?.active && props.status.phase !== "background" && !window.confirm("Stop the running response and send this prompt instead?")) return;
+  if (!fresh && props.status?.active && props.status.phase !== "background" && !window.confirm("Stop the running response and send this prompt instead?")) return;
   if (!keepDraft) {
     draft.value = "";
     localStorage.removeItem(lostKey());
@@ -663,10 +690,10 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
     delete waiting[key];
     storeImages();
   }
-  pendingTurnCount = turns().length + 1;
+  pendingTurnCount = fresh ? 1 : turns().length + 1;
   try {
-    const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: props.session?.id ?? "", prompt: text, images: sending.map((stack) => stack.at(-1)) });
-    if (!props.session) {
+    const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: fresh ? "" : props.session!.id, prompt: text, images: sending.map((stack) => stack.at(-1)) });
+    if (fresh) {
       storeBig(sessionId, bigPrompt.value);
       emit("started", sessionId);
     }
@@ -1122,6 +1149,10 @@ onBeforeUnmount(() => {
     <dialog ref="deployPopEl" class="run-pop">
       <pre>{{ deployText }}</pre>
       <form method="dialog"><button value="deploy">Deploy</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
+    </dialog>
+    <dialog ref="commitPopEl" class="run-pop">
+      <pre>{{ commitText }}</pre>
+      <form method="dialog"><button value="new">New session</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
     </dialog>
     <dialog ref="imagePopEl" class="img-pop" @close="popSrc = ''">
       <div class="img-title">

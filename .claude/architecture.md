@@ -203,6 +203,10 @@ on the laptop, and talks to each backend directly.
   docs and page-only edits don't ask for a deploy. The footer's Run button is highlighted
   while the same check finds files; it is re-read for every open project on showing, window focus,
   session events, and a ./run's result.
+- **Commit warning.** After the deploy check, a prompt to a session with turns asks `lastCommit`
+  (HEAD's `%ct` and subject); HEAD newer than the last turn's `createdAt` opens a `<dialog>`:
+  New session (the prompt starts one, as from the draft, and leaves the running one alone),
+  Continue or Cancel. The "/compact" auto-send (`keepDraft`) skips both checks.
 - **"r".** A prompt of just `r`, or the footer's Run button (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
   project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
   (`KillMode=process`), outside claude3.service's cgroup, so claude3's own `./run` restarting
