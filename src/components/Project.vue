@@ -389,12 +389,14 @@ onBeforeUnmount(() => {
     </Teleport>
     <aside class="sidebar">
       <div class="top">
-        <div class="row">
+        <div class="head">
           <button v-if="showTrash" class="delete" title="Permanently delete the selected trashed sessions. Ctrl-click or shift-click a card to select more" :disabled="!picked.size" @click="deletePicked">&#x1F5D1;{{ picked.size ? ` ${picked.size}` : "" }}</button>
           <button v-else class="clean" title="Move every session to the trash" :disabled="!visible.some((session) => session.turns.length)" @click="clean">Clean</button>
           <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="toggleTrash">Trash</button>
-          <span class="counts" title="Active sessions / trashed sessions">{{ counts.active }}/{{ counts.trashed }}</span>
-          <ReAuth :needed="!!expired" @closed="focusPrompt" />
+          <div class="row">
+            <span class="counts" title="Active sessions / trashed sessions">{{ counts.active }}/{{ counts.trashed }}</span>
+            <ReAuth :needed="!!expired" @closed="focusPrompt" />
+          </div>
         </div>
         <div class="row">
           <input v-model="searchBox" class="tabs-input" :class="{ searching: searchText }" type="text" placeholder="Search" aria-label="Search sessions" spellcheck="false" @keydown.enter.prevent="setSearch(searchBox.trim())" />
@@ -469,6 +471,9 @@ onBeforeUnmount(() => {
 .tabs .new svg { display: block; margin: 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .sidebar .top { display: flex; flex-direction: column; gap: 7px; flex: none; }
 .sidebar .row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+/* Equal side columns hold the Trash button at the row's center whatever sits beside it. */
+.sidebar .head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 7px; align-items: center; }
+.sidebar .head > :first-child { justify-self: start; }
 .sidebar .top button { height: 25px; min-height: 0; flex: none; padding: 0 8px; }
 .sidebar .trash-toggle.active { background: #fbd9d9; border-color: #e4a7a7; }
 .sidebar .tabs-input { height: 25px; padding: 0 8px; }
