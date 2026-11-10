@@ -19,7 +19,7 @@
 //        run -> { output } (the project's ./run, the prompt box's "r")
 //        runResult -> { done, code, output } (the last ./run's output so far and, when it's over, its exit code)
 //        deployNeeded -> { script, files } (project files changed since .deployed; see deployNeeded)
-//        clean -> {} (every session to the trash) | git -> { files: [{ x, y, path }] } (git status)
+//        clean -> {} (every session to the trash) | git { log? } -> { files: [{ x, y, path }], log?: { hash, subject, messages } } (git status; log: the branch's newest commit and its last 100 messages)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
 //        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message, editable }] } (git log --graph)
 //        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
@@ -46,7 +46,7 @@ import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, swapSessionTranscripts, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
 import { fileActions, upload } from "./files.ts";
-import { GRAPH_ARGS, layoutGraph, rewordHead } from "./gitGraph.ts";
+import { GRAPH_ARGS, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "./gitGraph.ts";
 import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
 import { checkCosts, QuotaService, speechmaticsCost } from "./quota.ts";
 
@@ -626,7 +626,10 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     return await submitPrompt(project, body);
   }
   if (name === "git") {
-    return { files: parseStatus(await git(project, "status", "--porcelain", "-z", "--untracked-files=all")) };
+    const files = parseStatus(await git(project, "status", "--porcelain", "-z", "--untracked-files=all"));
+    if (body.log !== true) return { files };
+    // A repo with no commits yet fails the log, which only means there's nothing to show.
+    return { files, log: parseMessages(await git(project, ...MESSAGE_ARGS).catch(() => "")) };
   }
   if (name === "gitGraph") {
     return { lines: layoutGraph(await git(project, ...GRAPH_ARGS)) };

@@ -22,6 +22,15 @@ export function layoutGraph(out: string): { text: string; hash: string; message:
   return rows.map((row) => ({ ...row, text: row.text.slice(indent) }));
 }
 
+// The Git popup's old messages, whole and newest first, and the newest commit's hash and subject,
+// the part `rewordHead` edits. Each commit is three NUL-ended fields.
+export const MESSAGE_ARGS = ["log", "-n", "100", "--format=%H%x00%s%x00%B%x00"];
+
+export function parseMessages(out: string): { hash: string; subject: string; messages: string[] } {
+  const fields = out.split("\0").map((field) => field.trim());
+  return { hash: fields[0] ?? "", subject: fields[1] ?? "", messages: fields.filter((field, at) => field && at % 3 === 2) };
+}
+
 // A new subject for the checked-out branch's newest commit, pushed. The body stays, and --only keeps
 // staged files out of the commit. A failed push puts the old commit back, because no later plain
 // push could follow the amended one.

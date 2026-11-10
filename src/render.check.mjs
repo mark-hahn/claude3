@@ -5,12 +5,13 @@ import { AUTH_FAILED, imageNote, typedPrompt } from "../shared/types.ts";
 import { extraBlankLines, headingEnter } from "./blankLines.ts";
 import { cropRect } from "./cropRect.ts";
 import { keepOpen } from "./keepOpen.ts";
+import { MessageHistory } from "./messageHistory.ts";
 import { pick } from "./pick.ts";
 import { answerText, renderMarkdown } from "./render.ts";
 import { byName, folderName, foldersBetween, nextTab, sameName } from "./tabList.ts";
 import { wheelZoom } from "./wheelZoom.ts";
 import { fileActions, numberedName } from "../server/files.ts";
-import { layoutGraph, rewordHead } from "../server/gitGraph.ts";
+import { layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "../server/gitGraph.ts";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -277,6 +278,8 @@ assert.deepEqual(layoutGraph(`${commit("* ", "aaa", " (x)", "")}\n${commit("* ",
   assert.equal(sh(work, "show", "--name-only", "--format=", "HEAD"), "b");
   assert.equal(sh(work, "diff", "--cached", "--name-only"), "staged");
   assert.equal(sh(remote, "rev-parse", "master"), head());
+  assert.deepEqual(parseMessages(sh(work, ...MESSAGE_ARGS)), { hash: head(), subject: "edited", messages: ["edited\n\nthe body", "one"] });
+  assert.deepEqual(parseMessages(""), { hash: "", subject: "", messages: [] });
   const pushed = head();
   await assert.rejects(rewordHead(git, older, "x"), /newest/);
   const hook = path.join(remote, "hooks", "pre-receive");
@@ -315,4 +318,50 @@ assert.equal(cssVars["--x"], "3px");
 assert.equal(stored["claude3.x"], "3");
 for (let i = 0; i < 5; i++) wheel(true, 1);
 assert.equal(cssVars["--x"], "1px");
+
+// The commit box's history walks as VS Code's does: typed text waits at the end, and stops at either end.
+const messages = new MessageHistory();
+messages.fill(["b", "a", "b"]);
+assert.equal(messages.previous("typed"), "b");
+assert.equal(messages.previous("b"), "a");
+assert.equal(messages.previous("a"), "a");
+assert.equal(messages.next("a"), "b");
+assert.equal(messages.next("b"), "typed");
+assert.equal(messages.next("typed"), undefined);
+// An edited old message takes the waiting text's place, and the walk starts over from the newest.
+assert.equal(messages.previous("typed"), "b");
+assert.equal(messages.previous("b edited"), "b");
+assert.equal(messages.next("b"), "b edited");
+// A commit moves the box's text into the history and leaves an empty box, with no repeats.
+messages.replace("a", "");
+assert.equal(messages.previous(""), "a");
+assert.equal(messages.previous("a"), "b");
+// What a command overwrites is one step back.
+const generated = new MessageHistory();
+generated.fill(["a"]);
+generated.replace("typed", "made");
+assert.equal(generated.previous("made"), "typed");
+assert.equal(generated.previous("typed"), "a");
+// A new log replaces the old messages, an amended one goes, and the waiting text and what's on show stay.
+const relogged = new MessageHistory();
+relogged.fill(["old"]);
+assert.equal(relogged.previous("draft"), "old");
+relogged.fill(["new", "old"]);
+assert.equal(relogged.next("old"), "new");
+assert.equal(relogged.next("new"), "draft");
+relogged.fill(["amended"]);
+assert.equal(relogged.previous("draft"), "amended");
+// VS Code keeps 100, counting the slot, either way the list grows.
+const oldest = (history) => {
+  let shown = "";
+  for (let step = 0; step < 200; step++) shown = history.previous(shown);
+  return shown;
+};
+const typed = new MessageHistory();
+for (let index = 0; index < 150; index++) typed.replace(String(index), "");
+assert.equal(oldest(typed), "51");
+const longLog = new MessageHistory();
+longLog.fill(Array.from({ length: 150 }, (unused, index) => String(index)));
+assert.equal(oldest(longLog), "98");
+
 console.log("render checks passed");

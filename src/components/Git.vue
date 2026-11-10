@@ -1,13 +1,14 @@
 <script setup lang="ts">
 // The sidebar's Git button and its popup, a small copy of VS Code's Source Control view for the
-// tab's project: the commit message, then the staged and the changed files. Commit stages
+// tab's project: the last commit's message, the new commit message, then the staged and the changed files. Commit stages
 // everything, commits, and pushes (the backend's `commit`). The label counts the files waiting
 // for a commit. It's re-read while the project is open, on show or not, for the dot on its tab:
 // when it comes up, when a session changes (a turn starting or ending), and every 2s for changes
 // no event tells of.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
+import { MessageHistory } from "../messageHistory.ts";
 
 const props = defineProps<{ tab: Tab; active: boolean; version: number }>();
 const emit = defineEmits<{ closed: []; dirty: [dirty: boolean]; noRepo: [none: boolean] }>();
@@ -27,6 +28,14 @@ const committing = ref(false);
 const describing = ref(false);
 const dialog = ref<HTMLDialogElement>();
 const button = ref<HTMLButtonElement>();
+const messageBox = ref<HTMLTextAreaElement>();
+// The branch's newest commit and its old messages, straight from `git log`.
+interface GitLog {
+  hash: string;
+  subject: string;
+  messages: string[];
+}
+const last = ref<GitLog>();
 
 const staged = computed(() => files.value.filter((file) => !" ?".includes(file.x)).map((file) => ({ ...file, letter: file.x })));
 const changed = computed(() => files.value.filter((file) => file.y !== " ").map((file) => ({ ...file, letter: file.y === "?" ? "U" : file.y })));
@@ -35,17 +44,31 @@ const noRepo = computed(() => /not a git repository/i.test(failure.value));
 watch(() => files.value.length > 0, (dirty) => emit("dirty", dirty));
 watch(noRepo, (none) => emit("noRepo", none));
 
+const history = new MessageHistory();
+function setMessage(text: string): void {
+  history.replace(message.value, text);
+  message.value = text;
+}
+
 const messageOf = (problem: unknown): string => (problem instanceof Error ? problem.message : String(problem));
 const nameOf = (path: string): string => path.slice(path.lastIndexOf("/") + 1);
 const folderOf = (path: string): string => path.slice(0, Math.max(path.lastIndexOf("/"), 0));
 
+// The log is read only while the popup is open, so on every 2s poll there. A new newest commit
+// (any commit or amend, wherever it was made) means new old messages.
 async function refresh(): Promise<void> {
   try {
-    files.value = (await post<{ files: GitFile[] }>(props.tab, "git", {})).files;
+    const status = await post<{ files: GitFile[]; log?: GitLog }>(props.tab, "git", { log: dialog.value?.open });
+    files.value = status.files;
     failure.value = "";
+    if (status.log) {
+      if (status.log.hash !== last.value?.hash) history.fill(status.log.messages);
+      last.value = status.log;
+    }
   } catch (problem) {
     files.value = [];
     failure.value = messageOf(problem);
+    last.value = undefined;
   }
 }
 
@@ -75,12 +98,13 @@ onBeforeUnmount(() => window.clearInterval(poller));
 
 function open(): void {
   error.value = "";
-  void refresh();
+  editing.value = "";
   // Upper left, just under the button, and no taller than the room below it so Commit stays on screen.
   const { left, bottom } = button.value!.getBoundingClientRect();
   dialog.value!.style.margin = `${bottom + 4}px 0 0 ${left}px`;
   dialog.value!.style.maxHeight = `calc(100vh - ${bottom + 16}px)`;
   dialog.value!.showModal();
+  void refresh();
 }
 
 // The modal's backdrop covers the Git button, so a click on the button lands on the dialog
@@ -97,7 +121,7 @@ async function commit(): Promise<void> {
   error.value = "";
   try {
     await post(props.tab, "commit", { message: message.value });
-    message.value = "";
+    setMessage("");
     dialog.value?.close();
   } catch (problem) {
     error.value = messageOf(problem);
@@ -111,18 +135,76 @@ async function describe(): Promise<void> {
   describing.value = true;
   error.value = "";
   try {
-    message.value = (await post<{ text: string }>(props.tab, "describeChanges", {})).text;
+    setMessage((await post<{ text: string }>(props.tab, "describeChanges", {})).text);
   } catch (problem) {
     error.value = messageOf(problem);
   }
   describing.value = false;
 }
 
+// A click on the last commit's message edits its subject, as a long press does in the Git pane. Enter
+// amends and pushes, Esc cancels, and leaving the input doesn't save it, or a stray click could
+// force-push. `editing` holds the commit it began on, so if another commit lands meanwhile the
+// backend refuses rather than amending that one. A refusal keeps the input, for another try.
+const editing = ref("");
+const draft = ref("");
+const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
+function editLast(): void {
+  if (committing.value || !last.value) return;
+  draft.value = last.value.subject;
+  editing.value = last.value.hash;
+}
+function stopEditing(): void {
+  editing.value = "";
+  messageBox.value?.focus();
+}
+async function saveLast(): Promise<void> {
+  if (committing.value) return;
+  const subject = draft.value.trim();
+  if (!subject || subject === last.value?.subject) return stopEditing();
+  committing.value = true;
+  error.value = "";
+  try {
+    await post(props.tab, "reword", { hash: editing.value, message: subject });
+    await refresh();
+    stopEditing();
+  } catch (problem) {
+    error.value = messageOf(problem);
+  }
+  committing.value = false;
+}
+
+// VS Code's keys for the box: Up at the very start loads the previous message and Down at the very
+// end the next, Alt with either from anywhere. Only the browser knows the wrapped rows, so a key that
+// might be on the top or bottom row is left to it, and if the caret didn't move it was: VS Code
+// goes to the text's start or end then, which some browsers don't.
 function onMessageKey(event: KeyboardEvent): void {
   if (event.key === "Enter" && event.ctrlKey) {
     event.preventDefault();
     void commit();
+    return;
   }
+  const up = event.key === "ArrowUp";
+  if ((!up && event.key !== "ArrowDown") || event.shiftKey || event.ctrlKey || event.metaKey || describing.value) return;
+  const box = event.target as HTMLTextAreaElement;
+  const caret = box.selectionDirection === "backward" ? box.selectionStart : box.selectionEnd;
+  const edge = up ? 0 : box.value.length;
+  if (caret !== edge && !event.altKey) {
+    window.setTimeout(() => {
+      if (box.selectionStart === caret && box.selectionEnd === caret) box.setSelectionRange(edge, edge);
+    });
+    return;
+  }
+  event.preventDefault();
+  const text = up ? history.previous(box.value) : history.next(box.value);
+  if (text === undefined) return;
+  message.value = text;
+  // The start after going back and the end after going forward, so the same key keeps going.
+  void nextTick(() => {
+    const place = up ? 0 : box.value.length;
+    box.setSelectionRange(place, place);
+    box.scrollTop = up ? 0 : box.scrollHeight;
+  });
 }
 </script>
 
@@ -135,7 +217,9 @@ function onMessageKey(event: KeyboardEvent): void {
       <div class="git-title">Source Control: {{ tab.path }}</div>
       <button class="git-describe" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "Describing…" : "Describe changes" }}</button>
     </div>
-    <textarea v-model="message" class="git-message" rows="3" spellcheck="false" autofocus :readonly="describing" @keydown="onMessageKey"></textarea>
+    <input v-if="editing" v-model="draft" v-focus class="git-last-edit" spellcheck="false" :readonly="committing" @keydown.enter.prevent="saveLast" @keydown.esc.prevent="stopEditing" />
+    <div v-else-if="last?.hash" class="git-last" title="The last commit's message. Click to edit it: Enter amends and pushes, Esc cancels." @click="editLast">{{ last.subject }}</div>
+    <textarea ref="messageBox" v-model="message" class="git-message" rows="3" spellcheck="false" autofocus :readonly="describing" @keydown="onMessageKey"></textarea>
     <div v-if="failure" class="git-error">{{ failure }}</div>
     <div v-if="error" class="git-error">{{ error }}</div>
     <div class="git-files">
@@ -166,6 +250,10 @@ function onMessageKey(event: KeyboardEvent): void {
 .git-head { display: flex; align-items: center; gap: 8px; }
 .git-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .git-describe { flex: none; }
+.git-last, .git-last-edit { padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; color: var(--ink); font: inherit; }
+.git-last { cursor: text; overflow-wrap: anywhere; }
+.git-last:hover { background: var(--wash); }
+.git-last-edit { box-sizing: border-box; width: 100%; border-color: var(--border); background: var(--yellow); }
 .git-message { resize: vertical; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--ink); font: inherit; }
 .git-error { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 6px; padding: 4px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .git-files { overflow: auto; min-height: 0; }
