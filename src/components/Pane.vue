@@ -2,7 +2,7 @@
 // The conversation pane, ported from claude2's conversationHtml. The history (bars and boxes) is
 // built imperatively, as claude2 builds it, so streaming refills one box rather than re-rendering
 // the pane; the dock is an ordinary template. Left out for now: search, pasted images, File,
-// export, presets (M), arrow-key navigation and the frozen pane, the restored prompt.
+// export, presets (M), arrow-key navigation and the frozen pane.
 // The prompt box is a Monaco editor with claude2's editing (src/monaco.ts), and has claude2's big
 // prompt editor.
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -401,6 +401,7 @@ const drafted = (): string[] => [...drafts].filter(([, text]) => text.trim()).ma
 // An edit through Monaco, so ctrl-z takes it back. False when the box couldn't take it.
 function appendPrompt(text: string): boolean {
   const box = promptBox;
+  if (!props.session?.trashed) leaveRestored();
   if (!box || box.getOption(monaco.editor.EditorOption.readOnly)) return false;
   setPromptMarkdown(false);
   const model = box.getModel()!;
@@ -752,14 +753,43 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
   }
 }
 
-// Ctrl+Enter in the prompt box.
+// Ctrl+Enter in the prompt box. In an empty one it puts back a lost prompt, or else shows the last one.
 function sendKey(): void {
-  if (!draft.value.trim() && !images().length && clearedDraft) {
+  if (props.session?.trashed) return;
+  if (restoredTurn.value) return leaveRestored();
+  if (!draft.value.trim() && !images().length) {
+    if (!clearedDraft) return restoreLast();
     draft.value = clearedDraft;
     clearedDraft = "";
     return;
   }
   void submit();
+}
+
+// claude2's promptRestored: the last bar's prompt shown again in the box, read-only and yellow, to
+// be read against the answer; it is never sent. Ctrl+Enter empties the box again, and so do Cap,
+// the Snips' text and a returned prompt. It is not a draft: `draft` stays as it was meanwhile, and
+// the box gets it back after. Each session keeps the flag in localStorage, like bigPrompt.
+const restoredTurn = ref<ClaudeTurn | null>(null);
+const restoredKey = (id: string): string => `restoredPrompt:${props.tab.id}:${id}`;
+function showRestored(turn: ClaudeTurn | null): void {
+  restoredTurn.value = turn;
+  lockPrompt();
+  // Unchanged text is left alone, or the caret of someone typing would jump to the start.
+  const text = untab(turn ? typedText(turn) : draft.value);
+  if (promptBox && promptBox.getValue() !== text) promptBox.setValue(text);
+  showImageChars();
+}
+function restoreLast(): void {
+  const last = turns().at(-1);
+  if (!last) return;
+  localStorage.setItem(restoredKey(sessionKey()), "1");
+  showRestored(last);
+}
+function leaveRestored(): void {
+  if (!restoredTurn.value) return;
+  localStorage.removeItem(restoredKey(sessionKey()));
+  showRestored(null);
 }
 
 // The frame grows with the text (--content-h), never below two lines, and the CSS caps it at
@@ -792,7 +822,7 @@ function setBigPrompt(on: boolean): void {
 // toggles it while the box is big; leaving the big box leaves it too. Ctrl+Enter there sends, as
 // it would from the text.
 const promptMarkdown = ref(false);
-const promptHtml = computed(() => (promptMarkdown.value ? renderMarkdown(draft.value) : ""));
+const promptHtml = computed(() => (promptMarkdown.value ? renderMarkdown(restoredTurn.value ? typedText(restoredTurn.value) : draft.value) : ""));
 function setPromptMarkdown(on: boolean): void {
   if (on === promptMarkdown.value) return;
   promptMarkdown.value = on;
@@ -839,6 +869,8 @@ function onPromptPointer(event: PointerEvent): void {
   if (index < 0 && (!event.ctrlKey || !event.altKey)) return;
   event.preventDefault();
   event.stopPropagation();
+  // A restored prompt's icons are its turn's sent pictures: a click only shows one.
+  if (index >= 0 && restoredTurn.value) return void showSentImage(restoredTurn.value, index);
   if (index >= 0) return event.ctrlKey ? deleteWaitingImage(index) : showWaitingImage(index);
   setBigPrompt(!bigPrompt.value);
   promptBox?.focus();
@@ -870,15 +902,17 @@ function storeImages(): void {
 // typing, the caret and the draft never touch them. Set again on every edit, or one at the very
 // start would carry them along with the text it moved.
 let imageChars: monaco.editor.IEditorDecorationsCollection | null = null;
+// The restored prompt's own pictures, or the ones waiting on the next prompt.
+const boxImageCount = (): number => (restoredTurn.value ? restoredTurn.value.images?.length ?? 0 : images().length);
 function showImageChars(): void {
-  const count = images().length;
+  const count = boxImageCount();
   // An empty range: without showIfCollapsed Monaco keeps the decoration but never draws it.
   imageChars?.set(count ? [{ range: new monaco.Range(1, 1, 1, 1), options: { showIfCollapsed: true, before: { content: IMG.repeat(count), inlineClassName: "img-char", cursorStops: monaco.editor.InjectedTextCursorStops.Right } } }] : []);
 }
 // Which icon an event in the prompt box is on, or -1. They are one injected span, all one width.
 function imageCharAt(event: MouseEvent): number {
   const span = (event.target as HTMLElement).closest?.(".img-char");
-  const count = images().length;
+  const count = boxImageCount();
   if (!span || !count || event.button) return -1;
   const box = span.getBoundingClientRect();
   const index = Math.floor((event.clientX - box.left) / (box.width / count));
@@ -894,9 +928,12 @@ const capturing = ref(false);
 async function capture(event: MouseEvent): Promise<void> {
   const key = sessionKey();
   const take = (hideWindow: boolean) => post<{ dataUri: string }>(captureTab(), "capture", { hideWindow });
+  // A ctrl-click's shot is of this window, so a restored prompt stays in it until the shot is taken.
+  if (!event.ctrlKey) leaveRestored();
   capturing.value = true;
   try {
     const { dataUri } = await (event.altKey ? onPreviousTab(() => take(false)) : take(!event.ctrlKey));
+    if (key === sessionKey()) leaveRestored();
     (waiting[key] ??= []).push([dataUri]);
     storeImages();
     // After Alt-Cap's return to this tab has drawn: a modal dialog in a hidden tab would block the page.
@@ -1093,7 +1130,7 @@ watch(
       searchHit = null;
       bigPrompt.value = localStorage.getItem(bigKey(id)) === "1";
       setPromptMarkdown(false);
-      showImageChars();
+      showRestored(storedRestore(id));
     }
     status = props.status;
     render();
@@ -1113,16 +1150,29 @@ watch(() => props.search, () => {
 });
 watch(() => props.active, (on) => on && paintSearchHit());
 watch(draft, (text) => {
-  if (promptBox && promptBox.getValue() !== text) promptBox.setValue(untab(text));
-  if (text.trim()) localStorage.setItem(lostKey(), text);
+  // Text from elsewhere (a returned prompt) takes the box over a restored prompt.
+  if (text && restoredTurn.value) leaveRestored();
+  if (promptBox && !restoredTurn.value && promptBox.getValue() !== text) promptBox.setValue(untab(text));
+  // For a reload: the box's text, or in an empty box what Ctrl+Enter would put back. Text deleted
+  // by hand isn't lost, so it mustn't come back after a reload.
+  const lost = text.trim() ? text : clearedDraft;
+  if (lost) localStorage.setItem(lostKey(), lost);
+  else localStorage.removeItem(lostKey());
   const key = draftKey(props.session?.id ?? "");
   if (text) localStorage.setItem(key, text);
   else localStorage.removeItem(key);
 });
-// A trashed session's box is read-only until the session is restored.
-const lockPrompt = (): void =>
-  promptBox?.updateOptions({ readOnly: props.session?.trashed ?? false, readOnlyMessage: { value: "This session is in the trash. Restore it to send a prompt." } });
+// A trashed session's box is read-only until the session is restored, and so is a restored prompt's.
+function lockPrompt(): void {
+  const trashed = props.session?.trashed ?? false;
+  promptBox?.updateOptions({
+    readOnly: trashed || !!restoredTurn.value,
+    readOnlyMessage: { value: trashed ? "This session is in the trash. Restore it to send a prompt." : "The last prompt, shown again. Ctrl-Enter clears the box." },
+  });
+}
 watch(() => props.session?.trashed, lockPrompt);
+// A restored prompt comes back with its session, unless a draft outranks it.
+const storedRestore = (id: string): ClaudeTurn | null => (!draft.value && localStorage.getItem(restoredKey(id)) ? turns().at(-1) ?? null : null);
 
 let ticker = 0;
 let resize: ResizeObserver | null = null;
@@ -1145,10 +1195,10 @@ onMounted(() => {
   imageChars = box.createDecorationsCollection();
   showImageChars();
   box.onDidChangeModelContent(() => {
-    draft.value = box.getValue();
+    if (!restoredTurn.value) draft.value = box.getValue();
     showImageChars();
   });
-  lockPrompt();
+  showRestored(storedRestore(switchedFrom));
   window.addEventListener("keydown", onPageKey, true);
   render();
   const pendingRun = sessionStorage.getItem(runKey());
@@ -1214,7 +1264,7 @@ onBeforeUnmount(() => {
       </div>
     </dialog>
     <div class="dock">
-      <div ref="promptHostEl" class="prompt" @pointerdown.capture="onPromptPointer" @mousedown.capture="onPromptMouse">
+      <div ref="promptHostEl" class="prompt" :class="{ restored: restoredTurn }" @pointerdown.capture="onPromptPointer" @mousedown.capture="onPromptMouse">
         <div v-show="!promptMarkdown"></div>
         <div v-show="promptMarkdown" ref="promptMdEl" class="prompt-md response markdown" tabindex="-1" @keydown="onMdKey" v-html="promptHtml"></div>
       </div>
@@ -1299,6 +1349,9 @@ onBeforeUnmount(() => {
    in a narrow pane the controls keep their full width and the box takes what is left. */
 .pane .prompt { position: relative; flex: 1 1 0; min-width: 180px; min-height: min(var(--content-h, 0px), 144px); max-height: 144px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .pane .prompt:focus-within { outline: 2px solid var(--ink); outline-offset: -1px; border-color: transparent; }
+/* A restored prompt, on the bar's yellow. Monaco's theme is page-wide, so this editor's own colour variable. */
+.pane .prompt.restored { background: var(--yellow); }
+.pane .prompt.restored .monaco-editor { --vscode-editor-background: var(--yellow); }
 /* Inset just past the rounded corners, so the editor's square ones stay inside the border. */
 .pane .prompt > div { position: absolute; inset: 3px; }
 /* promptMarkdown: the big box's text rendered as a markdown box, read-only, in the editor's place. */
