@@ -253,13 +253,13 @@ const when = "2026-11-09 04:13", under = " ".repeat(when.length + 2);
 const commit = (graph, hash, names, message) => `${graph}\0${hash}\0${when}\0${names}\0${message}`;
 assert.deepEqual(layoutGraph(`${commit("* ", "aaa", " (HEAD -> master)", "two")}\n${commit("* ", "bbb", "", "one")}\n`), [
   { text: `${when} (HEAD -> master)`, hash: "aaa", message: "two" },
-  { text: `${under}two`, hash: "aaa", message: "two", editable: true },
+  { text: `${under}two`, hash: "aaa", message: "two" },
   { text: `${when}  one`, hash: "bbb", message: "one" },
 ]);
 // A branching history keeps its other lines, and a row of graph alone has no hash or message.
 assert.deepEqual(layoutGraph(`${commit("* | ", "aaa", " (x)", "m")}\n|/  `), [
   { text: `  | ${when} (x)`, hash: "aaa", message: "m" },
-  { text: `  | ${under}m`, hash: "aaa", message: "m", editable: false },
+  { text: `  | ${under}m`, hash: "aaa", message: "m" },
   { text: "|/", hash: "", message: "" },
 ]);
 // An empty message under names can't upset the layout.

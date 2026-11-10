@@ -24,7 +24,7 @@
 //        clean -> {} (every session to the trash) | git { log? } -> { files: [{ x, y, path }], log?: { hash, subject, messages } } (git status; log: the branch's newest commit and its last 100 messages)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
 //        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
-//        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message, editable }] } (git log --graph)
+//        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
 //        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
 //        describeChanges -> { text } (Opus 5.5's commit message for the uncommitted changes)
 //        snips { text? } -> { text } (the Snips' text, kept on claude-stats; text saves it)
