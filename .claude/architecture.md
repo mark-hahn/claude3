@@ -3,7 +3,7 @@
 A browser page of tabs, one per project, each a claude2-style sidebar and conversation pane. It
 is meant to replace the claude2 VS Code extension (/root/apps/claude2), whose code it ports. The
 claude CLI runs headless (`-p`, stream-json in and out) under one backend per host: WSL, Windows,
-and hahnca.com. The page usually runs from `./run` (vite, hot update, port 5310) in Firefox
+and hahnca.com. The page usually runs from `./run` (vite, hot update, port 5310) in Edge
 on the laptop, and talks to each backend directly.
 
 ## Layout
