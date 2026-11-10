@@ -129,8 +129,11 @@ function select(id: string): void {
 
 // claude2's "+": a "New session" card, opened in the pane. Attention moving on (another card,
 // Clean, Trash, "+" again) sweeps it away while it is still empty and holds no typing.
+// The card with turns that "+" or Ctrl-S moved on from, for Ctrl-S to go back to.
+let beforeNew = "";
 async function newSession(): Promise<void> {
   clearSearch();
+  if (selected.value?.turns.length) beforeNew = selected.value.id;
   try {
     openCard((await post<{ session: ClaudeSession }>(props.tab, "new", { keep: keepIds() })).session);
     showTrash.value = false;
@@ -208,7 +211,20 @@ async function stepSearch(id: string, first: boolean): Promise<void> {
   pane.value?.stepSearch(first);
 }
 
-// Ctrl-S opens a new session, as "+" does, leaving the sidebar as it is. Ctrl-B hides or shows this
+// Ctrl-S on an empty card with no typing goes back to the card before it (or the newest card with
+// turns), which sweeps the empty one away, so Ctrl-S toggles a new session. Otherwise it opens one.
+function toggleNew(): void {
+  const empty = selected.value && !selected.value.turns.length && !pane.value?.drafted().includes(selected.value.id);
+  const back = sessions.find((session) => session.id === beforeNew && !session.trashed) ?? [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).find((session) => !session.trashed && session.turns.length);
+  if (!empty || !back) return void newSession();
+  clearSearch();
+  showTrash.value = false;
+  sweep(back.id);
+  selectedId.value = back.id;
+  void focusPrompt();
+}
+
+// Ctrl-S opens or drops a new session (toggleNew), leaving the sidebar as it is. Ctrl-B hides or shows this
 // tab's sidebar, but never closes it on the trash list. Capture phase, so an editor holding the
 // cursor doesn't get the key. A held key counts once: repeated "new" requests would sweep each other's card.
 const sidebarHidden = ref(false);
@@ -220,7 +236,7 @@ function onPageKey(event: KeyboardEvent): void {
   event.preventDefault();
   event.stopPropagation();
   if (event.repeat) return;
-  if (event.code === "KeyS") void newSession();
+  if (event.code === "KeyS") toggleNew();
   else toggleSidebar();
 }
 
