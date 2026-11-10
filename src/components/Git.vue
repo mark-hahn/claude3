@@ -1,23 +1,26 @@
 <script setup lang="ts">
 // The tab row's Git button (teleported there by Project) and its popup, a small copy of VS Code's Source Control view for the
 // tab's project: the last commit's message, the new commit message, then the staged and the changed files. Commit stages
-// everything, commits, and pushes (the backend's `commit`). The label counts the files waiting
+// everything, commits, and pushes (the backend's `commit`). Files are picked as in the sidebar (click, ctrl-click,
+// shift-click), and Delete or Ctrl-Z there reverts the picked ones to the last commit, after a question. The label counts the files waiting
 // for a commit. It's re-read while the project is open, on show or not, for the dot on its tab:
 // when it comes up, when a session changes (a turn starting or ending), and every 2s for changes
 // no event tells of.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
+import { pick } from "../pick.ts";
 import { MessageHistory } from "../messageHistory.ts";
 
 const props = defineProps<{ tab: Tab; active: boolean; version: number }>();
 const emit = defineEmits<{ closed: []; dirty: [dirty: boolean]; noRepo: [none: boolean] }>();
 
-// One `git status --porcelain` entry: x is the index's letter, y the work tree's.
+// One `git status --porcelain` entry: x is the index's letter, y the work tree's, from a rename's old path.
 interface GitFile {
   x: string;
   y: string;
   path: string;
+  from?: string;
 }
 const files = ref<GitFile[]>([]);
 // Why the status couldn't be read (not a repo, no git); empty when it could.
@@ -37,8 +40,42 @@ interface GitLog {
 }
 const last = ref<GitLog>();
 
-const staged = computed(() => files.value.filter((file) => !" ?".includes(file.x)).map((file) => ({ ...file, letter: file.x })));
-const changed = computed(() => files.value.filter((file) => file.y !== " ").map((file) => ({ ...file, letter: file.y === "?" ? "U" : file.y })));
+const staged = computed(() => files.value.filter((file) => !" ?".includes(file.x)).map((file) => ({ ...file, letter: file.x, key: `s${file.path}` })));
+const changed = computed(() => files.value.filter((file) => file.y !== " ").map((file) => ({ ...file, letter: file.y === "?" ? "U" : file.y, key: `c${file.path}` })));
+const shown = computed(() => [...staged.value, ...changed.value]);
+// The picked rows' keys: a file both staged and changed has a row, and so a key, in each list.
+const picked = ref(new Set<string>());
+let anchor = "";
+function clickFile(key: string, event: MouseEvent): void {
+  const next = new Set(picked.value);
+  anchor = pick(next, shown.value.map((file) => file.key), key, anchor, event);
+  picked.value = next;
+}
+// A revert puts a file back as the last commit has it, staged and on disk, whichever list it was
+// picked in; an untracked file is deleted. The popup stays open.
+async function revert(): Promise<void> {
+  const chosen = shown.value.filter((file) => picked.value.has(file.key));
+  const paths = [...new Set(chosen.map((file) => file.path))];
+  if (!paths.length || committing.value) return;
+  const list = paths.map((path) => (chosen.some((file) => file.path === path && file.x === "?") ? `${path}  (untracked: deleted)` : path)).join("\n");
+  if (!window.confirm(`Revert ${paths.length === 1 ? "this file" : `these ${paths.length} files`} to the last commit?\n\n${list}\n\nThis cannot be undone.`)) return;
+  const untracked = chosen.filter((file) => file.x === "?");
+  const tracked = chosen.filter((file) => file.x !== "?").flatMap((file) => (file.from ? [file.path, file.from] : [file.path]));
+  error.value = "";
+  try {
+    await post(props.tab, "revert", { untracked: [...new Set(untracked.map((file) => file.path))], tracked: [...new Set(tracked)] });
+    picked.value = new Set();
+  } catch (problem) {
+    error.value = messageOf(problem);
+  }
+  void refresh();
+}
+function onFilesKey(event: KeyboardEvent): void {
+  const ctrlZ = event.code === "KeyZ" && event.ctrlKey;
+  if ((event.key !== "Delete" && !ctrlZ) || event.altKey || event.metaKey || event.shiftKey || (!ctrlZ && event.ctrlKey)) return;
+  event.preventDefault();
+  if (!event.repeat) void revert();
+}
 const canCommit = computed(() => !committing.value && !describing.value && !!message.value.trim() && files.value.length > 0);
 const noRepo = computed(() => /not a git repository/i.test(failure.value));
 watch(() => files.value.length > 0, (dirty) => emit("dirty", dirty));
@@ -240,10 +277,10 @@ function onMessageKey(event: KeyboardEvent): void {
     <textarea ref="messageBox" v-model="message" class="git-message" rows="3" spellcheck="false" autofocus :readonly="describing" @keydown="onMessageKey"></textarea>
     <div v-if="failure" class="git-error">{{ failure }}</div>
     <div v-if="error" class="git-error">{{ error }}</div>
-    <div class="git-files">
+    <div class="git-files" tabindex="-1" @keydown="onFilesKey">
       <template v-for="group in [{ title: 'Staged Changes', list: staged }, { title: 'Changes', list: changed }]" :key="group.title">
         <div v-if="group.list.length" class="git-group">{{ group.title }}<span class="git-count">{{ group.list.length }}</span></div>
-        <div v-for="file in group.list" :key="group.title + file.path" class="git-file" :class="`git-${file.letter}`" :title="file.path">
+        <div v-for="file in group.list" :key="file.key" class="git-file" :class="[`git-${file.letter}`, { picked: picked.has(file.key) }]" :title="file.path" @click="clickFile(file.key, $event)">
           <span class="git-name">{{ nameOf(file.path) }}</span>
           <span class="git-folder">{{ folderOf(file.path) }}</span>
           <span class="git-letter">{{ file.letter }}</span>
@@ -275,11 +312,12 @@ function onMessageKey(event: KeyboardEvent): void {
 .git-last-edit { box-sizing: border-box; width: 100%; border-color: var(--border); background: var(--yellow); }
 .git-message { resize: vertical; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; color: var(--ink); font: inherit; }
 .git-error { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 6px; padding: 4px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.git-files { overflow: auto; min-height: 0; }
+.git-files { overflow: auto; min-height: 0; outline: none; user-select: none; }
 .git-group { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; font-weight: 600; }
 .git-count { padding: 0 7px; border-radius: 9px; background: #cfe8ff; font-weight: 400; }
 .git-file { display: flex; align-items: baseline; gap: 8px; padding: 1px 4px 1px 14px; border-radius: 4px; white-space: nowrap; }
 .git-file:hover { background: var(--wash); }
+.git-file.picked { background: var(--yellow); }
 .git-name { flex: none; }
 .git-folder { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .git-letter { flex: none; width: 1.2em; text-align: center; font-weight: 600; }

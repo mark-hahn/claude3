@@ -54,7 +54,10 @@ on the laptop, and talks to each backend directly.
   selected session to the pane. Picking a tab focuses its prompt box (the `active` prop), and so does a click on the tab already on show (`focusAsked`) or on a card.
 - `src/components/Git.vue`: the Git button (label counts the changed files, disabled when the project's folder is in no git repo) and its `<dialog>`, which Ctrl-G opens and closes from anywhere on the page (window capture listener, so Monaco's go-to-line never sees it), a
   small VS Code Source Control: message, staged and changed files, Commit (= `add -A`, commit,
-  push on the backend). "Describe changes" in its header (`describeChanges` action) sends the
+  push on the backend). File rows are picked with `src/pick.ts` (keys are the list's letter plus the path, since a file
+  can be in both lists); Delete or Ctrl-Z in the list asks, then `revert` (`git clean -f` the untracked ones, `git restore
+  --source=HEAD --staged --worktree` the rest plus a rename's old path, all as `:(top,literal)` pathspecs since status paths
+  are from the repo's top), and the dialog stays open. "Describe changes" in its header (`describeChanges` action) sends the
   uncommitted diff and untracked files' text to `claude -p` on Opus 5.5 and puts its reply (at most
   2 short sentences) in the message box. Up and Down in the box walk old messages as VS Code's does (`src/messageHistory.ts`, a port of its SCMInput, checked by `npm test`), but the list is the branch's last 100 messages from `git log`, not a store of its own. Above the box is the newest commit's subject, from the same log (`git` action with `log`, sent only while the dialog is open, so on its 2s poll); a click edits it in place and Enter amends and pushes (`reword` action, `rewordHead` in `server/gitGraph.ts`: fetch, refuse if the upstream has commits the branch lacks, `commit --amend --only` keeping the body and leaving staged files out, `push --force-with-lease`, and back to the old commit if the push fails). Status is re-read for every open project, on show or not: on showing, session events (a turn starting or ending),
   and every 2s while the page is visible. Every backend git call sets `GIT_OPTIONAL_LOCKS=0`, so the polling never holds the index lock against a real `git add`.

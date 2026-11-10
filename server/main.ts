@@ -26,6 +26,7 @@
 //        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
 //        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
 //        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
+//        revert { tracked, untracked } -> {} (tracked paths back as HEAD has them, staged and on disk; untracked ones deleted)
 //        describeChanges -> { text } (Opus 5.5's commit message for the uncommitted changes)
 //        snips { text? } -> { text } (the Snips' text, kept on claude-stats; text saves it)
 //        quota { force } -> { readAt, rows, state, apiCosts } (the Quotas pane; force is its Update)
@@ -694,6 +695,16 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (name === "commit") {
     return await commit(project, String(body.message ?? "").trim());
   }
+  if (name === "revert") {
+    // Status paths are from the repo's top, the project may be below it, and a name may hold * or [.
+    const spec = (paths: unknown): string[] => (Array.isArray(paths) ? paths.map((each) => `:(top,literal)${String(each)}`) : []);
+    const untracked = spec(body.untracked);
+    const tracked = spec(body.tracked);
+    if (untracked.length) await git(project, "clean", "-f", "--", ...untracked);
+    // A path HEAD lacks (added, a rename's new name) goes from the index and the disk.
+    if (tracked.length) await git(project, "restore", "--source=HEAD", "--staged", "--worktree", "--", ...tracked);
+    return {};
+  }
   if (name === "run") {
     return { output: await runScript(project, body.restartVite === true) };
   }
@@ -925,15 +936,15 @@ function git(project: Project, ...args: string[]): Promise<string> {
 }
 
 // `git status --porcelain -z`: "XY path" entries split by NULs (X the index, Y the work tree), a
-// rename's or copy's entry followed by its old path.
-function parseStatus(out: string): { x: string; y: string; path: string }[] {
-  const files: { x: string; y: string; path: string }[] = [];
+// rename's or copy's entry followed by its old path (from, so a revert can bring it back).
+function parseStatus(out: string): { x: string; y: string; path: string; from?: string }[] {
+  const files: { x: string; y: string; path: string; from?: string }[] = [];
   const parts = out.split("\0");
   for (let at = 0; at < parts.length; at++) {
     const entry = parts[at] ?? "";
     if (entry.length < 4) continue;
-    files.push({ x: entry.charAt(0), y: entry.charAt(1), path: entry.slice(3) });
-    if ("RC".includes(entry.charAt(0))) at++;
+    const from = "RC".includes(entry.charAt(0)) ? parts[++at] : undefined;
+    files.push({ x: entry.charAt(0), y: entry.charAt(1), path: entry.slice(3), ...(from ? { from } : {}) });
   }
   return files;
 }
