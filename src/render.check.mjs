@@ -10,7 +10,8 @@ import { answerText, renderMarkdown } from "./render.ts";
 import { byName, folderName, foldersBetween, nextTab, sameName } from "./tabList.ts";
 import { wheelZoom } from "./wheelZoom.ts";
 import { fileActions, numberedName } from "../server/files.ts";
-import { layoutGraph } from "../server/gitGraph.ts";
+import { layoutGraph, rewordHead } from "../server/gitGraph.ts";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -242,17 +243,58 @@ const when = "2026-11-09 04:13", under = " ".repeat(when.length + 1);
 const commit = (graph, hash, names, message) => `${graph}\0${hash}\0${when}\0${names}\0${message}`;
 assert.deepEqual(layoutGraph(`${commit("* ", "aaa", " (HEAD -> master)", "two")}\n${commit("* ", "bbb", "", "one")}\n`), [
   { text: `${when} (HEAD -> master)`, hash: "aaa", message: "two" },
-  { text: `${under}two`, hash: "aaa", message: "two" },
+  { text: `${under}two`, hash: "aaa", message: "two", editable: true },
   { text: `${when} one`, hash: "bbb", message: "one" },
 ]);
 // A branching history keeps its other lines, and a row of graph alone has no hash or message.
 assert.deepEqual(layoutGraph(`${commit("* | ", "aaa", " (x)", "m")}\n|/  `), [
   { text: `  | ${when} (x)`, hash: "aaa", message: "m" },
-  { text: `  | ${under}m`, hash: "aaa", message: "m" },
+  { text: `  | ${under}m`, hash: "aaa", message: "m", editable: false },
   { text: "|/", hash: "", message: "" },
 ]);
 // An empty message under names can't upset the layout.
 assert.deepEqual(layoutGraph(`${commit("* ", "aaa", " (x)", "")}\n${commit("* ", "bbb", "", "n")}`).map((row) => row.text), [`${when} (x)`, under, `${when} n`]);
+// Editing the newest commit's message, in a throwaway repo and remote: the body stays, a staged file
+// stays out of the commit, the remote follows, and whatever can't be done changes nothing.
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claude3-reword-"));
+  const remote = path.join(root, "remote.git"), work = path.join(root, "work"), other = path.join(root, "other");
+  const sh = (cwd, ...args) => execFileSync("git", ["-c", "user.name=a", "-c", "user.email=a@b", ...args], { cwd, encoding: "utf8", stdio: "pipe" }).trim();
+  const git = async (...args) => sh(work, ...args);
+  const add = (dir, name) => (fs.writeFileSync(path.join(dir, name), name), sh(dir, "add", name));
+  const head = () => sh(work, "rev-parse", "HEAD");
+  sh(root, "init", "-q", "--bare", "-b", "master", remote);
+  sh(root, "clone", "-q", remote, work);
+  add(work, "a");
+  sh(work, "commit", "-qm", "one");
+  add(work, "b");
+  sh(work, "commit", "-qm", "two", "-m", "the body");
+  sh(work, "push", "-qu", "origin", "HEAD");
+  const older = sh(work, "rev-parse", "HEAD^");
+  add(work, "staged");
+  await rewordHead(git, head(), "edited");
+  assert.equal(sh(work, "log", "-1", "--format=%B"), "edited\n\nthe body");
+  assert.equal(sh(work, "show", "--name-only", "--format=", "HEAD"), "b");
+  assert.equal(sh(work, "diff", "--cached", "--name-only"), "staged");
+  assert.equal(sh(remote, "rev-parse", "master"), head());
+  const pushed = head();
+  await assert.rejects(rewordHead(git, older, "x"), /newest/);
+  const hook = path.join(remote, "hooks", "pre-receive");
+  fs.writeFileSync(hook, "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  await assert.rejects(rewordHead(git, pushed, "x"), /push failed/);
+  assert.equal(head(), pushed);
+  fs.rmSync(hook);
+  sh(root, "clone", "-q", remote, other);
+  add(other, "c");
+  sh(other, "commit", "-qm", "theirs");
+  sh(other, "push", "-q");
+  await assert.rejects(rewordHead(git, pushed, "x"), /Pull first/);
+  assert.equal(head(), pushed);
+  sh(work, "switch", "-qc", "local");
+  await rewordHead(git, pushed, "no upstream");
+  assert.equal(sh(work, "log", "-1", "--format=%s"), "no upstream");
+  fs.rmSync(root, { recursive: true });
+}
 
 // Ctrl-wheel text size: a remembered size comes back, a plain wheel is left alone, up grows and is
 // remembered, down stops at 1px.

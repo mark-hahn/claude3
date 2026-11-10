@@ -21,7 +21,8 @@
 //        deployNeeded -> { script, files } (project files changed since .deployed; see deployNeeded)
 //        clean -> {} (every session to the trash) | git -> { files: [{ x, y, path }] } (git status)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
-//        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
+//        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message, editable }] } (git log --graph)
+//        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
 //        describeChanges -> { text } (Opus 5.5's commit message for the uncommitted changes)
 //        snips { text? } -> { text } (claude2's Snips text, kept on claude2-stats; text saves it)
 //        quota { force } -> { readAt, rows, state, apiCosts } (the Quotas pane; force is its Update)
@@ -45,7 +46,7 @@ import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, swapSessionTranscripts, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
 import { fileActions, upload } from "./files.ts";
-import { GRAPH_ARGS, layoutGraph } from "./gitGraph.ts";
+import { GRAPH_ARGS, layoutGraph, rewordHead } from "./gitGraph.ts";
 import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
 import { checkCosts, QuotaService, speechmaticsCost } from "./quota.ts";
 
@@ -629,6 +630,10 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "gitGraph") {
     return { lines: layoutGraph(await git(project, ...GRAPH_ARGS)) };
+  }
+  if (name === "reword") {
+    await rewordHead((...args) => git(project, ...args), String(body.hash ?? ""), String(body.message ?? "").trim());
+    return {};
   }
   if (name === "commit") {
     return await commit(project, String(body.message ?? "").trim());
