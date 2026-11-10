@@ -57,6 +57,34 @@ running() {
   esac
 }
 
+# pm2's restart output is a 13-column table that wraps in the page's deploy dialog: keep its
+# header and the row for process $1, as a table of only id, name, pid, uptime, restarts, status and mem.
+pm2_rows() {
+  awk -F'│' -v n="$1" '
+    function line(l, m, r,   s, c, j) {
+      s = l
+      for (c = 1; c <= nc; c++) { for (j = 0; j < w[c] + 2; j++) s = s "─"; s = s (c < nc ? m : r) }
+      print s
+    }
+    function row(k,   s, c) {
+      s = "│"
+      for (c = 1; c <= nc; c++) s = s sprintf(" %-*s │", w[c], cell[k, c])
+      print s
+    }
+    { for (i = 2; i < NF; i++) gsub(/^ +| +$/, "", $i) }
+    $3 == "name" { $9 = "restarts" }
+    $3 == "name" || $3 == n {
+      nr++; nc = split("2 3 7 8 9 10 12", col, " ")
+      for (c = 1; c <= nc; c++) { cell[nr, c] = $col[c]; if (length($col[c]) > w[c]) w[c] = length($col[c]) }
+    }
+    END {
+      if (!nr) exit
+      line("┌", "┬", "┐"); row(1)
+      if (nr > 1) { line("├", "┼", "┤"); for (k = 2; k <= nr; k++) row(k) }
+      line("└", "┴", "┘")
+    }'
+}
+
 wait_up() {
   local version
   version=$(wanted "$1")
@@ -105,7 +133,7 @@ for host in "${HOSTS[@]}"; do
     rsync -a --delete --exclude=/version claude-stats/ "$REMOTE:$STATS_DIR/"
     ssh "$REMOTE" "echo $STATS_VERSION > $STATS_DIR/version"
     # node as the pm2 script, as for claude3 below.
-    ssh "$REMOTE" "cd $STATS_DIR && if pm2 describe claude-stats >/dev/null 2>&1; then pm2 restart claude-stats; else pm2 start \$(which node) --name claude-stats --interpreter none --cwd $STATS_DIR -- server.mjs && pm2 save; fi" | { grep -E '│ name |│ claude-stats ' || true; }
+    ssh "$REMOTE" "cd $STATS_DIR && if pm2 describe claude-stats >/dev/null 2>&1; then pm2 restart claude-stats; else pm2 start \$(which node) --name claude-stats --interpreter none --cwd $STATS_DIR -- server.mjs && pm2 save; fi" | pm2_rows claude-stats
     wait_up stats || { ssh "$REMOTE" "pm2 logs claude-stats --nostream --lines 10"; exit 1; }
     ;;
   wsl)
@@ -164,7 +192,7 @@ EOF
     ssh "$REMOTE" "echo $VERSION > $SRV_DIR/version"
     # node itself is the pm2 script (interpreter none), as tv-api runs xvfb-run: pm2's own
     # wrapper would not load a .ts file.
-    ssh "$REMOTE" "cd $SRV_DIR && if pm2 describe claude3 >/dev/null 2>&1; then pm2 restart claude3; else pm2 start \$(which node) --name claude3 --interpreter none --cwd $SRV_DIR -- server/main.ts srv && pm2 save; fi" | { grep -E '│ name |│ claude3 ' || true; }
+    ssh "$REMOTE" "cd $SRV_DIR && if pm2 describe claude3 >/dev/null 2>&1; then pm2 restart claude3; else pm2 start \$(which node) --name claude3 --interpreter none --cwd $SRV_DIR -- server/main.ts srv && pm2 save; fi" | pm2_rows claude3
     wait_up srv || { ssh "$REMOTE" "pm2 logs claude3 --nostream --lines 10"; exit 1; }
     ;;
   *)
