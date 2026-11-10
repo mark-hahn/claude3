@@ -274,7 +274,75 @@ async function move(item: string, folder: string): Promise<{ path: string }> {
   return { path: target };
 }
 
+// A folder's whole contents, links not followed. ponytail: gives up after 2s and says so (partial);
+// a count kept running in the background if big trees ever need the full figure.
+async function folderTotals(folder: string): Promise<{ files: number; folders: number; bytes: number; partial: boolean }> {
+  const totals = { files: 0, folders: 0, bytes: 0, partial: false };
+  const until = Date.now() + 2000;
+  const walk = async (dir: string): Promise<void> => {
+    for (const item of await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+      if (Date.now() > until) {
+        totals.partial = true;
+        return;
+      }
+      const full = path.join(dir, item.name);
+      if (item.isDirectory()) {
+        totals.folders++;
+        await walk(full);
+      } else {
+        totals.files++;
+        totals.bytes += (await fs.promises.lstat(full).catch(() => null))?.size ?? 0;
+      }
+    }
+  };
+  await walk(folder);
+  return totals;
+}
+
+// A uid or gid's name from /etc/passwd or /etc/group; Windows has neither.
+async function idName(file: string, id: number): Promise<string> {
+  const text = await fs.promises.readFile(file, "utf8").catch(() => "");
+  return text.split("\n").map((line) => line.split(":")).find((parts) => parts[2] === String(id))?.[0] ?? "";
+}
+
+const rwx = (mode: number): string => [6, 3, 0].map((shift) => ["r", "w", "x"].map((letter, bit) => ((mode >> shift) & (4 >> bit) ? letter : "-")).join("")).join("");
+
+// The long-press dialog's facts: what lstat and stat say, and a link's target. Times are ms, for the page to show in its own zone.
+async function fileInfo(item: string): Promise<object> {
+  const own = await fs.promises.lstat(item);
+  const link = own.isSymbolicLink() ? await fs.promises.readlink(item) : "";
+  // A link's facts are its target's, or its own when the target is gone.
+  const found = link ? await fs.promises.stat(item).catch(() => own) : own;
+  const kind = found.isDirectory() ? "folder" : found.isFile() ? "file" : found.isFIFO() ? "pipe" : found.isSocket() ? "socket" : found.isCharacterDevice() || found.isBlockDevice() ? "device" : "link to nothing";
+  let text: { lines: number } | { binary: true } | null = null;
+  if (kind === "file" && found.size < MAX_EDITABLE) {
+    const bytes = await fs.promises.readFile(item).catch(() => null);
+    if (bytes) text = bytes.includes(0) ? { binary: true } : { lines: bytes.length ? bytes.toString("latin1").split("\n").length - (bytes.at(-1) === 10 ? 1 : 0) : 0 };
+  }
+  return {
+    kind,
+    link,
+    realPath: await fs.promises.realpath(item).catch(() => ""),
+    size: found.size,
+    text,
+    entries: kind === "folder" ? ((await fs.promises.readdir(item).catch(() => null))?.length ?? null) : null,
+    totals: kind === "folder" ? await folderTotals(item) : null,
+    modified: found.mtimeMs,
+    accessed: found.atimeMs,
+    changed: found.ctimeMs,
+    created: found.birthtimeMs,
+    permissions: `${rwx(found.mode)} (${(found.mode & 0o7777).toString(8).padStart(4, "0")})`,
+    owner: windows ? "" : `${(await idName("/etc/passwd", found.uid)) || "?"} (${found.uid})`,
+    group: windows ? "" : `${(await idName("/etc/group", found.gid)) || "?"} (${found.gid})`,
+    inode: found.ino,
+    hardLinks: found.nlink,
+    device: found.dev,
+    blocks: found.blocks ?? null,
+  };
+}
+
 export const fileActions: Record<string, (body: Record<string, unknown>) => Promise<unknown>> = {
+  fileInfo: (body) => fileInfo(absolute(body.path)),
   listFiles: async (body) => {
     const paths = Array.isArray(body.paths) ? body.paths.map(absolute) : [];
     return { listings: Object.fromEntries(await Promise.all(paths.map(async (folder) => [folder, await listFolder(folder)]))) };

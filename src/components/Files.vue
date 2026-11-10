@@ -6,7 +6,7 @@ let cut: { tab: Tab; path: string; clip: string } | null = null;
 <script setup lang="ts">
 // The Files column, in the Snips' place: a VS Code-style tree on the tab's host or, in file mode,
 // one file in FileEditor. Click a folder to open it, double-click to make it the root; double-click
-// a file to edit it, or ctrl-double-click a .md to read it rendered; alt-click copies the path. One row can be selected, remembered per root: a
+// a file to edit it, or ctrl-double-click a .md to read it rendered; alt-click copies the path; a long press shows all about it. One row can be selected, remembered per root: a
 // click on a file or a ctrl-click on anything toggles it, and the keys act on it (keyDown).
 // Files dragged from Explorer land on the folder under them. The header's path row stands for the
 // root folder, which has no row of its own, for drop.
@@ -18,7 +18,7 @@ import type { FileEntry } from "../../shared/types.ts";
 import { post, postHost, upload } from "../api.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
 import { renderMarkdown } from "../render.ts";
-import { foldersBetween, sameName, withSeparator } from "../tabList.ts";
+import { closeOnBackdrop, foldersBetween, sameName, withSeparator } from "../tabList.ts";
 import { wheelZoom } from "../wheelZoom.ts";
 import FileEditor from "./FileEditor.vue";
 import FolderPicker from "./FolderPicker.vue";
@@ -263,7 +263,88 @@ function remove(row: Row): void {
   if (window.confirm(`Permanently delete ${what}?\n\nThis cannot be undone.`)) void attempt(post(props.tab, "deletePath", { path: row.path }).then(() => select("")));
 }
 
+// A long press on a row: all the backend can say about it, in a dialog. Its facts are server/files.ts's fileInfo.
+type Info = {
+  kind: string; link: string; realPath: string; size: number; text: { lines: number } | { binary: true } | null;
+  entries: number | null; totals: { files: number; folders: number; bytes: number; partial: boolean } | null;
+  modified: number; accessed: number; changed: number; created: number;
+  permissions: string; owner: string; group: string; inode: number; hardLinks: number; device: number; blocks: number | null;
+};
+const infoDialog = ref<HTMLDialogElement>();
+const infoRow = ref<Row | null>(null);
+const info = ref<Info | null>(null);
+const infoProblem = ref("");
+let pressTimer = 0;
+// The click that ends a long press does nothing more.
+let longPressed = false;
+
+function press(row: Row, event: PointerEvent): void {
+  longPressed = false;
+  window.clearTimeout(pressTimer);
+  if (event.button !== 0 || event.altKey || event.ctrlKey || event.shiftKey || renaming.value === row.path) return;
+  pressTimer = window.setTimeout(() => {
+    longPressed = true;
+    select(row.path);
+    void showInfo(row);
+  }, 650);
+}
+const unpress = (): void => window.clearTimeout(pressTimer);
+
+async function showInfo(row: Row): Promise<void> {
+  infoRow.value = row;
+  info.value = null;
+  infoProblem.value = "";
+  infoDialog.value?.showModal();
+  try {
+    const reply = await post<Info>(props.tab, "fileInfo", { path: row.path });
+    if (infoRow.value?.path === row.path) info.value = reply;
+  } catch (problem) {
+    if (infoRow.value?.path === row.path) infoProblem.value = messageOf(problem);
+  }
+}
+
+function sizeText(bytes: number): string {
+  const units = ["KB", "MB", "GB", "TB"];
+  let scaled = bytes;
+  let unit = -1;
+  while (scaled >= 1024 && unit < units.length - 1) {
+    scaled /= 1024;
+    unit++;
+  }
+  return `${bytes.toLocaleString()} bytes${unit < 0 ? "" : ` (${scaled.toFixed(1)} ${units[unit]})`}`;
+}
+// In the page's time zone. 0 is what a file system that doesn't keep the time answers.
+const when = (ms: number): string => (ms ? new Date(ms).toLocaleString([], { dateStyle: "medium", timeStyle: "medium" }) : "not kept here");
+
+const infoRows = computed((): [string, string][] => {
+  const row = infoRow.value;
+  const found = info.value;
+  if (!row) return [];
+  const out: [string, string][] = [["Name", row.name], ["Host", props.tab.host], ["Path", row.path]];
+  if (!found) return infoProblem.value ? out : [...out, ["", "Reading…"]];
+  out.push(["Type", found.link ? `${found.kind}, by a symbolic link to ${found.link}` : found.kind]);
+  if (found.realPath && found.realPath !== row.path) out.push(["Real path", found.realPath]);
+  if (found.totals) {
+    const { files, folders, bytes, partial } = found.totals;
+    out.push(["Size", `${sizeText(bytes)} in ${files.toLocaleString()} files and ${folders.toLocaleString()} folders${partial ? ", at least: counting stopped after 2s" : ""}`]);
+    if (found.entries !== null) out.push(["Directly inside", `${found.entries.toLocaleString()} items`]);
+  } else {
+    out.push(["Size", sizeText(found.size)]);
+  }
+  if (found.text) out.push(["Contents", "binary" in found.text ? "binary" : `text, ${found.text.lines.toLocaleString()} lines`]);
+  out.push(["Modified", when(found.modified)], ["Accessed", when(found.accessed)], ["Changed", when(found.changed)], ["Created", when(found.created)]);
+  out.push(["Permissions", found.permissions]);
+  if (found.owner) out.push(["Owner", found.owner], ["Group", found.group]);
+  out.push(["Inode", String(found.inode)], ["Hard links", String(found.hardLinks)], ["Device", String(found.device)]);
+  if (found.blocks !== null) out.push(["Blocks", String(found.blocks)]);
+  return out;
+});
+
 function clickRow(row: Row, event: MouseEvent): void {
+  if (longPressed) {
+    longPressed = false;
+    return;
+  }
   if (event.shiftKey) return;
   if (event.altKey) return copy(row.path, event.currentTarget as HTMLElement);
   if (event.ctrlKey || !row.dir) return select(selected.value === row.path ? "" : row.path);
@@ -438,6 +519,10 @@ onBeforeUnmount(() => window.clearInterval(poller));
           :data-drop="row.dir ? row.path : undefined"
           :title="row.path"
           role="button"
+          @pointerdown="press(row, $event)"
+          @pointerup="unpress"
+          @pointercancel="unpress"
+          @pointerleave="unpress"
           @click="clickRow(row, $event)"
           @dblclick="doubleClickRow(row, $event)"
         >
@@ -449,6 +534,13 @@ onBeforeUnmount(() => window.clearInterval(poller));
         </div>
       </div>
       <FolderPicker ref="picker" :host="tab.host" @pick="goTo" />
+      <dialog ref="infoDialog" class="files-info" @pointerdown="closeOnBackdrop" @wheel.stop @close="treeArea?.focus()">
+        <table>
+          <tr v-for="[label, value] in infoRows" :key="label"><th>{{ label }}</th><td>{{ value }}</td></tr>
+        </table>
+        <div v-if="infoProblem" class="files-note">{{ infoProblem }}</div>
+        <form method="dialog"><button autofocus>OK</button></form>
+      </dialog>
     </div>
   </div>
 </template>
@@ -483,5 +575,12 @@ onBeforeUnmount(() => window.clearInterval(poller));
 .files-chevron, .files-icon { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
 .files-chevron.open { transform: rotate(90deg); }
 .files-icon { margin: 0 5px 0 2px; }
+.files-info { max-width: 80vw; max-height: 80vh; padding: 12px 16px; border: 1px solid #000; border-radius: 8px; color: #000; font-size: 14px; }
+.files-info table { border-collapse: collapse; margin-bottom: 10px; }
+.files-info th { padding: 2px 16px 2px 0; text-align: left; vertical-align: top; white-space: nowrap; }
+.files-info td { padding: 2px 0; overflow-wrap: anywhere; }
+.files-info .files-note { margin-bottom: 10px; }
+.files-info form { text-align: right; }
+.files-info button { font-size: 14px; }
 .files-rename { flex: 1; min-width: 120px; padding: 0 4px; border: 1px solid #9a9a93; border-radius: 4px; background: #fff; color: var(--ink); font: inherit; }
 </style>
