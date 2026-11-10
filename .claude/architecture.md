@@ -223,9 +223,9 @@ on the laptop, and talks to each backend directly.
   under its `set -e`.
 - **Files.** The tree's root is `Tab.roots[Tab.rootIdx]` (kept in `projects.json`, `setRoots`, back
   through a `projects` event) or else the project folder. Back and Fwd only move the index; a new root drops the entries past it first. Open folders are per tab in localStorage
-  (`filesOpen:<tab>`), and one selected row per root (`filesSelected:<tab>`), scrolled into view on a new root, on opening the column or leaving file mode, and when a key puts the focus on the tree (`focusTree`), but not on a mouse press, which would move the row being clicked. Every open folder is listed again every 2s, so outside
+  (`filesOpen:<tab>`), and the selected rows per root (`filesSelected:<tab>`, a list; click, ctrl-click and shift-click as in `src/pick.ts`, the path row ending in a yellow `*` for more than one), the first scrolled into view on a new root, on opening the column or leaving file mode, and when a key puts the focus on the tree (`focusTree`), but not on a mouse press, which would move the row being clicked. Every open folder is listed again every 2s, so outside
   changes appear. The keys (`keyDown`) work only while focus is in the tree's part of the column, outside its text boxes and
-  the Path dialog; a selection out of sight counts as none for them. Ctrl-C puts the selection on the real
+  the Path dialog. All but Delete need exactly one row selected and on show (so do New and Prj); Delete lists what it will remove below the root and refuses, in an alert, while any selected row is out of sight. Ctrl-C puts the selection on the real
   Windows clipboard with `Set-Clipboard`, Ctrl-V reads `Get-Clipboard -Format FileDropList` and copies. Ctrl-X is a
   Ctrl-C remembered page-wide (`cut`, with the clipboard's name for it): if that is still all the clipboard holds, the next Ctrl-V
   in any tab moves it (`movePath` on its own host, else paste then `deletePath`). The clipboard is on the laptop, so a srv tab asks

@@ -6,8 +6,9 @@ let cut: { tab: Tab; path: string; clip: string } | null = null;
 <script setup lang="ts">
 // The Files column, in the Snips' place: a VS Code-style tree on the tab's host or, in file mode,
 // one file in FileEditor. Click a folder to open it, double-click to make it the root; double-click
-// a file to edit it, or ctrl-double-click a .md to read it rendered; alt-click copies the path; a long press shows all about it. One row can be selected, remembered per root: a
-// click on a file or a ctrl-click on anything toggles it, and the keys act on it (keyDown).
+// a file to edit it, or ctrl-double-click a .md to read it rendered; alt-click copies the path; a long press shows all about it. Rows can be selected, remembered per root:
+// a click selects just that row (and opens or closes a folder, unless more than one was selected), ctrl-click toggles one,
+// shift-click adds the run from the last one (src/pick.ts). The keys act on them (keyDown); all but Delete need exactly one.
 // Files dragged from Explorer land on the folder under them. The header's path row stands for the
 // root folder, which has no row of its own, for drop.
 // The tree holds only what the backend last said: each open folder is asked for again every 2s.
@@ -17,6 +18,7 @@ import type { HostName, Tab } from "../../shared/config.ts";
 import type { FileEntry } from "../../shared/types.ts";
 import { post, postHost, upload } from "../api.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
+import { pick } from "../pick.ts";
 import { renderMarkdown } from "../render.ts";
 import { closeOnBackdrop, foldersBetween, sameName, withSeparator } from "../tabList.ts";
 import { wheelZoom } from "../wheelZoom.ts";
@@ -38,13 +40,18 @@ const listings = reactive(new Map<string, FileEntry[]>());
 const openKey = `filesOpen:${props.tab.id}`;
 const selectKey = `filesSelected:${props.tab.id}`;
 const opened = reactive(new Set<string>(JSON.parse(localStorage.getItem(openKey) ?? "[]") as string[]));
-// Each root's selected path. A selected row may be out of sight, or gone from the disk.
-const selections = reactive<Record<string, string>>(JSON.parse(localStorage.getItem(selectKey) ?? "{}"));
+// Each root's selected paths. A selected row may be out of sight, or gone from the disk.
+// flat(): a root stored before multiple selection holds one path, not a list.
+const stored = JSON.parse(localStorage.getItem(selectKey) ?? "{}") as Record<string, string | string[]>;
+const selections = reactive<Record<string, string[]>>(Object.fromEntries(Object.entries(stored).map(([folder, paths]) => [folder, [paths].flat()])));
 watch(() => [...opened], (folders) => localStorage.setItem(openKey, JSON.stringify(folders)));
-watch(selections, (all) => localStorage.setItem(selectKey, JSON.stringify(all)));
-const selected = computed(() => selections[root.value] ?? "");
-function select(path: string): void {
-  if (path) selections[root.value] = path;
+watch(selections, (all) => localStorage.setItem(selectKey, JSON.stringify(all)), { deep: true });
+const selected = computed(() => new Set(selections[root.value] ?? []));
+// Where shift-click's run starts: the last row selected.
+let anchor = "";
+function select(...paths: string[]): void {
+  anchor = paths.at(-1) ?? "";
+  if (paths.length) selections[root.value] = paths;
   else delete selections[root.value];
 }
 
@@ -74,10 +81,14 @@ const rows = computed(() => {
 });
 type Row = (typeof rows.value)[number];
 
-// What the keys act on: a selection out of sight counts as none.
-const selectedRow = computed(() => rows.value.find((row) => row.path === selected.value));
-// Its path below the root.
-const selectedBelowRoot = computed(() => selectedRow.value?.path.slice(withSeparator(root.value).length) ?? "");
+// The selected rows on show, in the tree's order.
+const selectedRows = computed(() => rows.value.filter((row) => selected.value.has(row.path)));
+const below = (path: string): string => path.slice(withSeparator(root.value).length);
+// What the one-row actions act on: none with more than one selected, or with the one out of sight.
+const selectedRow = computed(() => (selected.value.size === 1 ? selectedRows.value[0] : undefined));
+const many = computed(() => selected.value.size > 1);
+// Its path below the root, or a * for more than one.
+const selectedBelowRoot = computed(() => (many.value ? "*" : selectedRow.value ? below(selectedRow.value.path) : ""));
 // The folders that have to be open for a row under the root to show.
 const wayTo = (path: string): string[] => (foldersBetween(root.value, path) ?? []).slice(0, -1);
 // Where New and paste land: in the selected folder, beside the selected file, else in the root.
@@ -153,7 +164,7 @@ function selectAndReveal(path: string): Promise<void> {
 }
 
 // After any listing under way has landed. A selection in a closed folder stays out of sight.
-const showSelection = (): Promise<void> => reveal(selected.value, []);
+const showSelection = (): Promise<void> => reveal([...selected.value][0] ?? "", []);
 
 // Not from the element's focus event: a mouse press also focuses the tree, and scrolling then would
 // move the row being clicked.
@@ -165,17 +176,17 @@ function focusTree(): void {
 // The tree as a collapse that kept the selection left it. Opening a folder or selecting another
 // row makes the tree differ from this, which ends the partially collapsed state.
 let partiallyCollapsed = "";
-const treeState = (): string => JSON.stringify([root.value, selected.value, [...opened]]);
+const treeState = (): string => JSON.stringify([root.value, [...selected.value], [...opened]]);
 
 // With a selection, the first press closes all but the way to it, even if that changes nothing.
 // The next press, with the tree as that one left it, closes everything and drops the selection.
 function collapse(): void {
-  const keep = treeState() === partiallyCollapsed ? "" : selected.value;
+  const keep = treeState() === partiallyCollapsed ? [] : [...selected.value];
   opened.clear();
-  select(keep);
+  select(...keep);
   partiallyCollapsed = "";
-  if (keep) {
-    void reveal(keep, wayTo(keep));
+  if (keep.length) {
+    void reveal(keep[0]!, keep.flatMap(wayTo));
     partiallyCollapsed = treeState();
   }
 }
@@ -258,9 +269,21 @@ async function paste(folder: string): Promise<void> {
   await selectAndReveal(reply.path);
 }
 
-function remove(row: Row): void {
-  const what = row.dir ? `the folder ${row.path} and everything in it` : row.path;
-  if (window.confirm(`Permanently delete ${what}?\n\nThis cannot be undone.`)) void attempt(post(props.tab, "deletePath", { path: row.path }).then(() => select("")));
+// Every selected row, but refused while any is out of sight: what is deleted must be on show.
+// Rows inside a selected folder go with it.
+function remove(): void {
+  const shown = selectedRows.value;
+  const hidden = [...selected.value].filter((path) => !shown.some((row) => row.path === path));
+  if (hidden.length) {
+    window.alert(`Nothing deleted: these selected items are out of sight, in a closed folder or gone:\n\n${hidden.map(below).join("\n")}\n\nOpen their folders or change the selection.`);
+    return;
+  }
+  const doomed = shown.filter((row) => !shown.some((folder) => folder.dir && foldersBetween(folder.path, row.path)));
+  const list = doomed.map((row) => (row.dir ? `${below(row.path)}  (folder, and everything in it)` : below(row.path))).join("\n");
+  if (!window.confirm(`Permanently delete ${doomed.length === 1 ? "this" : `these ${doomed.length}`}?\n\n${list}\n\nThis cannot be undone.`)) return;
+  void attempt((async () => {
+    for (const row of doomed) await post(props.tab, "deletePath", { path: row.path });
+  })().finally(() => select()));
 }
 
 // A long press on a row: all the backend can say about it, in a dialog. Its facts are server/files.ts's fileInfo.
@@ -345,9 +368,15 @@ function clickRow(row: Row, event: MouseEvent): void {
     longPressed = false;
     return;
   }
-  if (event.shiftKey) return;
   if (event.altKey) return copy(row.path, event.currentTarget as HTMLElement);
-  if (event.ctrlKey || !row.dir) return select(selected.value === row.path ? "" : row.path);
+  const wasMany = many.value;
+  const picked = new Set(selected.value);
+  const paths = rows.value.map((each) => each.path);
+  // With the run's start out of sight, shift-click adds just this row.
+  const next = event.shiftKey && !paths.includes(anchor) ? (picked.add(row.path), row.path) : pick(picked, paths, row.path, anchor, event);
+  select(...picked);
+  anchor = next;
+  if (event.ctrlKey || event.shiftKey || !row.dir || wasMany) return;
   if (!opened.delete(row.path)) {
     opened.add(row.path);
     void refresh();
@@ -364,11 +393,11 @@ function keyDown(event: KeyboardEvent): void {
   const picked = window.getSelection();
   if (key === "ctrl+c" && picked && !picked.isCollapsed && area.contains(picked.anchorNode)) return;
   if (key === "backspace") stepRoot(-1);
-  else if (key === "ctrl+v") {
+  else if (key === "delete" && selected.value.size) remove();
+  else if (key === "ctrl+v" && !many.value) {
     const folder = landing.value;
     clipboardJob(folder, () => paste(folder));
   } else if (!row) return;
-  else if (key === "delete") remove(row);
   else if (key === "f2") startRename(row);
   else if (key === "ctrl+c") copyRow(row, false);
   else if (key === "ctrl+x") copyRow(row, true);
@@ -424,7 +453,7 @@ function moved(from: string, to: string): void {
   const folders = [...opened].map(follow);
   opened.clear();
   folders.forEach((folder) => opened.add(folder));
-  for (const [folder, item] of Object.entries(selections)) selections[folder] = follow(item);
+  for (const [folder, items] of Object.entries(selections)) selections[folder] = items.map(follow);
 }
 
 function finishRename(row: Row, commit: boolean): void {
@@ -501,7 +530,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
         <button title="Close all folders but the way to the selection; pressed again, close those too and drop the selection" aria-label="Collapse" @click="collapse">
           <svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="10" height="10" rx="1" /><path d="M4 9.5h5M4.5 1.5h10v10" /></svg>
         </button>
-        <button title="New empty file in the selected folder, beside the selected file, or in the root" @click="newFile">New</button>
+        <button title="New empty file in the selected folder, beside the selected file, or in the root" :disabled="many" @click="newFile">New</button>
         <button title="New project from the selected folder" :disabled="!selectedRow?.dir" @click="newProjectAt(tab.host, selectedRow!.path)">Prj</button>
         <button title="Show a folder in the tree" @click="picker?.open(root)">Path</button>
         <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="focusTree()" />
@@ -514,7 +543,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
           v-for="row in rows"
           :key="row.path"
           class="files-row"
-          :class="{ drop: dragTarget === row.path, working: working === row.path, selected: selected === row.path }"
+          :class="{ drop: dragTarget === row.path, working: working === row.path, selected: selected.has(row.path) }"
           :data-path="row.path"
           :data-drop="row.dir ? row.path : undefined"
           :title="row.path"
