@@ -6,6 +6,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { typedPrompt, type ClaudeSession, type RunningStatus, type ServerEvent } from "../../shared/types.ts";
 import { authNeeded, listen, post, postHost } from "../api.ts";
+import { beep } from "../beep.ts";
 import { copy } from "../copy.ts";
 import { keepOpen } from "../keepOpen.ts";
 import { pick } from "../pick.ts";
@@ -104,6 +105,7 @@ function onEvent(event: ServerEvent): void {
     // tag: a second page open on the same browser replaces this one's notification, not adds to it.
     if (turn?.finished && before?.id === turn.id && !before.finished && !document.hasFocus() && Notification.permission === "granted") {
       new Notification(`${props.tab.label}: turn finished`, { body: event.session.name, tag: turn.id });
+      beep();
     }
     if (at >= 0) sessions[at] = event.session;
     else sessions.unshift(event.session);
