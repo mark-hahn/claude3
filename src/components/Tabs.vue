@@ -173,7 +173,7 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
 <!-- Not scoped: FolderPicker's dialog wears these too, wherever it is used. -->
 <style>
 /* With the row's 6px gap, twice the space the tabs have between them. */
-.tabs-toggle { margin-right: 6px; }
+.tabs-toggle { margin-right: 6px; color: #666; }
 .tabs-toggle svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
 .tabs-pop { width: min(280px, 92vw); max-height: 86vh; padding: 12px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: var(--ink); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2); }
 .tabs-pop[open] { display: flex; flex-direction: column; gap: 10px; }
