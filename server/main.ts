@@ -31,6 +31,7 @@
 //        speechmatics { month, rescan } -> { payload } (the tv project's Speechmatics spend)
 //        login -> { url } (starts this host's `claude auth login`) | loginCode { code } -> {} | loginCancel -> {}
 //        loginResult -> { done, account, error } (the page polls this; error is "" on success)
+//        fakeAuthNeeded -> {} (a test: raises this host's expired-login flag)
 //   POST /upload?folder=&name= body: the file's bytes -> {} (a file dropped on the Files tree)
 //   GET  /version             -> the deployed version, the hash ./deploy wrote ("dev" in the repo)
 //   GET  anything else         -> the built page in dist/, when there is one (the WSL backend's)
@@ -574,7 +575,7 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     return { payload: await speechmaticsCost(String(body.month ?? ""), body.rescan === true, log) };
   }
   if (name === "login") {
-    return { url: await startLogin(DATA_DIR, () => setAuthNeeded(false)) };
+    return { url: await startLogin(DATA_DIR, () => setAuthNeeded(false), log) };
   }
   if (name === "loginCode") {
     sendLoginCode(String(body.code ?? "").trim());
@@ -585,6 +586,11 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "loginCancel") {
     cancelLogin();
+    return {};
+  }
+  // A test of Re-Auth: raises this host's flag as an expired login would, with the login still good.
+  if (name === "fakeAuthNeeded") {
+    setAuthNeeded(true);
     return {};
   }
   const project = projects.get(String(body.tab));

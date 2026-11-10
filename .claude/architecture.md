@@ -188,6 +188,11 @@ on the laptop, and talks to each backend directly.
   and code: `login` gives the URL, `loginCode` sends the code, and `loginResult` is polled once a
   second (Firefox gives up on a response after 5 minutes). The poll also ends when the CLI's own
   browser tab finished the sign-in with no code. A sign-in or an answered turn clears that host's flag.
+  Each sign-in's CLI runs with `DEBUG=1` (its own log lands in `~/.claude/debug/`), everything it prints
+  goes to the backend's log as `login ...` lines, and a pasted code gets 2 minutes before the CLI is stopped.
+  A flag coming up opens every tab's hidden sidebar, where the button and its message are. To test it
+  while signed in, ctrl-click the sidebar's session counts: `fakeAuthNeeded` raises the real flag on that tab's host
+  (one host, as a real expiry is; a skipped host keeps its flag until a sign-in or an answered turn there).
 - **Deploy warning.** Before sending a prompt the pane asks `deployNeeded`: the project's
   `./deploy` (or `./run` when it has none) touches `.deployed` (gitignored) when it finishes, and
   any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Deploy

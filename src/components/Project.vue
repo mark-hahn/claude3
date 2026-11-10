@@ -5,7 +5,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { typedPrompt, type ClaudeSession, type RunningStatus, type ServerEvent } from "../../shared/types.ts";
-import { authNeeded, listen, post } from "../api.ts";
+import { authNeeded, listen, post, postHost } from "../api.ts";
 import { copy } from "../copy.ts";
 import { keepOpen } from "../keepOpen.ts";
 import { pick } from "../pick.ts";
@@ -277,6 +277,12 @@ function report(error: unknown): void {
   window.alert(error instanceof Error ? error.message : String(error));
 }
 
+// A test of Re-Auth: ctrl-click on the counts raises this tab's host's flag, as an expired login
+// would. One host only, as a real expiry is: a flag on every host stayed up on each one skipped.
+function fakeExpiry(): void {
+  void postHost(props.tab.host, "fakeAuthNeeded", {}).catch(report);
+}
+
 // A long press renames; a plain click opens; alt-click copies the name. On the trash list every
 // click opens the card, whatever the modifier; alt there also copies and leaves the picks alone.
 let pressTimer = 0;
@@ -363,6 +369,8 @@ watch(() => props.focusAsked, () => props.active && focusPrompt());
 watch(() => props.sidebarAsked, () => props.active && toggleSidebar());
 // A project closed and opened again comes back with its sidebar open.
 watch(() => props.tab.open, () => (sidebarHidden.value = false));
+// Re-Auth and its message are in the sidebar, so an expired login opens it, in every tab.
+watch(expired, (hosts) => hosts && (sidebarHidden.value = false));
 
 let stopListening = (): void => undefined;
 onMounted(() => {
@@ -394,7 +402,7 @@ onBeforeUnmount(() => {
           <button v-else class="clean" title="Move every session to the trash" :disabled="!visible.some((session) => session.turns.length)" @click="clean">Clean</button>
           <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="toggleTrash">Trash</button>
           <div class="row">
-            <span class="counts" title="Active sessions / trashed sessions">{{ counts.active }}/{{ counts.trashed }}</span>
+            <span class="counts" title="Active sessions / trashed sessions. Ctrl-click: fake an expired login on this tab's host, to test Re-Auth" @click.ctrl="fakeExpiry">{{ counts.active }}/{{ counts.trashed }}</span>
             <ReAuth :needed="!!expired" @closed="focusPrompt" />
           </div>
         </div>
