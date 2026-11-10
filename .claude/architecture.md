@@ -121,7 +121,9 @@ on the laptop, and talks to each backend directly.
   sets up what keeps it running: systemd `claude3` on WSL, the `claude3` value of the HKCU Run
   key on Windows (at logon), pm2 `claude3` on hahnca.com. It stamps each copy with a `version` file, the hash of `server/`
   and `shared/`, which the backend answers at `GET /version`; `deploy --if-stale` redeploys only
-  the hosts that don't answer with the repo's hash.
+  the hosts that don't answer with the repo's hash. The WSL deploy builds the page first, so a
+  type error anywhere in `src/` fails it. A failed host leaves `.deployed` unstamped (the deploy
+  warning stays up) and makes `deploy --if-stale`, and so `run`, exit 1.
 - `run`: stops this repo's vite if one is running (it holds port 5310), `deploy --if-stale`, then
   starts vite detached (`setsid nohup`, output in `vite.log`), waits for its ready line, and exits. So starting the page also restarts any backend whose
   server code changed, cutting that backend's running turns. Page-only changes never restart one.
@@ -207,8 +209,9 @@ on the laptop, and talks to each backend directly.
   (HEAD's `%ct` and subject); HEAD newer than the last turn's `createdAt` opens a `<dialog>`:
   New session (the prompt starts one, as from the draft, and leaves the running one alone),
   Continue or Cancel. The "/compact" auto-send (`keepDraft`) skips both checks.
+  Either check failing (a stale backend answers "No such session.") shows an alert, then the prompt is sent.
 - **"r".** A prompt of just `r`, or the footer's Run button (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
-  project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
+  project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. A failed ./run (non-zero exit, or no result) also opens a red-bordered error dialog on top (`.run-error`): the failure line plus the output's `!!` lines, kept in sessionStorage (`runFail:`) until its OK. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
   (`KillMode=process`), outside claude3.service's cgroup, so claude3's own `./run` restarting
   this backend kills neither the script nor the vite it leaves running. The page's request
   dies with the backend then, so the script's output and exit code go to

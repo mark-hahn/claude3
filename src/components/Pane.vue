@@ -23,6 +23,8 @@ const emit = defineEmits<{ started: [sessionId: string]; deployDue: [due: boolea
 const historyEl = ref<HTMLElement>();
 const runPopEl = ref<HTMLDialogElement>();
 const runText = ref("");
+const runErrorEl = ref<HTMLDialogElement>();
+const runErrorText = ref("");
 const deployPopEl = ref<HTMLDialogElement>();
 const deployText = ref("");
 const commitPopEl = ref<HTMLDialogElement>();
@@ -524,6 +526,21 @@ function putRun(text: string): void {
   if (!props.active) return;
   if (!dialog.open) dialog.showModal();
   if (following) void nextTick(() => (dialog.scrollTop = dialog.scrollHeight));
+  // A failed ./run also gets a dialog of its own on top, since the output's is easy to OK unread.
+  const failure = sessionStorage.getItem(runFailKey());
+  if (failure && !runErrorEl.value!.open) {
+    runErrorText.value = failure;
+    runErrorEl.value!.showModal();
+  }
+}
+// What the error dialog says: the failure, then the output's "!!" lines (claude3's deploy marks a
+// failed host with them). Kept until its OK, like the output.
+const runFailKey = (): string => `runFail:${props.tab.id}`;
+function runErrorClosed(): void {
+  sessionStorage.removeItem(runFailKey());
+}
+function runFailure(head: string, output = ""): string {
+  return [head, ...output.split("\n").filter((line) => line.startsWith("!!"))].join("\n");
 }
 // While a ./run goes on, the dialog shows its output so far. OK hides that (the run carries on)
 // and the result opens the dialog again.
@@ -531,9 +548,10 @@ let runLive = false;
 function showRunLive(output: string): void {
   if (runLive) putRun(`./run in ${props.tab.label} running...\n\n${output}`);
 }
-function showRun(text: string): void {
+function showRun(text: string, failure = ""): void {
   runLive = false;
   sessionStorage.setItem(runKey(), text);
+  if (failure) sessionStorage.setItem(runFailKey(), failure);
   putRun(text);
   checkDeploySoon();
 }
@@ -559,6 +577,7 @@ const runWaitKey = (): string => `runWait:${props.tab.id}`;
 // takes focus, so the Enter that dismisses the result can't land on it and run ./run again.
 async function runScript(restartVite: boolean): Promise<void> {
   sessionStorage.setItem(runWaitKey(), "1");
+  sessionStorage.removeItem(runFailKey());
   runLive = true;
   showRunLive("");
   // A "done" here is the previous ./run's, not cleared yet: only the answer below ends this one.
@@ -579,7 +598,8 @@ async function runScript(restartVite: boolean): Promise<void> {
     // and the script runs on, so its result is fetched once the backend is back.
     if (error instanceof TypeError) return awaitRun();
     sessionStorage.removeItem(runWaitKey());
-    showRun(`./run in ${props.tab.label}: ${error instanceof Error ? error.message : String(error)}`);
+    const message = error instanceof Error ? error.message : String(error);
+    showRun(`./run in ${props.tab.label}: ${message}`, runFailure(`./run in ${props.tab.label}: ${message.split("\n")[0]}`, message));
   } finally {
     window.clearInterval(follow);
   }
@@ -595,10 +615,12 @@ async function awaitRun(): Promise<void> {
       continue;
     }
     sessionStorage.removeItem(runWaitKey());
-    return showRun(`./run in ${props.tab.label} ${result.code === 0 ? "finished" : `failed (exit ${result.code})`}.\n\n${result.output}`);
+    const head = `./run in ${props.tab.label} ${result.code === 0 ? "finished" : `failed (exit ${result.code})`}.`;
+    return showRun(`${head}\n\n${result.output}`, result.code === 0 ? "" : runFailure(head, result.output));
   }
   sessionStorage.removeItem(runWaitKey());
-  showRun(`./run in ${props.tab.label}: no result after 5 minutes.`);
+  const head = `./run in ${props.tab.label}: no result after 5 minutes.`;
+  showRun(head, head);
 }
 
 // Before a prompt: when files changed since the project's ./deploy (or ./run) last finished, a
@@ -609,8 +631,8 @@ async function deployOk(): Promise<boolean> {
   try {
     check = await post<{ script: string; files: string[] }>(props.tab, "deployNeeded", {});
   } catch (error) {
-    // An older backend answers this unknown action with "No such session."; nothing to stop for.
-    console.warn("deployNeeded check failed:", error);
+    // An older backend answers this unknown action with "No such session.": a sign it needs a deploy.
+    report(new Error(`Couldn't check whether ${props.tab.label} needs a deploy (the prompt is sent anyway): ${error instanceof Error ? error.message : String(error)}`));
     return true;
   }
   if (!check.files.length) return true;
@@ -634,7 +656,7 @@ async function commitChoice(): Promise<"new" | "continue" | ""> {
   try {
     head = await post<{ at: number; subject: string }>(props.tab, "lastCommit", {});
   } catch (error) {
-    console.warn("lastCommit check failed:", error);
+    report(new Error(`Couldn't check ${props.tab.label} for a commit since this conversation's last prompt (the prompt is sent anyway): ${error instanceof Error ? error.message : String(error)}`));
     return "continue";
   }
   if (head.at <= last.createdAt) return "continue";
@@ -1146,6 +1168,10 @@ onBeforeUnmount(() => {
       <pre>{{ runText }}</pre>
       <form method="dialog"><button autofocus>OK</button></form>
     </dialog>
+    <dialog ref="runErrorEl" class="run-pop run-error" @close="runErrorClosed">
+      <pre>{{ runErrorText }}</pre>
+      <form method="dialog"><button autofocus>OK</button></form>
+    </dialog>
     <dialog ref="deployPopEl" class="run-pop">
       <pre>{{ deployText }}</pre>
       <form method="dialog"><button value="deploy">Deploy</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
@@ -1291,6 +1317,7 @@ onBeforeUnmount(() => {
 .pane .run-pop pre { margin: 0 0 10px; white-space: pre-wrap; font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .pane .run-pop form { text-align: right; }
 .pane .run-pop button { font-size: 14px; }
+.pane .run-error { margin-top: 20vh; border: 3px solid #c00; }
 /* The icons leading a prompt, one per picture, in the prompt box and on a bar. */
 .pane .img-char { cursor: pointer; }
 /* The image popup, claude2's Image pane as a dialog. Flex only while open, or it would show closed. */

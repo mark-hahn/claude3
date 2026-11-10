@@ -75,6 +75,7 @@ if [ "${1:-}" = "--if-stale" ]; then
   shift
   HOSTS=("$@")
   [ ${#HOSTS[@]} -gt 0 ] || HOSTS=("${ALL[@]}")
+  failed=0
   for host in "${HOSTS[@]}"; do
     now=$(running "$host")
     if [ "$now" = "$(wanted "$host")" ]; then
@@ -83,8 +84,10 @@ if [ "${1:-}" = "--if-stale" ]; then
     fi
     echo "== $host backend running ${now:-nothing}; deploying $(wanted "$host")"
     # Its own process, so set -e stops that host's steps and the other hosts still get theirs.
-    DEPLOY_NESTED=1 "$0" "$host" || echo "!! $host deploy failed" >&2
+    DEPLOY_NESTED=1 "$0" "$host" || { echo "!! $host deploy failed" >&2; failed=1; }
   done
+  # A failed host leaves the stamp old, so the page's deploy warning and Run highlight stay up.
+  [ $failed = 1 ] && exit 1
   echo "${SOURCES[@]}" > .deployed # claude3's page warns before a prompt when those files are newer than this
   exit 0
 fi

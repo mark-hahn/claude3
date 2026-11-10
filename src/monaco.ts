@@ -245,7 +245,7 @@ function enterLines(editor: Editor): void {
 
 // One undo step, each caret landing after its new text. Unlike Monaco's own typing, an edit
 // doesn't scroll to the caret.
-export function typeEdits(editor: Editor, edits: monaco.editor.IIdentifiedSingleEditOperation[]): void {
+export function typeEdits(editor: monaco.editor.ICodeEditor, edits: monaco.editor.IIdentifiedSingleEditOperation[]): void {
   editor.pushUndoStop();
   editor.executeEdits("claude2", edits, (undo) => undo.map(({ range }) => monaco.Selection.fromPositions(monaco.Range.lift(range).getEndPosition())));
   editor.pushUndoStop();

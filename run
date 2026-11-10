@@ -14,13 +14,15 @@ cd "$(dirname "$0")"
 vite="$PWD/node_modules/.bin/vite"
 # The last thing printed, so deploy is told to leave it to this script.
 trap 'echo; echo "====== ENDED ======"' EXIT
+# A failed host still lets the page start, but the exit code says so (the Run dialog shows "failed").
 DEPLOY_NESTED=1 ./deploy --if-stale
+deployed=$?
 if [[ $RESTART_VITE == 1 ]] && pkill -f "$vite"; then
   for _ in {1..25}; do pgrep -f "$vite" >/dev/null || break; sleep 0.2; done
 fi
 if pgrep -f "$vite" >/dev/null; then
   echo "vite already running (hot update); left alone"
-  exit 0
+  exit $deployed
 fi
 # Started by its absolute path, so its command line is what the pgrep and pkill above look for.
 setsid nohup "$vite" "$@" > vite.log 2>&1 < /dev/null &
@@ -30,3 +32,4 @@ for _ in {1..100}; do
   sleep 0.2
 done
 cat vite.log
+exit $deployed
