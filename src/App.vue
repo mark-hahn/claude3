@@ -34,6 +34,8 @@ watch([toShow, sorted], () => {
 // Bumped when the Tabs dialog closes (a tab picked behind the dialog couldn't take the cursor then)
 // and on a click on a tab, which may be the one already on show.
 const focusAsked = ref(0);
+// Bumped by the tab strip's sidebar button; the Project on show toggles its sidebar, as Ctrl-B does.
+const sidebarAsked = ref(0);
 // Ctrl-click closes the project, as a click on its name in the Tabs dialog does. The tab goes when
 // the backend's new list comes down; a project with a session running is refused.
 function clickTab(tab: Tab, event: MouseEvent): void {
@@ -91,6 +93,9 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
 <template>
   <div class="app">
     <nav class="tabs">
+      <button class="tab tabs-toggle sidebar-toggle" title="Hide or show the session list (Ctrl-B)" aria-label="Sidebar" :disabled="!currentTab" @mousedown.prevent @click="sidebarAsked++">
+        <svg viewBox="0 0 20 16" width="20" height="16" aria-hidden="true"><rect x="1" y="1.5" width="18" height="13" rx="3" /><path d="M7.5 1.5H4a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3h3.5z" fill="currentColor" /></svg>
+      </button>
       <Tabs ref="tabsDialog" :tabs="sorted" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
       <button v-for="tab in opened" :key="tab.id" class="tab" :class="[tab.host, { selected: tab.id === current }]" :title="`${tab.path} (${tab.host}). Ctrl-click: close`" @click="clickTab(tab, $event)">
         <span v-if="busy[tab.id] || highlighted[tab.id]" class="tab-dot" :class="{ due: !busy[tab.id] }" :title="busy[tab.id] ? 'Responding' : 'Git or Run is highlighted'">&#x25CF;</span>{{ tab.label }}
@@ -100,7 +105,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
       <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" :disabled="!currentTab" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
       <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" :disabled="!currentTab" title="Open or close the Settings: quotas" aria-label="Settings" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
-    <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" @no-repo="(none) => (noRepo[tab.id] = none)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" />
+    <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" @no-repo="(none) => (noRepo[tab.id] = none)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" :sidebar-asked="sidebarAsked" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" />
   </div>
 </template>
 
@@ -116,6 +121,8 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
 .tabs .tab.wsl { color: green; }
 .tabs .tab.win { color: blue; }
 .tabs .tab.srv { color: brown; }
+/* tabs-toggle's right margin and the bar's gap leave 12px on its right; this and the bar's padding leave 12px on its left. */
+.tabs .sidebar-toggle { margin-left: 2px; }
 .tabs .files-toggle { margin-left: auto; }
 .tabs .files-toggle.active, .tabs .git-toggle.active, .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
 /* 20% over the tab's 14px. The line-height keeps the bigger glyph from making its tab taller. */

@@ -20,8 +20,9 @@ import Snips from "./Snips.vue";
 
 // active: this is the tab on show. side: what this tab has open right of the pane ("", "snips",
 // "settings", "git", "files" for the tree or "file" for its editor), through App's column toggles.
-// focusAsked: a change puts the cursor in the prompt box of the tab on show.
-const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number }>();
+// focusAsked: a change puts the cursor in the prompt box of the tab on show. sidebarAsked: a change
+// toggles the sidebar of the tab on show.
+const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number; sidebarAsked: number }>();
 const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; highlighted: [on: boolean]; noRepo: [none: boolean] }>();
 
 // Plain objects mutated in place as text streams in; `version` tells Vue when the shape changed.
@@ -159,14 +160,20 @@ function toggleTrash(): void {
   showTrash.value = !showTrash.value;
 }
 
-// Ctrl-B hides or shows this tab's sidebar, but never closes it on the trash list. Capture phase,
-// so an editor holding the cursor doesn't get the key.
+// Ctrl-S opens a new session, as "+" does, leaving the sidebar as it is. Ctrl-B hides or shows this
+// tab's sidebar, but never closes it on the trash list. Capture phase, so an editor holding the
+// cursor doesn't get the key. A held key counts once: repeated "new" requests would sweep each other's card.
 const sidebarHidden = ref(false);
+function toggleSidebar(): void {
+  if (!showTrash.value) sidebarHidden.value = !sidebarHidden.value;
+}
 function onPageKey(event: KeyboardEvent): void {
-  if (!props.active || event.code !== "KeyB" || !event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+  if (!props.active || (event.code !== "KeyB" && event.code !== "KeyS") || !event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
   event.preventDefault();
   event.stopPropagation();
-  if (!showTrash.value) sidebarHidden.value = !sidebarHidden.value;
+  if (event.repeat) return;
+  if (event.code === "KeyS") void newSession();
+  else toggleSidebar();
 }
 
 // claude2's delete for good: one question for the whole pick.
@@ -291,6 +298,7 @@ watch(() => props.active, (active) => {
 });
 watch(() => props.side, (open) => !open && props.active && focusPrompt());
 watch(() => props.focusAsked, () => props.active && focusPrompt());
+watch(() => props.sidebarAsked, () => props.active && toggleSidebar());
 // A project closed and opened again comes back with its sidebar open.
 watch(() => props.tab.open, () => (sidebarHidden.value = false));
 
