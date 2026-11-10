@@ -459,16 +459,14 @@ function windowFrom(value: Record<string, unknown> | undefined, key: "five" | "s
   return { key, label, pct: numberOrNull(value?.utilization), resetsAt: secondsFromIso(value?.resets_at) };
 }
 
-function modelScopedWindow(root: Record<string, unknown> | undefined): QuotaWindowState {
-  const limits = Array.isArray(root?.limits) ? root.limits : [];
-  for (const limit of limits) {
-    const record = recordOf(limit);
-    const displayName = stringOf(recordOf(recordOf(record?.scope)?.model)?.display_name);
-    if (displayName) {
-      return { key: "model", label: displayName, pct: numberOrNull(record?.percent), resetsAt: secondsFromIso(record?.resets_at) };
-    }
-  }
-  return { key: "model", label: "Fable", pct: null, resetsAt: null };
+// The week's use of Fable: every weekly limit on a Fable model, added together, since each Fable
+// version can have its own. An unrelated model's limit (say Opus) is left out.
+export function modelScopedWindow(root: Record<string, unknown> | undefined): QuotaWindowState {
+  const limits = (Array.isArray(root?.limits) ? root.limits : []).map(recordOf);
+  const fables = limits.filter((record) => record?.kind === "weekly_scoped" && /fable/i.test(stringOf(recordOf(recordOf(record?.scope)?.model)?.display_name)));
+  const percents = fables.flatMap((record) => numberOrNull(record?.percent) ?? []);
+  const resets = fables.flatMap((record) => secondsFromIso(record?.resets_at) ?? []);
+  return { key: "model", label: "Fable", pct: percents.length ? percents.reduce((sum, percent) => sum + percent, 0) : null, resetsAt: resets.length ? Math.max(...resets) : null };
 }
 
 function creditsFrom(value: Record<string, unknown> | undefined): QuotaState["credits"] {

@@ -12,6 +12,7 @@ import { byName, folderName, foldersBetween, nextTab, sameName } from "./tabList
 import { wheelZoom } from "./wheelZoom.ts";
 import { fileActions, numberedName } from "../server/files.ts";
 import { layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "../server/gitGraph.ts";
+import { modelScopedWindow } from "../server/quota.ts";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -363,5 +364,16 @@ assert.equal(oldest(typed), "51");
 const longLog = new MessageHistory();
 longLog.fill(Array.from({ length: 150 }, (unused, index) => String(index)));
 assert.equal(oldest(longLog), "98");
+
+// The Quotas pane's Fable line: every weekly Fable limit added together, nothing else.
+const weekly = (name, percent, resets) => ({ kind: "weekly_scoped", scope: { model: { display_name: name } }, percent, resets_at: resets });
+const early = "2026-11-12T00:00:00Z";
+const late = "2026-11-13T00:00:00Z";
+const fableWindow = (...limits) => modelScopedWindow({ limits });
+assert.deepEqual(fableWindow(weekly("Fable", 0, early), weekly("Opus", 50, late), weekly("Fable 5.2", 12, late), { kind: "five_hour_scoped", scope: { model: { display_name: "Fable" } }, percent: 9 }), { key: "model", label: "Fable", pct: 12, resetsAt: Date.parse(late) / 1000 });
+assert.equal(fableWindow(weekly("Fable 5.2", 7, early), weekly("Fable 5.1", 3, early)).pct, 10);
+assert.equal(fableWindow(weekly("Fable 5.2", 7, early), weekly("Fable 5.1", null, early)).pct, 7);
+assert.deepEqual(fableWindow(weekly("Opus", 5, early)), { key: "model", label: "Fable", pct: null, resetsAt: null });
+assert.equal(modelScopedWindow(undefined).pct, null);
 
 console.log("render checks passed");

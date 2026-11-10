@@ -7,7 +7,7 @@
 // prompt editor.
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
-import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, typedPrompt, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
+import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, modelChoice, typedPrompt, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
 import { post } from "../api.ts";
 import { cropRect } from "../cropRect.ts";
 import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
@@ -415,6 +415,15 @@ defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt, returnPrompt });
 
 function report(error: unknown): void {
   window.alert(error instanceof Error ? error.message : String(error));
+}
+
+// The backend keeps the box with the session; a failed save puts it back.
+function setBestModel(event: Event): void {
+  const box = event.target as HTMLInputElement;
+  post(props.tab, "bestModel", { sessionId: props.session?.id, on: box.checked }).catch((error) => {
+    box.checked = !!props.session?.bestModel;
+    report(error);
+  });
 }
 
 const active = computed(() => !!props.status?.active);
@@ -1056,6 +1065,7 @@ onBeforeUnmount(() => {
             <button class="stop" :class="{ stopping: stopping && active }" title="Stop" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
             <button :class="{ 'deploy-due': deployDue }" title="Run the project's ./run, the same as the prompt r. Ctrl-click: the same as the prompt v" @mousedown.prevent @click="runScript($event.ctrlKey)">Run</button>
             <button title="Capture the screen for this prompt, hiding this window for the shot. Ctrl-click: this window stays up. Alt-click: the previous tab is shown for the shot" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
+            <input type="checkbox" aria-label="bestModel" :title="modelChoice(session?.bestModel).title" :checked="!!session?.bestModel" :disabled="!session || session.trashed" @mousedown.prevent @change="setBestModel" />
           </div>
         </div>
         <div class="stats">

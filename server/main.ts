@@ -21,6 +21,7 @@
 //        deployNeeded -> { script, files } (project files changed since .deployed; see deployNeeded)
 //        clean -> {} (every session to the trash) | git { log? } -> { files: [{ x, y, path }], log?: { hash, subject, messages } } (git status; log: the branch's newest commit and its last 100 messages)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
+//        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
 //        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message, editable }] } (git log --graph)
 //        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
 //        describeChanges -> { text } (Opus 5.5's commit message for the uncommitted changes)
@@ -41,7 +42,7 @@ import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { FIRST_TABS, HOSTS, ORIGINS, type HostName, type Tab } from "../shared/config.ts";
-import { ANSWER_MARK, AUTH_FAILED, DEFAULT_CONTEXT_WINDOW, imageNote, typedPrompt, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
+import { ANSWER_MARK, AUTH_FAILED, DEFAULT_CONTEXT_WINDOW, imageNote, modelChoice, typedPrompt, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
 import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, swapSessionTranscripts, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
@@ -73,10 +74,6 @@ const VERSION = (() => {
 })();
 // claude2's Settings-pane values as the user has them. ponytail: fixed until a Settings pane exists.
 const LIMITS: RunLimits = { maxTurns: 100, maxBudgetUsd: 0, permissionMode: "bypassPermissions" };
-// What every run uses, in every tab on every host.
-const MODEL = "claude-opus-5-5";
-const EFFORT = "xhigh";
-const ADVISOR = "fable";
 
 // Windows has no journal or pm2 log, so every host keeps its own file too.
 function log(line: string): void {
@@ -307,7 +304,8 @@ async function submitPrompt(project: Project, body: Record<string, unknown>): Pr
   const id = session.id;
   // While the CLI waits on a background task the prompt joins that process instead; otherwise a
   // prompt sent during a run replaces it (the page asked first).
-  if (!runner.canFollowUp(id, MODEL, EFFORT, ADVISOR) && (runs.has(id) || runner.isRunning(id))) {
+  const { model, effort, advisor } = modelChoice(session.bestModel);
+  if (!runner.canFollowUp(id, model, effort, advisor) && (runs.has(id) || runner.isRunning(id))) {
     runner.stop(id);
     await runs.get(id);
   }
@@ -356,13 +354,14 @@ async function sendCeilings(project: Project): Promise<void> {
 // Ported from claude2's runTurn, without files, stats, quota or notifications.
 async function runTurn(project: Project, session: ClaudeSession, prompt: string, images: string[]): Promise<void> {
   const workspacePath = project.tab.path;
+  const { model, effort, advisor } = modelChoice(session.bestModel);
   const wasFirstPrompt = session.turns.length === 0;
   // Context is a level: a run inherits where the last one that recorded one left off.
   const priorContext = session.turns.reduce((level, prior) => prior.contextUsed || (prior.cleared ? 0 : level), 0);
   const priorCost = session.turns.reduce((total, prior) => prior.cliCostTotal ?? total, 0);
   const turn: ClaudeTurn = {
-    id: randomUUID(), prompt, response: "", createdAt: Date.now(), completedAt: null, model: MODEL, modelId: "", effort: EFFORT, advisor: ADVISOR,
-    tokensIn: 0, tokensOut: 0, contextWindow: windows[MODEL] ?? DEFAULT_CONTEXT_WINDOW, contextUsed: priorContext, cleared: false,
+    id: randomUUID(), prompt, response: "", createdAt: Date.now(), completedAt: null, model, modelId: "", effort, advisor,
+    tokensIn: 0, tokensOut: 0, contextWindow: windows[model] ?? DEFAULT_CONTEXT_WINDOW, contextUsed: priorContext, cleared: false,
     finished: false, stopped: false, error: null, costUsd: null, cliCostTotal: null, stopReason: null, turns: 0,
     maxTurns: LIMITS.maxTurns, durationMs: 0, ponySkips: [], ...(images.length ? { images } : {}),
   };
@@ -394,8 +393,8 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
       sessionId: session.id,
       turnId: turn.id,
       prompt,
-      model: MODEL,
-      effort: EFFORT,
+      model,
+      effort,
       contextWindow: turn.contextWindow,
       compactWindow: null,
       workspacePath,
@@ -405,7 +404,7 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
       limits: LIMITS,
       longTools: false,
       fastMode: false,
-      advisor: ADVISOR,
+      advisor,
       promptSuggestions: false,
       onSuggestion: () => undefined,
       debugDir: path.join(DATA_DIR, "debug"),
@@ -428,8 +427,8 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
     // After /clear this session goes on resuming its own id, so that transcript has to become the
     // cleared conversation. If the swap fails Claude keeps its context, and so does the gauge.
     const cleared = result.clearedInto !== null && swapSessionTranscripts(workspacePath, session.id, result.clearedInto);
-    if (result.modelWindow && result.modelWindow !== windows[MODEL]) {
-      windows[MODEL] = result.modelWindow;
+    if (result.modelWindow && result.modelWindow !== windows[model]) {
+      windows[model] = result.modelWindow;
       const temp = `${WINDOWS_FILE}.tmp`;
       fs.writeFileSync(temp, JSON.stringify(windows));
       fs.renameSync(temp, WINDOWS_FILE);
@@ -437,7 +436,7 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
     Object.assign(turn, {
       response: markAnswer(streamed || result.text, result.stopped ? "" : result.answer),
       completedAt: Date.now(),
-      contextWindow: windows[MODEL] ?? turn.contextWindow,
+      contextWindow: windows[model] ?? turn.contextWindow,
       tokensIn: result.tokensIn,
       tokensOut: result.tokensOut,
       contextUsed: result.contextTokens,
@@ -506,15 +505,16 @@ async function nameSession(project: Project, session: ClaudeSession, prompt: str
 // The Ctx popup's table: the transcript's counts with the CLI's own split of the fixed parts.
 async function ctxTable(project: Project, session: ClaudeSession): Promise<unknown> {
   let usage: Record<string, unknown> | null = null;
+  const { model, advisor } = modelChoice(session.bestModel);
   try {
     usage = await runner.contextUsage({
       sessionId: session.id,
       workspacePath: project.tab.path,
-      model: MODEL,
-      contextWindow: windows[MODEL] ?? DEFAULT_CONTEXT_WINDOW,
+      model,
+      contextWindow: windows[model] ?? DEFAULT_CONTEXT_WINDOW,
       compactWindow: null,
       permissionMode: LIMITS.permissionMode,
-      advisor: ADVISOR,
+      advisor,
     });
   } catch (error) {
     log(`Ctx: the CLI's context count failed: ${errorText(error)}`);
@@ -702,6 +702,9 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
       break;
     case "trash":
       session.trashed = body.trashed === true;
+      break;
+    case "bestModel":
+      session.bestModel = body.on === true;
       break;
     default:
       throw new Error(`Unknown action ${name}.`);

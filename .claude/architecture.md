@@ -74,7 +74,7 @@ on the laptop, and talks to each backend directly.
   Asks the backend's `quota` (Update = force), `quotaSync` every 30s, `speechmatics` per month.
 - `server/quota.ts`: claude2's QuotaService and its stats-server calls. The account's one history
   and the poll lease live on claude2-stats (hahnca.com:7301), shared with claude2's windows; local
-  fallback files in `~/.claude3/quota-*.json`. No footer 95% alert, no reading after a turn.
+  fallback files in `~/.claude3/quota-*.json`. No footer 95% alert, no reading after a turn. The pane's Fable line (`modelScopedWindow`) adds up every weekly limit on a Fable model.
 - `src/components/Pane.vue`: claude2's conversation pane. History (bars and boxes) is built
   imperatively, as claude2 builds it; the dock (prompt box, pill, stop, Run, Cap, stats) is a
   template. Also the image popup. The prompt box is a Monaco editor whose text is mirrored into the
@@ -276,8 +276,8 @@ on the laptop, and talks to each backend directly.
   tells Vue the shape changed. A delta goes to `Pane.applyDelta`, which refills only the growing
   box, as claude2 does.
 - Run settings are fixed in `server/main.ts` `LIMITS` (100 turns, bypassPermissions), copied from
-  claude2's Settings pane; the Settings pane has no Settings tab yet. `MODEL`, `EFFORT` and
-  `ADVISOR` beside it hard-wire every run; the page has no pickers and sends none of them.
+  claude2's Settings pane; the Settings pane has no Settings tab yet.
+- A run's model, effort and advisor come from `modelChoice` in `shared/types.ts`, by the session's `bestModel` (the unlabeled box right of the footer's Cap, kept with the session by the `bestModel` action; its tooltip is the choice's `title`). The prompt doesn't carry them. The advisor has no effort setting anywhere: the CLI's `advisorModel` and the API's advisor tool take only a model.
 - Chromium hands focus back after a mouse-closed `<dialog>` without the text box's caret, so
   typing goes nowhere; `src/main.ts` blurs and refocuses on every dialog's close. Monaco's own
   focus call doesn't help, since the textarea already has focus.
