@@ -7,8 +7,8 @@ let cut: { tab: Tab; path: string; clip: string } | null = null;
 // The Files column, in the Snips' place: a VS Code-style tree on the tab's host or, in file mode,
 // one file in FileEditor. Click a folder to open it, double-click to make it the root; double-click
 // a file to edit it, or ctrl-double-click a .md to read it rendered; alt-click copies the path; a long press shows all about it. Rows can be selected, remembered per root:
-// a click selects just that row (and opens or closes a folder, unless more than one was selected), ctrl-click toggles one,
-// shift-click adds the run from the last one (src/pick.ts). The keys act on them (keyDown); all but Delete need exactly one.
+// a click on a file selects just it, ctrl-click toggles any row, shift-click adds the run of files from the last one
+// (src/pick.ts); a click on a folder only opens or closes it, so only ctrl-click selects a folder. The keys act on them (keyDown); all but Delete need exactly one.
 // Files dragged from Explorer land on the folder under them. The header's path row stands for the
 // root folder, which has no row of its own, for drop.
 // The tree holds only what the backend last said: each open folder is asked for again every 2s.
@@ -369,18 +369,20 @@ function clickRow(row: Row, event: MouseEvent): void {
     return;
   }
   if (event.altKey) return copy(row.path, event.currentTarget as HTMLElement);
-  const wasMany = many.value;
+  if (row.dir && !event.ctrlKey) {
+    if (!opened.delete(row.path)) {
+      opened.add(row.path);
+      void refresh();
+    }
+    return;
+  }
   const picked = new Set(selected.value);
-  const paths = rows.value.map((each) => each.path);
+  // Only ctrl-click picks a folder, so a shift-click's run takes in just the files (and its own ends).
+  const paths = rows.value.filter((each) => !each.dir || each.path === anchor || each.path === row.path).map((each) => each.path);
   // With the run's start out of sight, shift-click adds just this row.
   const next = event.shiftKey && !paths.includes(anchor) ? (picked.add(row.path), row.path) : pick(picked, paths, row.path, anchor, event);
   select(...picked);
   anchor = next;
-  if (event.ctrlKey || event.shiftKey || !row.dir || wasMany) return;
-  if (!opened.delete(row.path)) {
-    opened.add(row.path);
-    void refresh();
-  }
 }
 
 // Only while the focus is in the tree's part of the column, so the keys stay ordinary everywhere else.
@@ -437,9 +439,14 @@ async function rereadRendered(): Promise<void> {
 function doubleClickRow(row: Row, event: MouseEvent): void {
   const rendered = event.ctrlKey && !row.dir && /\.md$/i.test(row.name);
   if ((event.ctrlKey && !rendered) || event.altKey || event.shiftKey) return;
-  select(row.path);
-  if (row.dir) void addRoot(row.path);
-  else void openRow(row, rendered);
+  if (!row.dir) {
+    select(row.path);
+    return void openRow(row, rendered);
+  }
+  // A new root starts with nothing selected, here or there.
+  select();
+  delete selections[row.path];
+  void addRoot(row.path);
 }
 
 function startRename(row: Row): void {
