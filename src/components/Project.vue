@@ -378,20 +378,23 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="project" :class="{ 'with-snips': side, 'no-sidebar': sidebarHidden }">
+    <!-- Hidden off show, not unmounted: Git's status drives this project's tab dot. Deferred, as the tab row isn't in the document yet at first mount. -->
+    <Teleport defer to=".project-buttons">
+      <span v-show="active">
+        <button class="tab new" title="New session" @click="newSession">
+          <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
+        </button>
+        <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" @no-repo="(none) => emit('noRepo', none)" />
+      </span>
+    </Teleport>
     <aside class="sidebar">
       <div class="top">
-        <div class="row">
-          <button class="new" title="New session" @click="newSession">
-            <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
-          </button>
-          <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" @no-repo="(none) => emit('noRepo', none)" />
-          <ReAuth :needed="!!expired" @closed="focusPrompt" />
-        </div>
         <div class="row">
           <button v-if="showTrash" class="delete" title="Permanently delete the selected trashed sessions. Ctrl-click or shift-click a card to select more" :disabled="!picked.size" @click="deletePicked">&#x1F5D1;{{ picked.size ? ` ${picked.size}` : "" }}</button>
           <button v-else class="clean" title="Move every session to the trash" :disabled="!visible.some((session) => session.turns.length)" @click="clean">Clean</button>
           <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="toggleTrash">Trash</button>
           <span class="counts" title="Active sessions / trashed sessions">{{ counts.active }}/{{ counts.trashed }}</span>
+          <ReAuth :needed="!!expired" @closed="focusPrompt" />
         </div>
         <div class="row">
           <input v-model="searchBox" class="tabs-input" :class="{ searching: searchText }" type="text" placeholder="Search" aria-label="Search sessions" spellcheck="false" @keydown.enter.prevent="setSearch(searchBox.trim())" />
@@ -463,8 +466,7 @@ onBeforeUnmount(() => {
 /* The sidebar's old right border, now a wide-enough strip to grab. */
 .project > .divider { cursor: col-resize; touch-action: none; background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat; }
 .project > .divider:hover { background-image: linear-gradient(#9a9a93, #9a9a93); background-size: 3px 100%; }
-.sidebar .new { width: 42px; }
-.sidebar .new svg { display: block; margin: 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.tabs .new svg { display: block; margin: 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .sidebar .top { display: flex; flex-direction: column; gap: 7px; flex: none; }
 .sidebar .row { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
 .sidebar .top button { height: 25px; min-height: 0; flex: none; padding: 0 8px; }

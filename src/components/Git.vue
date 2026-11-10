@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The sidebar's Git button and its popup, a small copy of VS Code's Source Control view for the
+// The tab row's Git button (teleported there by Project) and its popup, a small copy of VS Code's Source Control view for the
 // tab's project: the last commit's message, the new commit message, then the staged and the changed files. Commit stages
 // everything, commits, and pushes (the backend's `commit`). The label counts the files waiting
 // for a commit. It's re-read while the project is open, on show or not, for the dot on its tab:
@@ -142,7 +142,7 @@ async function describe(): Promise<void> {
   describing.value = false;
 }
 
-// A click on the last commit's message edits its subject, as a long press does in the Git pane. Enter
+// A click on the last commit's message edits its subject, as a long press does in the Log pane. Enter
 // amends and pushes, Esc cancels, and leaving the input doesn't save it, or a stray click could
 // force-push. `editing` holds the commit it began on, so if another commit lands meanwhile the
 // backend refuses rather than amending that one. A refusal keeps the input, for another try.
@@ -209,7 +209,7 @@ function onMessageKey(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <button ref="button" class="git" :class="{ dirty: files.length }" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" :disabled="noRepo" @click="open">
+  <button ref="button" class="tab git" :class="{ dirty: files.length }" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" :disabled="noRepo" @click="open">
     Git<span v-if="files.length">&nbsp;{{ files.length }}</span>
   </button>
   <dialog ref="dialog" class="git-pop" @cancel="committing && $event.preventDefault()" @close="emit('closed')" @click="onDialogClick">
@@ -244,7 +244,8 @@ function onMessageKey(event: KeyboardEvent): void {
 /* Something to commit: changed or staged files. */
 .git.dirty { background: #fbd9d9; border-color: #e4a7a7; }
 .git.dirty:hover { background: linear-gradient(var(--wash), var(--wash)), #fbd9d9; }
-.git-pop { width: min(560px, 92vw); max-height: 86vh; padding: 12px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: var(--ink); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2); }
+.git-pop { width: min(560px, 92vw); max-height: 86vh; padding: 12px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: var(--ink); line-height: 1.5; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2); }
+.git-pop button { height: 25px; min-height: 0; flex: none; padding: 0 8px; }
 .git-pop[open] { display: flex; flex-direction: column; gap: 8px; }
 .git-pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .git-head { display: flex; align-items: center; gap: 8px; }

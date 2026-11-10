@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The tab row's Git pane: the project's commit graph, laid out by the backend from `git log --graph`.
+// The tab row's Log pane: the project's commit graph, laid out by the backend from `git log --graph`.
 // On a commit's line ctrl-click copies its full hash and alt-click its message. A long press on the
 // message of the checked-out branch's newest commit edits it: Enter saves and pushes, Esc cancels.
 import { onBeforeUnmount, onMounted, ref } from "vue";

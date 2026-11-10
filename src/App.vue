@@ -98,13 +98,14 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
       <button class="tab tabs-toggle sidebar-toggle" title="Hide or show the session list (Ctrl-B)" aria-label="Sidebar" :disabled="!currentTab" @mousedown.prevent @click="sidebarAsked++">
         <svg viewBox="0 0 20 16" width="20" height="16" aria-hidden="true"><rect x="1" y="1.5" width="18" height="13" rx="3" /><path d="M7.5 1.5H4a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3h3.5z" fill="currentColor" /></svg>
       </button>
+      <span class="project-buttons"></span>
       <Tabs ref="tabsDialog" :tabs="sorted" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
       <button v-for="tab in opened" :key="tab.id" class="tab" :class="[tab.host, { selected: tab.id === current }]" :title="`${tab.path} (${tab.host}). Ctrl-click: close`" @click="clickTab(tab, $event)">
         <span v-if="busy[tab.id] || highlighted[tab.id]" class="tab-dot" :class="{ due: !busy[tab.id] }" :title="busy[tab.id] ? 'Responding' : 'Git or Run is highlighted'">&#x25CF;</span>{{ tab.label }}
       </button>
       <span class="session-name">{{ sessionNames[current] }}</span>
       <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" title="Open or close the Files: a tree of the project's folder, and an editor" @click="toggle('files')">Files</button>
-      <button class="tab git-toggle" :class="{ active: side === 'git' }" :aria-pressed="side === 'git'" :disabled="!currentTab || noRepo[current]" title="Open or close the Git pane: a graph of the project's commits" @click="toggle('git')">Git</button>
+      <button class="tab git-toggle" :class="{ active: side === 'git' }" :aria-pressed="side === 'git'" :disabled="!currentTab || noRepo[current]" title="Open or close the Log pane: a graph of the project's commits" @click="toggle('git')">Log</button>
       <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" :disabled="!currentTab" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
       <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" :disabled="!currentTab" title="Open or close the Settings: quotas" aria-label="Settings" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
@@ -126,6 +127,8 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
 .tabs .tab.srv { color: brown; }
 /* tabs-toggle's right margin and the bar's gap leave 12px on its right; this and the bar's padding leave 12px on its left. */
 .tabs .sidebar-toggle { margin-left: 2px; }
+/* Each Project teleports its + and Git here in a span, shown only for the tab on show. display: contents makes them the row's own flex items. */
+.tabs .project-buttons, .tabs .project-buttons > span { display: contents; }
 /* Takes the row's free space, so it is centered between the last tab and Files. A basis of 0 so it never wraps the row. */
 .tabs .session-name { flex: 1 1 0; min-width: 0; align-self: center; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tabs .files-toggle { margin-left: auto; }

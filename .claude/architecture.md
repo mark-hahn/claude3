@@ -28,7 +28,7 @@ on the laptop, and talks to each backend directly.
   its URL, the pasted code on its stdin, then `claude auth status` for who signed in.
 - `src/App.vue`: the tab strip and the list of every project; open ones have a tab, sorted by name
   (`src/tabList.ts`, checked by `npm test`), ctrl-click on one closes its project (`openProject`), and every project's `Project` stays mounted and laid out,
-  closed ones too: all in one grid cell, those not on show `visibility:hidden` (`.offstage`), never `display:none` (see Gotchas). The Files, Git, Snips and
+  closed ones too: all in one grid cell, those not on show `visibility:hidden` (`.offstage`), never `display:none` (see Gotchas). The Files, Log, Snips and
   gear (Settings) toggles are here, at the row's right end, acting on the tab on show; they share one
   column, each tab with its own state (`sides[id]`: "", "files", "file", "git", "snips" or "settings"), so it is as it was left when the tab comes back.
   Each tab's label has a dot: green with a session active, else light red when its Git or Run button
@@ -44,8 +44,8 @@ on the laptop, and talks to each backend directly.
   `projects` event. The dialog stays open after Create, with that project's tab on show behind it,
   and closes when a click opens a project (a failed open stays, showing its error); closing the dialog puts the cursor in the prompt box of the tab on show (`focusAsked`).
   The Files bar's Prj opens it with host, path and name filled in from the selected folder (`openWith`, reached through App's `newProjectAt` provide).
-- `src/components/Project.vue`: one tab. Listens for its project's events, holds the session list, the sidebar
-  (new session +, Git; Clean, Trash; rename by long press, trash/restore, busy clocks; on the trash
+- `src/components/Project.vue`: one tab. Listens for its project's events, holds the session list, the tab row's + (new session) and Git buttons (each project teleports its pair into App's `.project-buttons` and hides it unless on show; deferred, since the row isn't in the document at first mount), the sidebar
+  (Clean, Trash; rename by long press, trash/restore, busy clocks; on the trash
   list Clean turns into a delete for good of the picked cards, picking in `src/pick.ts`), the divider
   drag (`--sidebar-width` on the root, shared by every tab, in localStorage), Ctrl-B or the tab strip's first button (`sidebarAsked`) (hides that tab's
   sidebar and divider; per tab, not saved, ignored on the trash list, reset when the project closes or opens), Ctrl-S (a new session, as "+"), and passes the
@@ -54,9 +54,9 @@ on the laptop, and talks to each backend directly.
   small VS Code Source Control: message, staged and changed files, Commit (= `add -A`, commit,
   push on the backend). "Describe changes" in its header (`describeChanges` action) sends the
   uncommitted diff and untracked files' text to `claude -p` on Opus 5.5 and puts its reply (at most
-  2 short sentences) in the message box. Up and Down in the box walk old messages as VS Code's does (`src/messageHistory.ts`, a port of its SCMInput, checked by `npm test`), but the list is the branch's last 100 messages from `git log`, not a store of its own. Above the box is the newest commit's subject, from the same log (`git` action with `log`, sent only while the dialog is open, so on its 2s poll); a click edits it in place and Enter amends and pushes through the Git pane's `reword`. Status is re-read for every open project, on show or not: on showing, session events (a turn starting or ending),
+  2 short sentences) in the message box. Up and Down in the box walk old messages as VS Code's does (`src/messageHistory.ts`, a port of its SCMInput, checked by `npm test`), but the list is the branch's last 100 messages from `git log`, not a store of its own. Above the box is the newest commit's subject, from the same log (`git` action with `log`, sent only while the dialog is open, so on its 2s poll); a click edits it in place and Enter amends and pushes through the Log pane's `reword`. Status is re-read for every open project, on show or not: on showing, session events (a turn starting or ending),
   and every 2s while the page is visible. Every backend git call sets `GIT_OPTIONAL_LOCKS=0`, so the polling never holds the index lock against a real `git add`.
-- `src/components/GitGraph.vue`: the tab row Git button's pane, unrelated to the sidebar's Git dialog: `git log --graph` (`gitGraph` action, newest 1000 commits, laid out by `server/gitGraph.ts`: no hash or star on show, a commit with branch or tag names has its message on a second line) as rows of text, on which ctrl-click copies a commit's full hash and alt-click its message, re-read every 2s while on show. A long press on the message of the checked-out branch's newest commit edits its subject in place (`reword` action, `rewordHead` in `server/gitGraph.ts`: fetch, refuse if the upstream has commits the branch lacks, `commit --amend --only` keeping the body and leaving staged files out, `push --force-with-lease`, and back to the old commit if the push fails). Older commits aren't editable, since they'd need a rebase. The button is disabled when the sidebar's status finds no repo (`noRepo` up through Project).
+- `src/components/GitGraph.vue`: the tab row Log button's pane, unrelated to the Git button's dialog: `git log --graph` (`gitGraph` action, newest 1000 commits, laid out by `server/gitGraph.ts`: no hash or star on show, a commit with branch or tag names has its message on a second line) as rows of text, on which ctrl-click copies a commit's full hash and alt-click its message, re-read every 2s while on show. A long press on the message of the checked-out branch's newest commit edits its subject in place (`reword` action, `rewordHead` in `server/gitGraph.ts`: fetch, refuse if the upstream has commits the branch lacks, `commit --amend --only` keeping the body and leaving staged files out, `push --force-with-lease`, and back to the old commit if the push fails). Older commits aren't editable, since they'd need a rebase. The button is disabled when the Git button's status finds no repo (`noRepo` up through Project).
 - `src/components/ReAuth.vue`: the sidebar's red Re-Auth button and its `<dialog>`, which walks
   every backend through a sign-in: a link to that host's sign-in page, the code box, Skip.
 - `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane
@@ -308,9 +308,9 @@ on the laptop, and talks to each backend directly.
   too: the Files editor is stock Monaco (plus word wrap and the line dots) but must use the `claude2` theme, and is kept out of the
   user's key rules, all but Ctrl-D, by its `stockEditor` context key. The ctrl-wheel font size of it and of the Snips is
   `addWheelZoom` in `monaco.ts`, each editor with its own remembered size, since Monaco's `mouseWheelZoom` is page-wide too.
-  The Files tree (with its rendered markdown) and the Git pane aren't Monaco: `src/wheelZoom.ts` does the same with a remembered CSS variable on the root, one per pane.
+  The Files tree (with its rendered markdown) and the Log pane aren't Monaco: `src/wheelZoom.ts` does the same with a remembered CSS variable on the root, one per pane.
 - Every page element follows CLAUDE.md's display rules: font sizes 14–18px only (the exceptions,
-  at the user's asking, are the ctrl-wheel size of the Files pane, the Git pane and the Snips, which has no limits, and the 12px tooltip `#tip`), text solid black
+  at the user's asking, are the ctrl-wheel size of the Files pane, the Log pane and the Snips, which has no limits, and the 12px tooltip `#tip`), text solid black
   or a colour, never grey. Monaco's markdown keeps the stock light theme's token colours (blue
   headings), and its one grey token is pinned to black in `monaco.ts`. A disabled button keeps its enabled look under a 50% white
   overlay (`style.css`, at the user's asking, though it pales the label), a paused quota age by its background; only status icons (tab dot, card clocks) keep colour.
