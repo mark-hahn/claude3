@@ -23,7 +23,7 @@ import Snips from "./Snips.vue";
 // focusAsked: a change puts the cursor in the prompt box of the tab on show. sidebarAsked: a change
 // toggles the sidebar of the tab on show.
 const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number; sidebarAsked: number }>();
-const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; highlighted: [on: boolean]; noRepo: [none: boolean] }>();
+const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; highlighted: [on: boolean]; noRepo: [none: boolean]; sessionName: [name: string] }>();
 
 // Plain objects mutated in place as text streams in; `version` tells Vue when the shape changed.
 let sessions: ClaudeSession[] = [];
@@ -346,6 +346,8 @@ watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => stat
 const gitDirty = ref(false);
 const deployDue = ref(false);
 watch(() => gitDirty.value || deployDue.value, (on) => emit("highlighted", on));
+// The selected session's name, as its card shows it, for App's tab strip.
+watch(() => (selected.value ? selected.value.name || "New session" : ""), (name) => emit("sessionName", name));
 // Mounted the first time they are opened, not with every project at page load, and only hidden after that.
 const snipsShown = computed(() => props.side === "snips" && props.active);
 const snipsOpened = ref(false);

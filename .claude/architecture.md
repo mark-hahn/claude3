@@ -33,7 +33,7 @@ on the laptop, and talks to each backend directly.
   column, each tab with its own state (`sides[id]`: "", "files", "file", "git", "snips" or "settings"), so it is as it was left when the tab comes back.
   Each tab's label has a dot: green with a session active, else light red when its Git or Run button
   is highlighted (`dirty` and `deployDue` come up through Project's `highlighted`), else none. Those
-  two are re-read for every open project, on show or not; closed ones are skipped.
+  two are re-read for every open project, on show or not; closed ones are skipped. Centered between the last tab and Files is the name of the selected session of the tab on show (`sessionName` up through Project).
 - `src/components/FolderPicker.vue`: the VS Code-style folder picker `<dialog>` on any host, fed by
   the backend's `folders`; used by the Tabs dialog and the Files pane. Its styles are Tabs.vue's, unscoped for that.
 - `src/components/Files.vue`: the Files column: header rows and a tree of the tab's host, with
