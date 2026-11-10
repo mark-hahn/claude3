@@ -10,6 +10,7 @@ import { answerText, renderMarkdown } from "./render.ts";
 import { byName, folderName, foldersBetween, nextTab, sameName } from "./tabList.ts";
 import { wheelZoom } from "./wheelZoom.ts";
 import { fileActions, numberedName } from "../server/files.ts";
+import { layoutGraph } from "../server/gitGraph.ts";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -235,6 +236,24 @@ assert.deepEqual(extras(["a", "", "b"], [2]), []);
 assert.deepEqual(extras(["", "", "x", " ", ""], [3]), [2, 5]);
 // Two removals in one run name each line once, or Monaco throws on the overlap.
 assert.deepEqual(extras(["a", "", "", "b"], [2, 3]), [3]);
+// The Git pane: names keep the first line and the message goes under the other messages' column,
+// both lines knowing the hash. A straight history loses the column its stars leave empty.
+const when = "2026-11-09 04:13", under = " ".repeat(when.length + 1);
+const commit = (graph, hash, names, message) => `${graph}\0${hash}\0${when}\0${names}\0${message}`;
+assert.deepEqual(layoutGraph(`${commit("* ", "aaa", " (HEAD -> master)", "two")}\n${commit("* ", "bbb", "", "one")}\n`), [
+  { text: `${when} (HEAD -> master)`, hash: "aaa", message: "two" },
+  { text: `${under}two`, hash: "aaa", message: "two" },
+  { text: `${when} one`, hash: "bbb", message: "one" },
+]);
+// A branching history keeps its other lines, and a row of graph alone has no hash or message.
+assert.deepEqual(layoutGraph(`${commit("* | ", "aaa", " (x)", "m")}\n|/  `), [
+  { text: `  | ${when} (x)`, hash: "aaa", message: "m" },
+  { text: `  | ${under}m`, hash: "aaa", message: "m" },
+  { text: "|/", hash: "", message: "" },
+]);
+// An empty message under names can't upset the layout.
+assert.deepEqual(layoutGraph(`${commit("* ", "aaa", " (x)", "")}\n${commit("* ", "bbb", "", "n")}`).map((row) => row.text), [`${when} (x)`, under, `${when} n`]);
+
 // Ctrl-wheel text size: a remembered size comes back, a plain wheel is left alone, up grows and is
 // remembered, down stops at 1px.
 const cssVars = {}, stored = { "claude3.x": "2" };

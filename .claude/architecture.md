@@ -55,7 +55,7 @@ on the laptop, and talks to each backend directly.
   uncommitted diff and untracked files' text to `claude -p` on Opus 5.5 and puts its reply (at most
   2 short sentences) in the message box. Status is re-read for every open project, on show or not: on showing, session events (a turn starting or ending),
   and every 2s while the page is visible. Every backend git call sets `GIT_OPTIONAL_LOCKS=0`, so the polling never holds the index lock against a real `git add`.
-- `src/components/GitGraph.vue`: the tab row Git button's pane, unrelated to the sidebar's Git dialog: `git log --graph` (`gitGraph` action, newest 1000 commits) as text, view only, re-read every 2s while on show. The button is disabled when the sidebar's status finds no repo (`noRepo` up through Project).
+- `src/components/GitGraph.vue`: the tab row Git button's pane, unrelated to the sidebar's Git dialog: `git log --graph` (`gitGraph` action, newest 1000 commits, laid out by `server/gitGraph.ts`: no hash or star on show, a commit with branch or tag names has its message on a second line) as rows of text, view only except that on a row ctrl-click copies its commit's full hash and alt-click its message, re-read every 2s while on show. The button is disabled when the sidebar's status finds no repo (`noRepo` up through Project).
 - `src/components/ReAuth.vue`: the sidebar's red Re-Auth button and its `<dialog>`, which walks
   every backend through a sign-in: a link to that host's sign-in page, the code box, Skip.
 - `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane
