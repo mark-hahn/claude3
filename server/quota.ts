@@ -1,11 +1,12 @@
 // claude2's QuotaService (src/quota.ts), ported nearly verbatim for the Settings pane's Quotas tab.
 // Left out: the footer's 95% alert (claude3 has no such stat yet) and claude2's Windows-side VS Code
-// storage; the local history and meta files live in ~/.claude3 instead. The stats server on
-// hahnca.com:7301 holds the account's one history and the lease, shared with every claude2 window.
+// storage; the local history and meta files live in ~/.claude3 instead. The stats server
+// (claude-stats/server.mjs, STATS_URL) holds the account's one history and the lease, for every backend.
 import { spawn } from "child_process";
 import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
+import { STATS_URL } from "../shared/config.ts";
 import type { ModelMap } from "../shared/types.ts";
 import { cheapestModel, childEnv } from "./claudeCli.ts";
 
@@ -45,7 +46,6 @@ export interface QuotaHistoryPayload {
 }
 
 const usageUrl = "https://api.anthropic.com/api/oauth/usage";
-const statsUrl = "http://hahnca.com:7301";
 const oneMinuteMs = 60 * 1000;
 const fifteenMinutesMs = 15 * 60 * 1000;
 // The endpoint rate-limits the whole account (ten calls in five minutes draws a 429), so there is
@@ -68,7 +68,7 @@ export async function httpJson(method: string, urlPath: string, body: unknown, t
     return null;
   };
   try {
-    const response = await fetch(`${statsUrl}${urlPath}`, {
+    const response = await fetch(`${STATS_URL}${urlPath}`, {
       method,
       headers: { "Content-Type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -92,7 +92,7 @@ export async function httpJson(method: string, urlPath: string, body: unknown, t
   }
 }
 
-// Every month's Git changes check total (claude2's API-key spend), keyed YYYY-MM. Null when the server can't be reached.
+// Every month's Git changes check total (the API-key spend claude2 recorded; nothing in claude3 adds to it), keyed YYYY-MM. Null when the server can't be reached.
 export async function checkCosts(log: (line: string) => void): Promise<Record<string, { usd: number; count: number }> | null> {
   const reply = await httpJson("GET", "/checks", undefined, 3000, log);
   return reply && typeof reply.months === "object" && reply.months !== null ? reply.months as Record<string, { usd: number; count: number }> : null;

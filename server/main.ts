@@ -25,7 +25,7 @@
 //        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message, editable }] } (git log --graph)
 //        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
 //        describeChanges -> { text } (Opus 5.5's commit message for the uncommitted changes)
-//        snips { text? } -> { text } (claude2's Snips text, kept on claude2-stats; text saves it)
+//        snips { text? } -> { text } (the Snips' text, kept on claude-stats; text saves it)
 //        quota { force } -> { readAt, rows, state, apiCosts } (the Quotas pane; force is its Update)
 //        quotaSync { readAt, error } -> { payload } (null when the pane already shows the newest)
 //        speechmatics { month, rescan } -> { payload } (the tv project's Speechmatics spend)
@@ -41,7 +41,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { FIRST_TABS, HOSTS, ORIGINS, type HostName, type Tab } from "../shared/config.ts";
+import { FIRST_TABS, HOSTS, ORIGINS, STATS_URL, type HostName, type Tab } from "../shared/config.ts";
 import { ANSWER_MARK, AUTH_FAILED, DEFAULT_CONTEXT_WINDOW, imageNote, modelChoice, typedPrompt, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
 import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, swapSessionTranscripts, type RunLimits } from "./claudeCli.ts";
@@ -890,21 +890,20 @@ async function commit(project: Project, message: string): Promise<object> {
   return {};
 }
 
-// claude2's Snips text lives on its stats server, so every claude2 window and every claude3 tab
-// share one copy. null: claude2 hasn't moved its copy there yet, so nothing may be saved over it.
-const SNIPS_URL = "http://hahnca.com:7301/snips";
-async function snips(text: unknown): Promise<{ text: string | null }> {
+// The Snips' text lives on the stats server (claude-stats), so every tab on every host shares one
+// copy. Never saved yet reads as empty.
+async function snips(text: unknown): Promise<{ text: string }> {
   const saving = typeof text === "string";
-  const res = await fetch(SNIPS_URL, {
+  const res = await fetch(`${STATS_URL}/snips`, {
     method: saving ? "POST" : "GET",
     headers: { "content-type": "application/json" },
     body: saving ? JSON.stringify({ text }) : undefined,
     signal: AbortSignal.timeout(5000),
   });
-  if (!res.ok) throw new Error(`claude2-stats ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw new Error(`claude-stats ${res.status}: ${(await res.text()).slice(0, 200)}`);
   if (saving) return { text };
   const stored = ((await res.json()) as { text?: unknown }).text;
-  return { text: typeof stored === "string" ? stored : null };
+  return { text: typeof stored === "string" ? stored : "" };
 }
 
 const MIME: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".json": "application/json" };

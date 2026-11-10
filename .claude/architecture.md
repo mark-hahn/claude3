@@ -59,8 +59,8 @@ on the laptop, and talks to each backend directly.
 - `src/components/ReAuth.vue`: the sidebar's red Re-Auth button and its `<dialog>`, which walks
   every backend through a sign-in: a link to that host's sign-in page, the code box, Skip.
 - `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane
-  (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude2-stats (`/snips` on
-  hahnca.com:7301), reached through the backend's `snips` action; read on open and window focus,
+  (Project's `with-snips` grid: half the width left of the sidebar, full height below the tabs). The one copy lives on claude-stats (`/snips`),
+  reached through the backend's `snips` action; read on open and window focus,
   saved 500ms after typing stops. Each tab mounts its own the first time it opens them and after that only hides
   it (`shown` prop), so the cursor and selections last until the page reloads; its `shown` watcher does what a remount
   would (re-read while read-only, save at once, font size), and restores the scroll, since a hidden editor is 0x0. Ctrl+Enter hands the selection to the `addToPrompt` prop, Pane's
@@ -73,7 +73,7 @@ on the laptop, and talks to each backend directly.
   built by script, global styles under `.settings`, element ids `q-*` looked up inside its own root (`byId`: one instance per tab with it open, polling only while on show).
   Asks the backend's `quota` (Update = force), `quotaSync` every 30s, `speechmatics` per month.
 - `server/quota.ts`: claude2's QuotaService and its stats-server calls. The account's one history
-  and the poll lease live on claude2-stats (hahnca.com:7301), shared with claude2's windows; local
+  and the poll lease live on claude-stats, one for all three backends; local
   fallback files in `~/.claude3/quota-*.json`. No footer 95% alert, no reading after a turn. The pane's Fable line (`modelScopedWindow`) adds up every weekly limit on a Fable model.
 - `src/components/Pane.vue`: claude2's conversation pane. History (bars and boxes) is built
   imperatively, as claude2 builds it; the dock (prompt box, pill, stop, Run, Cap, stats) is a
@@ -107,7 +107,16 @@ on the laptop, and talks to each backend directly.
   opening another. Edge reads it at install: after changing it, uninstall and reinstall the app.
 - `.vscode/settings.json`: forwards vite's 5310 silently, without VS Code's "Your application
   running on port 5310" toast.
-- `deploy`: builds and copies `package.json server shared` (+ `dist` for WSL) to each host and
+- `claude-stats/server.mjs`: the stats server, what the three backends share: the quota history and
+  its poll lease, the Snips' text, the API key's spend claude2 recorded (`/checks`, nothing adds to it)
+  and tv's Speechmatics spend (asked of tv-srvr on the same box). Plain node, no imports from the
+  repo; endpoints at its top. On hahnca.com: pm2 `claude-stats`, port 7313 (`STATS_URL` in
+  `shared/config.ts`), data in `~/.claude-stats/data.json`. It began as claude2's `claude2-stats`
+  (port 7301, still there for claude2) and shares nothing with it; `test.mjs` is its check (`npm test`).
+- `deploy`: `./deploy stats` copies `claude-stats/` to hahnca.com and starts it under pm2, with a
+  version of its own (the folder's hash), so changing it restarts no backend; the first deploy copies
+  claude2-stats' `data.json` as its starting data. For the backends it
+  builds and copies `package.json server shared` (+ `dist` for WSL) to each host and
   sets up what keeps it running: systemd `claude3` on WSL, the `claude3` value of the HKCU Run
   key on Windows (at logon), pm2 `claude3` on hahnca.com. It stamps each copy with a `version` file, the hash of `server/`
   and `shared/`, which the backend answers at `GET /version`; `deploy --if-stale` redeploys only
@@ -287,8 +296,8 @@ on the laptop, and talks to each backend directly.
 - claude2's per-host auth flag (`authNeeded.<remote>` in VS Code's globalState) can't be shared: it
   sits in VS Code's own database on the Windows side, out of hahnca.com's reach, and a running
   VS Code rewrites it from memory. Each app clears its own flag on its next answered turn.
-- Snips stay read-only until the shared copy has been read, and a server answer of `null` (claude2
-  never saved one there) keeps them so: nothing typed in claude3 may replace claude2's copy unseen.
+- Snips stay read-only until the saved copy has been read, so nothing typed early can replace it
+  unseen; a read that fails keeps them so. A copy never saved reads as empty and editable.
 - Monaco's `addCommand` keys are page-wide and every tab has its own editor, so editor keys are
   `addAction`s. Monaco is about 4MB of the built page. Its theme and `addKeybindingRules` are page-wide
   too: the Files editor is stock Monaco (plus word wrap and the line dots) but must use the `claude2` theme, and is kept out of the

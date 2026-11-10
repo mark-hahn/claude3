@@ -4,11 +4,14 @@
 #   WSL      /root/apps/claude3Wsl              systemd service claude3, at WSL boot (port 7310, serves dist/)
 #   Windows  C:\Users\mark\apps\claude3Win      HKCU Run key claude3, at logon (port 7311)
 #   server   hahnca.com:/root/dev/apps/claude3Srv  pm2 process claude3 (port 7312)
+# and the stats server every backend calls (claude-stats/: quota history, its lease, the Snips):
+#   stats    hahnca.com:/root/dev/apps/claude-stats  pm2 process claude-stats (port 7313, data in ~/.claude-stats)
 # Each backend runs server/main.ts as it is: Node strips the types, so there is no build step for it.
 # The version is a hash of server/ and shared/, written beside each deployed copy and answered at
-# GET /version. Page-only changes (src/) don't change it, so they never restart a backend.
-# Usage: ./deploy [wsl] [win] [srv]              deploy and restart these hosts (none named: all three)
-#        ./deploy --if-stale [wsl] [win] [srv]   only those whose running backend isn't this version
+# GET /version. Page-only changes (src/) don't change it, so they never restart a backend. The stats
+# server has a version of its own, the hash of claude-stats/, so a change to it restarts no backend.
+# Usage: ./deploy [stats] [wsl] [win] [srv]              deploy and restart these (none named: all four)
+#        ./deploy --if-stale [stats] [wsl] [win] [srv]   only those not running this version
 # A restart cuts that backend's running turns.
 set -euo pipefail
 # Whoever started this may go away partway (the page's "r" can run it under the backend it
@@ -29,16 +32,24 @@ WIN_DIR=/mnt/c/Users/mark/apps/claude3Win
 WIN_DIR_W='C:\Users\mark\apps\claude3Win'
 WIN_NODE='C:\nvm4w\nodejs\node.exe'
 SRV_DIR=/root/dev/apps/claude3Srv
+STATS_DIR=/root/dev/apps/claude-stats
 # package.json only for its "type": "module", which makes Node read the .ts files as ES modules.
 FILES=(package.json server shared)
-# What the version hashes: only a change here makes --if-stale deploy. Written into .deployed so
+# What the versions hash: only a change here makes --if-stale deploy. Written into .deployed so
 # the page's Run highlight and deploy warning count the same files.
-SOURCES=(server shared)
-VERSION=$(find "${SOURCES[@]}" -type f -print0 | sort -z | xargs -0 sha1sum | sha1sum | cut -c1-12)
+SOURCES=(server shared claude-stats)
+hashed() { find "$@" -type f -print0 | sort -z | xargs -0 sha1sum | sha1sum | cut -c1-12; }
+VERSION=$(hashed server shared)
+STATS_VERSION=$(hashed claude-stats)
+# The version this repo has for a host.
+wanted() { if [ "$1" = stats ]; then echo "$STATS_VERSION"; else echo "$VERSION"; fi; }
+# The stats server first: the backends call it as they come up.
+ALL=(stats wsl win srv)
 
 # What the host's backend answers at /version; empty when nothing answers.
 running() {
   case $1 in
+  stats) curl -s -m 3 "http://$REMOTE:7313/version" || true ;;
   wsl) curl -s -m 3 http://localhost:7310/version || true ;;
   # Windows' own curl: under WSL's NAT, Windows' localhost isn't reachable from here.
   win) (cd /mnt/c && /mnt/c/Windows/System32/curl.exe -s -m 3 http://localhost:7311/version | tr -d '\r') || true ;;
@@ -47,28 +58,30 @@ running() {
 }
 
 wait_up() {
+  local version
+  version=$(wanted "$1")
   for _ in $(seq 20); do
-    if [ "$(running "$1")" = "$VERSION" ]; then
-      echo "$1 backend up, version $VERSION"
+    if [ "$(running "$1")" = "$version" ]; then
+      echo "$1 backend up, version $version"
       return 0
     fi
     sleep 1
   done
-  echo "!! $1 backend not answering with version $VERSION after 20s" >&2
+  echo "!! $1 backend not answering with version $version after 20s" >&2
   return 1
 }
 
 if [ "${1:-}" = "--if-stale" ]; then
   shift
   HOSTS=("$@")
-  [ ${#HOSTS[@]} -gt 0 ] || HOSTS=(wsl win srv)
+  [ ${#HOSTS[@]} -gt 0 ] || HOSTS=("${ALL[@]}")
   for host in "${HOSTS[@]}"; do
     now=$(running "$host")
-    if [ "$now" = "$VERSION" ]; then
-      echo "== $host backend running version $VERSION"
+    if [ "$now" = "$(wanted "$host")" ]; then
+      echo "== $host backend running version $now"
       continue
     fi
-    echo "== $host backend running ${now:-nothing}; deploying $VERSION"
+    echo "== $host backend running ${now:-nothing}; deploying $(wanted "$host")"
     # Its own process, so set -e stops that host's steps and the other hosts still get theirs.
     DEPLOY_NESTED=1 "$0" "$host" || echo "!! $host deploy failed" >&2
   done
@@ -77,10 +90,21 @@ if [ "${1:-}" = "--if-stale" ]; then
 fi
 
 HOSTS=("$@")
-[ ${#HOSTS[@]} -gt 0 ] || HOSTS=(wsl win srv)
+[ ${#HOSTS[@]} -gt 0 ] || HOSTS=("${ALL[@]}")
 
 for host in "${HOSTS[@]}"; do
   case $host in
+  stats)
+    echo "== claude-stats on $REMOTE =="
+    # Its data starts as a copy of claude2-stats', which the backends used before this server
+    # existed: the first deploy only, and only where there is one to copy.
+    ssh "$REMOTE" "mkdir -p $STATS_DIR ~/.claude-stats && { [ -e ~/.claude-stats/data.json ] || ! [ -e ~/.claude2-stats/data.json ] || cp ~/.claude2-stats/data.json ~/.claude-stats/data.json; }"
+    rsync -a --delete --exclude=/version claude-stats/ "$REMOTE:$STATS_DIR/"
+    ssh "$REMOTE" "echo $STATS_VERSION > $STATS_DIR/version"
+    # node as the pm2 script, as for claude3 below.
+    ssh "$REMOTE" "cd $STATS_DIR && if pm2 describe claude-stats >/dev/null 2>&1; then pm2 restart claude-stats; else pm2 start \$(which node) --name claude-stats --interpreter none --cwd $STATS_DIR -- server.mjs && pm2 save; fi" | { grep -E '│ name |│ claude-stats ' || true; }
+    wait_up stats || { ssh "$REMOTE" "pm2 logs claude-stats --nostream --lines 10"; exit 1; }
+    ;;
   wsl)
     echo "== WSL =="
     npm run build
@@ -141,7 +165,7 @@ EOF
     wait_up srv || { ssh "$REMOTE" "pm2 logs claude3 --nostream --lines 10"; exit 1; }
     ;;
   *)
-    echo "unknown host $host (wsl, win or srv)" >&2
+    echo "unknown host $host (stats, wsl, win or srv)" >&2
     exit 1
     ;;
   esac

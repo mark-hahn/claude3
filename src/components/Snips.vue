@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // claude2's Snips tab, a column right of the conversation pane, the window's full height below the
-// tab strip. One text, kept on claude2's stats server (the backend's `snips` action), so claude2's
-// windows and every claude3 tab edit the same copy. Read when it opens and whenever the window gets focus back; saved half a
+// tab strip. One text, kept on the stats server (claude-stats, the backend's `snips` action), so
+// every tab on every host edits the same copy. Read when it opens and whenever the window gets focus back; saved half a
 // second after the typing stops, and at once on close. Esc closes it; Ctrl+Enter moves the selected text
 // to the end of the prompt and the cursor there, takes the blank lines around the removed text
 // down to one and closes the Snips; with nothing selected it just closes them. A Monaco editor with
@@ -34,13 +34,9 @@ async function load(): Promise<void> {
   if (saveTimer || !props.shown) return;
   const asked = edits;
   try {
-    const reply = await post<{ text: string | null }>(props.tab, "snips", {});
+    const reply = await post<{ text: string }>(props.tab, "snips", {});
     if (asked !== edits || saveTimer) return;
-    if (reply.text === null) {
-      note.value = "claude2 hasn't shared its Snips yet: open them once in claude2.";
-      return;
-    }
-    // \n line ends only, so the comparison holds whatever line ends claude2 saved.
+    // \n line ends only, so the comparison holds whatever line ends were saved.
     const next = untab(reply.text.replace(/\r\n?/g, "\n"));
     note.value = "";
     if (!ready) {
@@ -95,7 +91,7 @@ watch(() => props.shown, async (shown) => {
 }, { flush: "post" });
 
 onMounted(() => {
-  editor = monaco.editor.create(host.value!, { ...editorOptions, readOnly: true, readOnlyMessage: { value: "The Snips can't be edited until claude2's copy has been read." } });
+  editor = monaco.editor.create(host.value!, { ...editorOptions, readOnly: true, readOnlyMessage: { value: "The Snips can't be edited until the saved copy has been read." } });
   addLineDots(editor);
   addListKeys(editor);
   addWheelZoom(editor, FONT_KEY);

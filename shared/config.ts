@@ -50,6 +50,10 @@ export const HOSTS: Record<HostName, Host> = {
   srv: { port: 7312, appsFolder: "/root/dev/apps", url: "http://hahnca.com:7312", bind: "0.0.0.0", names: ["hahnca.com", "192.168.1.103", "localhost", "127.0.0.1"] },
 };
 
+// claude-stats (claude-stats/server.mjs, on hahnca.com): the quota history, the lease on reading it
+// and the Snips, one copy for every backend.
+export const STATS_URL = "http://hahnca.com:7313";
+
 // The page's own origins: vite dev (the usual one, with hot update), vite preview, and the build
 // the WSL backend serves; vite.config.ts pins the first two. A request from any other origin is
 // another website reaching in, refused.

@@ -40,6 +40,7 @@
 - **wsl** backend: port 7310, deployed to /root/apps/claude3Wsl, also serves the built page.
 - **win** backend: port 7311, deployed to C:\Users\mark\apps\claude3Win.
 - **srv** backend: port 7312 on hahnca.com, deployed to /root/dev/apps/claude3Srv.
+- **stats** server (`claude-stats/`): port 7313 on hahnca.com, deployed to /root/dev/apps/claude-stats by `./deploy`, data in `~/.claude-stats/`. All three backends keep the quota history and the Snips there. Nothing claude3 runs comes from the claude2 repo.
 - Each backend keeps its own projects (name, folder, open or closed) in `~/.claude3/projects.json`; the Tabs dialog changes them. `shared/config.ts` has the hosts and the list a backend starts from.
 - The page's browser console is mirrored to `vite-console.log` in the repo while vite runs.
 
