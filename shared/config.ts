@@ -40,6 +40,8 @@ export interface Host {
   port: number;
   // The folder the Tabs dialog's picker opens on.
   appsFolder: string;
+  // The folder a Term pane's terminal starts in when it was added for this host, not for the project.
+  home: string;
   // Where the page (in Firefox on the laptop) reaches this backend.
   url: string;
   // The interface the backend listens on: WSL and Windows stay on the laptop, the server is on the LAN.
@@ -49,9 +51,9 @@ export interface Host {
 }
 
 export const HOSTS: Record<HostName, Host> = {
-  wsl: { port: 7310, appsFolder: "/root/apps/", url: "http://localhost:7310", bind: "127.0.0.1", names: ["localhost", "127.0.0.1"] },
-  win: { port: 7311, appsFolder: "C:\\Users\\mark\\apps", url: "http://localhost:7311", bind: "127.0.0.1", names: ["localhost", "127.0.0.1"] },
-  srv: { port: 7312, appsFolder: "/root/dev/apps", url: "http://hahnca.com:7312", bind: "0.0.0.0", names: ["hahnca.com", "192.168.1.103", "localhost", "127.0.0.1"] },
+  wsl: { port: 7310, appsFolder: "/root/apps/", home: "/root", url: "http://localhost:7310", bind: "127.0.0.1", names: ["localhost", "127.0.0.1"] },
+  win: { port: 7311, appsFolder: "C:\\Users\\mark\\apps", home: "C:\\Users\\mark", url: "http://localhost:7311", bind: "127.0.0.1", names: ["localhost", "127.0.0.1"] },
+  srv: { port: 7312, appsFolder: "/root/dev/apps", home: "/root", url: "http://hahnca.com:7312", bind: "0.0.0.0", names: ["hahnca.com", "192.168.1.103", "localhost", "127.0.0.1"] },
 };
 
 // claude-stats (claude-stats/server.mjs, on hahnca.com): the quota history, the lease on reading it

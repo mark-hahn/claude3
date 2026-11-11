@@ -29,7 +29,7 @@
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
 //        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
 //        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
-//        each with term, 0 to 2: which of the pane's terminals. termRead { id, at, cols, rows } -> { id, at, text, reset, idle, exited } (its pty, started on first ask: its output past at, waiting up to 2s for some; reset: the whole last 1000 lines; idle: ms since the last output or key)
+//        each with term, 0 to 2: which of the tab's terminals, and cwd, the folder its shell starts in (the tab needn't be this host's). termRead { id, at, cols, rows } -> { id, at, text, reset, idle, exited } (its pty, started on first ask: its output past at, waiting up to 2s for some; reset: the whole last 1000 lines; idle: ms since the last output or key)
 //        termSend { data } -> {} (keys as typed) | termResize { cols, rows } -> {} | termClear {} -> {} (the buffer down to the prompt line) | termClose {} -> {} (an exited terminal the page took out: forgotten) (server/term.ts)
 //        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
 //        revert { tracked, untracked } -> {} (tracked paths back as HEAD has them, staged and on disk; untracked ones deleted)
@@ -703,6 +703,18 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     setAuthNeeded(true);
     return {};
   }
+  // The Term pane's terminals: the host's too, since a tab's pane can have one on a host that doesn't
+  // have its project. Each its own pty, three a tab at most here, started in the folder the page names.
+  if (["termRead", "termSend", "termResize", "termClear", "termClose"].includes(name)) {
+    const shell = `${String(body.tab)}#${[1, 2].includes(Number(body.term)) ? Number(body.term) : 0}`;
+    const cwd = String(body.cwd ?? "") || os.homedir();
+    if (name === "termRead") return await termRead(shell, cwd, String(body.id ?? ""), Number(body.at), Number(body.cols), Number(body.rows));
+    if (name === "termSend") termSend(shell, cwd, String(body.data ?? ""));
+    if (name === "termResize") termResize(shell, Number(body.cols), Number(body.rows));
+    if (name === "termClear") termClear(shell);
+    if (name === "termClose") termClose(shell);
+    return {};
+  }
   const project = projects.get(String(body.tab));
   if (!project) {
     throw new Error(`No tab ${JSON.stringify(body.tab)} on ${hostName}.`);
@@ -753,27 +765,6 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "gitGraph") {
     return { lines: layoutGraph(await git(project, ...GRAPH_ARGS)) };
-  }
-  // The Term pane's terminals, three a project at most, each with its own pty.
-  const shell = `${project.tab.id}#${[1, 2].includes(Number(body.term)) ? Number(body.term) : 0}`;
-  if (name === "termRead") {
-    return await termRead(shell, project.tab.path, String(body.id ?? ""), Number(body.at), Number(body.cols), Number(body.rows));
-  }
-  if (name === "termSend") {
-    termSend(shell, project.tab.path, String(body.data ?? ""));
-    return {};
-  }
-  if (name === "termResize") {
-    termResize(shell, Number(body.cols), Number(body.rows));
-    return {};
-  }
-  if (name === "termClear") {
-    termClear(shell);
-    return {};
-  }
-  if (name === "termClose") {
-    termClose(shell);
-    return {};
   }
   if (name === "reword") {
     await rewordHead((...args) => git(project, ...args), String(body.hash ?? ""), String(body.message ?? "").trim());

@@ -25,18 +25,20 @@ import Term from "./Term.vue";
 // focusAsked: a change puts the cursor in the prompt box of the tab on show. sidebarAsked: a change
 // toggles the sidebar of the tab on show.
 const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number; sidebarAsked: number }>();
-// The Term pane's terminals by slot (0 to 2, each its own shell in the backend), top to bottom, sharing
-// the column's height equally. A header's + adds the lowest free slot at the bottom, three at most. One
-// whose shell exits is taken out, unless it is the only one, and the backend forgets its slot.
-const terms = ref([0]);
+// The Term pane's terminals, top to bottom, sharing the column's height equally: each a slot (0 to 2,
+// its own shell in its host's backend), the host its shell is on (any, not only the tab's) and the
+// folder it starts in. A terminal asks for another (its + or its Path dialog's host selector), which takes
+// the lowest free slot and goes right below the one that asked, three at most. One whose shell exits is taken out, unless it is
+// the only one, and its backend forgets the slot.
+const terms = ref([{ slot: 0, host: props.tab.host, cwd: props.tab.path }]);
 const termPanes = ref<InstanceType<typeof Term>[]>([]);
-function addTerm(): void {
-  const free = [0, 1, 2].find((slot) => !terms.value.includes(slot));
-  if (free !== undefined) terms.value.push(free);
+function addTerm(asker: number, host: HostName, cwd: string): void {
+  const slot = [0, 1, 2].find((free) => !terms.value.some((one) => one.slot === free));
+  if (slot !== undefined) terms.value.splice(terms.value.findIndex((one) => one.slot === asker) + 1, 0, { slot, host, cwd });
 }
-function closeTerm(slot: number): void {
-  terms.value = terms.value.filter((one) => one !== slot);
-  post(props.tab, "termClose", { term: slot }).catch((problem) => window.alert(`Term: ${problem instanceof Error ? problem.message : String(problem)}`));
+function closeTerm(gone: { slot: number; host: HostName }): void {
+  terms.value = terms.value.filter((one) => one.slot !== gone.slot);
+  postHost(gone.host, "termClose", { tab: props.tab.id, term: gone.slot }).catch((problem) => window.alert(`Term: ${problem instanceof Error ? problem.message : String(problem)}`));
   void nextTick(() => termPanes.value.at(-1)?.focus());
 }
 const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; showFiles: []; highlighted: [on: boolean]; noRepo: [none: boolean]; sessionName: [name: string] }>();
@@ -537,7 +539,7 @@ onBeforeUnmount(() => {
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
     <GitGraph v-if="side === 'git'" :tab="tab" :active="active" />
-    <div v-if="side === 'term'" class="terms"><Term v-for="slot in terms" :key="slot" ref="termPanes" :tab="tab" :active="active" :index="slot" :count="terms.length" @add="addTerm" @exit="closeTerm(slot)" /></div>
+    <div v-if="side === 'term'" class="terms"><Term v-for="one in terms" :key="one.slot" ref="termPanes" :tab="tab" :active="active" :index="one.slot" :host="one.host" :start="one.cwd" :count="terms.length" @add="(host, cwd) => addTerm(one.slot, host, cwd)" @exit="closeTerm(one)" /></div>
     <Files v-if="side.startsWith('file')" ref="filesPane" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" @attach="(path) => pane?.attach(path, tab.host)" />
   </div>
 </template>

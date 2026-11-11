@@ -2,6 +2,7 @@
 // The VS Code-style folder picker on any host, a modal dialog fed by the backend's `folders`. Shared
 // by the Tabs dialog and the Files pane; its styles are Tabs.vue's. With `files` it picks a file
 // instead (the footer's File): files are listed after the folders, in plain type, and a click picks one.
+// The slot is left of the box: the Term pane's host selector.
 import { computed, ref } from "vue";
 import type { HostName } from "../../shared/config.ts";
 import { postHost } from "../api.ts";
@@ -52,12 +53,13 @@ function pick(): void {
   dialog.value?.close();
 }
 
-defineExpose({ open });
+defineExpose({ open, close: () => dialog.value?.close() });
 </script>
 
 <template>
   <dialog ref="dialog" class="tabs-pop tabs-picker" @pointerdown="closeOnBackdrop">
     <div class="tabs-row">
+      <slot />
       <input class="tabs-input" :value="typed" autofocus spellcheck="false" aria-label="Folder path" @input="list(($event.target as HTMLInputElement).value)" @keydown.enter.prevent="pick" />
       <button :disabled="!canPick" @click="pick">Ok</button>
       <button @click="dialog?.close()">Cancel</button>

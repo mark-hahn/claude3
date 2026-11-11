@@ -1,4 +1,4 @@
-// The Term pane's shells: one pty per terminal (main.ts keys them, three a project at most), in the project's folder, through node-pty (what VS Code's
+// The Term pane's shells: one pty per terminal (main.ts keys them, three a tab at most), in the folder the page names, through node-pty (what VS Code's
 // terminal uses): bash on Linux, PowerShell on Windows. Kept here, so closing the pane or
 // reloading the page loses nothing. The page's xterm.js gets the raw output, colours and all, and
 // sends keys as typed. The last LINES lines are kept, to replay to a page that comes in fresh.
