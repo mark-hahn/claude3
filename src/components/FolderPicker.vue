@@ -60,6 +60,7 @@ defineExpose({ open });
     <div class="tabs-row">
       <input class="tabs-input" :value="typed" autofocus spellcheck="false" aria-label="Folder path" @input="list(($event.target as HTMLInputElement).value)" @keydown.enter.prevent="pick" />
       <button :disabled="!canPick" @click="pick">Ok</button>
+      <button @click="dialog?.close()">Cancel</button>
     </div>
     <div v-if="error" class="tabs-error">{{ error }}</div>
     <div class="tabs-folders">
