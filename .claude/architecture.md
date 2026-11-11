@@ -110,7 +110,9 @@ on the laptop, and talks to each backend directly.
 - `src/monaco.ts` (+ `monaco.css`): claude2's Monaco setup (its webviews.ts `monacoScript` /
   `monacoStyle`), shared by the prompt box and the Snips: markdown only, the worker through Vite's
   `?worker`, the black theme, the user's VS Code keys (Ctrl-D delete line, ...), the line dots in
-  the gutter, the list keys (Tab, Shift-Tab, Enter, Backspace, #) and untabbing. claude2's F1
+  the gutter, the list keys (Tab, Shift-Tab, Enter, Backspace, #) and untabbing. Ctrl-J is an `addEditorAction`
+  of its own, in every editor (`joinLines` in `src/blankLines.ts`, checked by `npm test`): trailing white space off
+  the line, leading off the next, one space between, the caret left of it. claude2's F1
   unbinding is left out (it was for VS Code). Unlike claude2, Enter at the end of a heading (white space and a `- ` before
   its # come off) also opens a blank line above it and starts the item at the left edge (`headingEnter` in
   `src/blankLines.ts`, checked by `npm test`).
@@ -408,7 +410,7 @@ on the laptop, and talks to each backend directly.
 - Monaco's `addCommand` keys are page-wide and every tab has its own editor, so editor keys are
   `addAction`s. Monaco is about 4MB of the built page. Its theme and `addKeybindingRules` are page-wide
   too: the Files editor is stock Monaco (plus word wrap and the line dots, coloured by the language Monaco infers from the file's name or `#!` line: every language's Monarch colouring is registered, loaded on first use, JSON as JavaScript, Vue as HTML, `.log` by a small Monarch language of its own, none of the worker-backed language services) but must use the `claude2` theme, and is kept out of the
-  user's key rules, all but Ctrl-D, by its `stockEditor` context key. The ctrl-wheel font size of it and of the Snips is
+  user's key rules, all but Ctrl-D and Ctrl-J, by its `stockEditor` context key. The ctrl-wheel font size of it and of the Snips is
   `addWheelZoom` in `monaco.ts`, each editor with its own remembered size, since Monaco's `mouseWheelZoom` is page-wide too.
   The Files tree (with its rendered markdown) and the Log pane aren't Monaco: `src/wheelZoom.ts` does the same with a remembered CSS variable on the root, one per pane.
 - Every page element follows CLAUDE.md's display rules: font sizes 14–18px only (the exceptions,

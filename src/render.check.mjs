@@ -2,7 +2,7 @@
 // The ports un-doubled every backslash of claude2's template-literal source, so a missed one shows here.
 import assert from "node:assert/strict";
 import { AUTH_FAILED, imageNote, typedPrompt } from "../shared/types.ts";
-import { extraBlankLines, headingEnter } from "./blankLines.ts";
+import { extraBlankLines, headingEnter, joinLines } from "./blankLines.ts";
 import { cropRect } from "./cropRect.ts";
 import { modifiedLine } from "./diffLine.ts";
 import { keepOpen } from "./keepOpen.ts";
@@ -224,6 +224,12 @@ assert.deepEqual([...picked].sort(), ["b", "c", "d"]);
 // A shift-click with no anchor on show picks just that card.
 assert.equal(pick(picked, ids, "a", "gone", shift), "a");
 assert.deepEqual([...picked], ["a"]);
+
+// Ctrl-J: trailing and leading white space go, one space between, the caret left of it.
+assert.deepEqual(joinLines(["foo  ", "   bar "]), { text: "foo bar ", column: 4 });
+assert.deepEqual(joinLines(["foo", "   "]), { text: "foo", column: 4 });
+assert.deepEqual(joinLines(["  ", "  bar"]), { text: "bar", column: 1 });
+assert.deepEqual(joinLines(["a ", " b ", " c"]), { text: "a b c", column: 4 });
 
 // Enter at the end of a heading: a blank line above unless one is there, an item at the left edge.
 assert.equal(headingEnter("## modes", "", "- a"), "\n## modes\n- ");

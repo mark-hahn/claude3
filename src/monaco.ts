@@ -8,7 +8,7 @@ import "monaco-editor/features/register.all";
 import "monaco-editor/editor/browser/coreCommands";
 import "monaco-editor/languages/definitions/register.all";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
-import { headingEnter } from "./blankLines.ts";
+import { headingEnter, joinLines } from "./blankLines.ts";
 import "./monaco.css";
 
 export { monaco };
@@ -51,18 +51,53 @@ monaco.languages.setMonarchTokensProvider("log", {
 // The user's own VS Code editing keys. Ctrl-D is otherwise Monaco's add-next-match, and
 // shift-alt-left/right its smart select.
 const { KeyMod, KeyCode } = monaco;
-// These rules are page-wide; the Files pane's editor, marked by this context key, takes only Ctrl-D's.
+// These rules are page-wide; the Files pane's editor, marked by this context key, takes only Ctrl-D's
+// and Ctrl-J's.
 const typing = "textInputFocus && !stockEditor";
 const writable = `${typing} && !editorReadonly`;
 monaco.editor.addKeybindingRules([
   { keybinding: KeyMod.CtrlCmd | KeyCode.KeyD, command: "editor.action.deleteLines", when: "textInputFocus && !editorReadonly" },
-  { keybinding: KeyMod.CtrlCmd | KeyCode.KeyJ, command: "editor.action.joinLines", when: writable },
   { keybinding: KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.KeyD, command: "editor.action.duplicateSelection", when: writable },
   { keybinding: KeyMod.CtrlCmd | KeyMod.Shift | KeyMod.Alt | KeyCode.KeyU, command: "editor.action.transformToUppercase", when: writable },
   { keybinding: KeyMod.CtrlCmd | KeyMod.Shift | KeyMod.Alt | KeyCode.KeyL, command: "editor.action.transformToLowercase", when: writable },
   { keybinding: KeyMod.Shift | KeyMod.Alt | KeyCode.LeftArrow, command: "cursorUndo", when: typing },
   { keybinding: KeyMod.Shift | KeyMod.Alt | KeyCode.RightArrow, command: "cursorRedo", when: typing },
 ]);
+// Ctrl-J in every editor: joinLines on each caret's line and the next, or on a selection's lines,
+// as one undo step. Carets on neighbouring lines join all their lines.
+monaco.editor.addEditorAction({
+  id: "claude3.joinLines",
+  label: "Join Lines",
+  keybindings: [KeyMod.CtrlCmd | KeyCode.KeyJ],
+  precondition: "!editorReadonly",
+  keybindingContext: "textInputFocus",
+  run: (editor) => {
+    const model = editor.getModel();
+    if (!model) return;
+    const spans: [number, number][] = [];
+    for (const s of [...editor.getSelections()!].sort((a, b) => a.startLineNumber - b.startLineNumber)) {
+      const last = Math.min(model.getLineCount(), Math.max(s.endLineNumber, s.startLineNumber + 1));
+      const prev = spans.at(-1);
+      if (prev && s.startLineNumber <= prev[1]) prev[1] = Math.max(prev[1], last);
+      else spans.push([s.startLineNumber, last]);
+    }
+    const edits: monaco.editor.IIdentifiedSingleEditOperation[] = [];
+    const carets: monaco.Selection[] = [];
+    let removed = 0;
+    for (const [first, last] of spans) {
+      if (first === last) continue;
+      const lines = Array.from({ length: last - first + 1 }, (_, i) => model.getLineContent(first + i));
+      const { text, column } = joinLines(lines);
+      edits.push({ range: new monaco.Range(first, 1, last, model.getLineMaxColumn(last)), text });
+      carets.push(new monaco.Selection(first - removed, column, first - removed, column));
+      removed += last - first;
+    }
+    if (!edits.length) return;
+    editor.pushUndoStop();
+    editor.executeEdits("claude3", edits, carets);
+    editor.pushUndoStop();
+  },
+});
 
 export const editorOptions: monaco.editor.IStandaloneEditorConstructionOptions = {
   language: "markdown",

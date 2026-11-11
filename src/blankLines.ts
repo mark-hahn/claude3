@@ -23,3 +23,18 @@ export function headingEnter(before: string, rest: string, above: string): strin
   if (!/^\s*(- +)?#/.test(before) || rest.trim()) return null;
   return (above.trim() ? "\n" : "") + before.slice(before.indexOf("#")) + "\n- ";
 }
+
+// Ctrl-J's join (VS Code's Join Lines): each line after the first loses its leading white space,
+// the text before it its trailing white space, and one space goes between unless either side is
+// empty. The column, counting from 1, is the last join's: left of its space.
+export function joinLines(lines: string[]): { text: string; column: number } {
+  let text = lines[0];
+  let column = text.length + 1;
+  for (const line of lines.slice(1)) {
+    const next = line.trimStart();
+    text = text.trimEnd();
+    column = text.length + 1;
+    text += text && next ? " " + next : next;
+  }
+  return { text, column };
+}
