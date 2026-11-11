@@ -391,7 +391,7 @@ function onMessageKey(event: KeyboardEvent): void {
 
 <template>
   <button ref="button" class="tab git" :class="{ dirty: files.length }" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" :disabled="noRepo" @click="open">
-    Git<span v-if="files.length">&nbsp;{{ files.length }}</span>
+    G<span v-if="files.length">&nbsp;{{ files.length }}</span>
   </button>
   <dialog ref="dialog" class="git-pop" :class="{ wide: diffRow }" @cancel="committing && $event.preventDefault()" @close="onClose" @click="onDialogClick">
     <div class="git-main">

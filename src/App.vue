@@ -129,7 +129,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
 .tabs .tab.srv { color: brown; }
 /* tabs-toggle's right margin and the bar's gap leave 12px on its right; this and the bar's padding leave 12px on its left. */
 .tabs .sidebar-toggle { margin-left: 2px; }
-/* Each Project teleports its + and Git here in a span, shown only for the tab on show. display: contents makes them the row's own flex items. */
+/* Each Project teleports its +, G (Git) and R (Run) here in a span, shown only for the tab on show. display: contents makes them the row's own flex items. */
 .tabs .project-buttons, .tabs .project-buttons > span { display: contents; }
 /* Takes the row's free space, so it is centered between the last tab and Files. A basis of 0 so it never wraps the row. */
 .tabs .session-name { flex: 1 1 0; min-width: 0; align-self: center; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

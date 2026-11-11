@@ -453,6 +453,7 @@ onBeforeUnmount(() => {
           <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
         </button>
         <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" @no-repo="(none) => emit('noRepo', none)" @open-file="openInFiles" />
+        <button class="tab" :class="{ 'deploy-due': deployDue }" title="Run the project's ./run, the same as the prompt r. Ctrl-click: the same as the prompt v" @mousedown.prevent @click="pane?.runScript($event.ctrlKey)">R</button>
       </span>
     </Teleport>
     <aside class="sidebar">
@@ -525,6 +526,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style>
+/* The tab row's R (./run) button, highlighted as the Git button is when dirty (Git.vue). */
+.tab.deploy-due { background: #fbd9d9; border-color: #e4a7a7; }
+.tab.deploy-due:hover { background: linear-gradient(var(--wash), var(--wash)), #fbd9d9; }
 /* Ported from claude2's sidebar. */
 .project { height: 100%; min-height: 0; display: grid; grid-template-columns: var(--sidebar-width, 300px) 7px minmax(0, 1fr); }
 /* The Snips (or Settings) column: --side-share (half by default, the side divider drags it) of what the sidebar leaves, the conversation pane keeping the rest.

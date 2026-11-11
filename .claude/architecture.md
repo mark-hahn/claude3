@@ -94,7 +94,7 @@ on the laptop, and talks to each backend directly.
   and the poll lease live on claude-stats, one for all three backends; local
   fallback files in `~/.claude3/quota-*.json`. No footer 95% alert, no reading after a turn. The pane's Fable line (`modelScopedWindow`) adds up every weekly limit on a Fable model.
 - `src/components/Pane.vue`: claude2's conversation pane. History (bars and boxes) is built
-  imperatively, as claude2 builds it; the dock (prompt box, pill, stop, Run, Cap, stats) is a
+  imperatively, as claude2 builds it; the dock (prompt box, pill, stop, Cap, stats) is a
   template. Also the image popup. The prompt box is a Monaco editor whose text is mirrored into the
   `draft` ref both ways. claude2's big prompt editor: Ctrl-Alt-click in the box or Ctrl-Alt-Z
   (the tab on show only, via the `active` prop) puts the box full height left of the history,
@@ -239,7 +239,7 @@ on the laptop, and talks to each backend directly.
   during the Run button's `./run` counts from that run's start (`stampTime`, from `run-<tab>.start`
   and the status file's time), which also flags, until the next Run, a file the deploy itself
   rewrote under the stamped paths (`npm install` and a lock file). A `./run` from a terminal keeps
-  its stamp's own time; claude3's `deploy` back-dates its stamp itself. The footer's Run button is highlighted
+  its stamp's own time; claude3's `deploy` back-dates its stamp itself. The tab row's R (Run) button is highlighted
   while the same check finds files; it is re-read for every project, open or closed, on showing, window focus,
   session events, and a ./run's result.
 - **Deploy setup.** Before the deploy warning, a prompt in a project whose `Tab.deploySetup` (in its
@@ -260,7 +260,7 @@ on the laptop, and talks to each backend directly.
   New session (the prompt starts one, as from the draft, and leaves the running one alone),
   Continue or Cancel. The "/compact" auto-send (`keepDraft`) skips both checks.
   Either check failing (a stale backend answers "No such session.") shows an alert, then the prompt is sent.
-- **"r".** A prompt of just `r`, or the footer's Run button (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
+- **"r".** A prompt of just `r`, or the tab row's R (Run) button, which Project teleports after G (Git) and which calls Pane's exposed `runScript` (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
   project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. Terminal colour codes are stripped from the output first (`plain`; pm2 prints them even into a file). A failed ./run (non-zero exit, or no result) also opens a red-bordered error dialog on top (`.run-error`): the failure line plus the output's `!!` lines, kept in sessionStorage (`runFail:`) until its OK. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On win it runs as `bash ./run` inside Git Bash (`C:\Program Files\Git\bin\bash.exe -c`), since Windows can't start a script by its `#!` line (every project's `./run` is bash); on srv it is spawned directly, under `timeout`. On WSL it runs through `systemd-run`
   (`KillMode=process`), outside claude3.service's cgroup, so claude3's own `./run` restarting
   this backend kills neither the script nor the vite it leaves running. The page's request

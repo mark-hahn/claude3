@@ -498,7 +498,7 @@ function paintSearchHit(): void {
   host.scrollTop += range.getBoundingClientRect().top - host.getBoundingClientRect().top - host.clientHeight / 2;
 }
 
-defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt, returnPrompt, stepSearch });
+defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt, returnPrompt, stepSearch, runScript });
 
 // ---- the dock ----
 
@@ -1370,7 +1370,6 @@ onBeforeUnmount(() => {
           <div class="indicator finish" :class="pill.cls" :title="pill.title">{{ pill.text }}</div>
           <div class="group">
             <button class="stop" :class="{ stopping: stopping && active }" title="Stop" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
-            <button :class="{ 'deploy-due': deployDue }" title="Run the project's ./run, the same as the prompt r. Ctrl-click: the same as the prompt v" @mousedown.prevent @click="runScript($event.ctrlKey)">Run</button>
             <button title="Capture the screen for this prompt, hiding this window for the shot. Ctrl-click: this window stays up. Alt-click: the previous tab is shown for the shot" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
             <input type="checkbox" aria-label="bestModel" :title="modelChoice(session?.bestModel).title" :checked="!!session?.bestModel" :disabled="!session || session.trashed" @mousedown.prevent @change="setBestModel" />
           </div>
@@ -1475,9 +1474,6 @@ onBeforeUnmount(() => {
 /* Every dock control keeps a white fill. */
 .pane .dock-controls button { background: #fff; }
 .pane .dock-controls button:hover:not(:disabled) { background: #fff; border-color: #000; }
-/* The Git button's dirty colours (Git.vue). After the hover rule and as specific, so its border stays. */
-.pane .dock-controls button.deploy-due:not(:disabled) { background: #fbd9d9; border-color: #e4a7a7; }
-.pane .dock-controls button.deploy-due:hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), #fbd9d9; }
 .pane .stop { display: inline-flex; align-items: center; justify-content: center; line-height: 1; color: #000; border-color: #000; }
 /* Stop asks the CLI to finish the message it is on, so the run keeps streaming for a moment. */
 .pane .stop.stopping:not(:disabled) { background: #ffd4d4; }
