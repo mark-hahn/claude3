@@ -221,7 +221,8 @@ on the laptop, and talks to each backend directly.
   Windows, not the skill's "nothing to deploy yet" stub, and paths written into `.deployed` by a
   redirect in it or `./deploy`; a bare `touch .deployed` is the old kind and fails). Passing sets
   "done" and the prompt goes on with no dialog; otherwise a `<dialog>` lists the problems. Set up
-  sends `SETUP_PROMPT` (use the deployable skill) to a new session, which isn't opened, and sets
+  sends `SETUP_PROMPT` (use the deployable skill) to a new session and opens it (so the footer shows its
+  status; the typed prompt stays as its own session's draft; once "started" the button reads "Set up again"), and sets
   "started"; Check runs `deployCheck` again and an alert gives the result; Not needed sets "none"
   and sends; Continue sends and leaves the flag. Set up, Check and Cancel leave the prompt in the
   box. With "started" the dialog comes with no check first, Check focused. The flag comes back to the page in a `projects` event.

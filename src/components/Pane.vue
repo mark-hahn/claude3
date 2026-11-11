@@ -657,8 +657,9 @@ async function awaitRun(): Promise<void> {
 // Before a prompt, until the project's ./run is set up for the Run button (the deployable skill;
 // the flag is the project's deploySetup, kept by its backend). With no flag yet the backend's
 // check runs first, and a project that passes it is marked set up and its prompt goes on with no
-// dialog. Otherwise a dialog asks: Set up sends the skill to a new session, which isn't opened, so
-// this prompt stays in its box; Check checks again and sets the flag when ./run passes. Not
+// dialog. Otherwise a dialog asks: Set up sends the skill to a new session and opens it (this
+// prompt stays unsent, the draft of the session it was typed in; once "started" the button reads
+// "Set up again", so a second setup is meant); Check checks again and sets the flag when ./run passes. Not
 // needed sets "none" and sends the prompt, as Continue does without touching the flag; Set up,
 // Check and Cancel don't send it. Once Set up has run ("started"), the dialog comes with no check first.
 // A ./run (Run, "r", "v") asks the same, for the same flag; `what` is what goes on or doesn't.
@@ -667,7 +668,7 @@ async function deploySetupOk(what: "prompt" | "run" = "prompt"): Promise<boolean
   const state = props.tab.deploySetup;
   if (state === "done" || state === "none") return true;
   setupStarted.value = state === "started";
-  const held = what === "prompt" ? "Your prompt stays in the box" : "./run doesn't start";
+  const held = what === "prompt" ? "Your prompt stays unsent, in its session's box," : "./run doesn't start";
   let problems: string[] = [];
   if (!setupStarted.value) {
     try {
@@ -690,8 +691,10 @@ async function deploySetupOk(what: "prompt" | "run" = "prompt"): Promise<boolean
   const choice = dialog.returnValue;
   try {
     if (choice === "setup") {
-      await post(props.tab, "prompt", { sessionId: "", prompt: SETUP_PROMPT, images: [] });
+      const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: "", prompt: SETUP_PROMPT, images: [] });
       await post(props.tab, "deploySetup", { state: "started" });
+      // Opened, so the footer's status is the setup's; the prompt typed stays in its own session's draft.
+      emit("started", sessionId);
     } else if (choice === "check") {
       const { problems } = await post<{ problems: string[] }>(props.tab, "deployCheck", {});
       window.alert(problems.length ? `${props.tab.label}: the deploy setup isn't finished.\n\n${problems.map((problem) => `- ${problem}`).join("\n")}` : `${props.tab.label}: deploy is set up. Press Run to deploy.`);
@@ -1310,7 +1313,7 @@ onBeforeUnmount(() => {
     </dialog>
     <dialog ref="setupPopEl" class="run-pop">
       <pre>{{ setupText }}</pre>
-      <form method="dialog"><button value="setup" :autofocus="!setupStarted">Set up</button> <button value="check" :autofocus="setupStarted">Check</button> <button value="none">Not needed</button> <button value="continue">Continue</button> <button value="">Cancel</button></form>
+      <form method="dialog"><button value="setup" :autofocus="!setupStarted">{{ setupStarted ? "Set up again" : "Set up" }}</button> <button value="check" :autofocus="setupStarted">Check</button> <button value="none">Not needed</button> <button value="continue">Continue</button> <button value="">Cancel</button></form>
     </dialog>
     <dialog ref="commitPopEl" class="run-pop">
       <pre>{{ commitText }}</pre>
