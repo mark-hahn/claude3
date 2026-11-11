@@ -1,7 +1,7 @@
 // npm test: the Term pane's pty (server/term.ts) on this Linux box: its folder, colours passed
-// through, Ctrl-C, the 1000-line replay, and a key after `exit` starting another shell.
+// through, the prompt's OSC 7 folder, Ctrl-C, the 1000-line replay, Clr, and a key after `exit` starting another shell.
 import assert from "node:assert";
-import { termRead, termSend } from "./term.ts";
+import { termClear, termRead, termSend } from "./term.ts";
 
 const cwd = import.meta.dirname;
 let id = "";
@@ -25,6 +25,9 @@ const send = async (data) => {
 };
 
 await until(/./);
+await send("cd /tmp\r");
+await until(/\x1b\]7;\/tmp\x07/);
+await send("cd -\r");
 await send("pwd; printf 'x\\033[31mred\\033[0m\\n'\r");
 await until(/\x1b\[31mred\x1b\[0m\r\n/);
 assert.ok(seen.includes(`${cwd}\r\n`), "starts in its folder");
@@ -38,6 +41,11 @@ await send("seq 1 2000\r");
 await until(/\r\n2000\r\n/);
 const replay = await termRead("check", cwd, "", 0, 100, 30);
 assert.ok(replay.reset && replay.text.split("\n").length <= 1001 && replay.text.includes("\r\n2000\r\n"), "replay of the last 1000 lines");
+assert.ok(replay.idle >= 0 && replay.idle < 5000, "idle since the last output");
+await until(/\r\n2000\r\n[^]*\x1b\]7;/);
+termClear("check");
+const cleared = await termRead("check", cwd, "", 0, 100, 30);
+assert.ok(!cleared.text.includes("2000") && cleared.text.startsWith(`\x1b]7;${cwd}\x07`), "Clr leaves the folder and the prompt line");
 await send("exit\r");
 await until(/\[exited 0/);
 await send("echo again; exit\r");
