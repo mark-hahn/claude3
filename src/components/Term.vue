@@ -14,18 +14,20 @@ const box = ref<HTMLElement>();
 const messageOf = (problem: unknown): string => (problem instanceof Error ? problem.message : String(problem));
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-// VS Code's light terminal colours, with its greys (white, bright black and white) made black.
+// VS Code's light terminal colours, greys included (at the user's asking).
+// Ctrl-wheel sizes this pane's text alone, remembered like the Snips' (no limits but visible, at the user's asking).
+const FONT_KEY = "claude3.termFontSize";
 const term = new Terminal({
   scrollback: 1000,
-  fontSize: 14,
+  fontSize: Number(localStorage.getItem(FONT_KEY)) || 14,
   fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
   cursorBlink: true,
   minimumContrastRatio: 4.5,
   windowsPty: props.tab.host === "win" ? { backend: "conpty" } : undefined,
   theme: {
     background: "#f9f9f7", foreground: "#000000", cursor: "#000000", cursorAccent: "#f9f9f7", selectionBackground: "#add6ff",
-    black: "#000000", red: "#cd3131", green: "#107c10", yellow: "#949800", blue: "#0451a5", magenta: "#bc05bc", cyan: "#0598bc", white: "#000000",
-    brightBlack: "#000000", brightRed: "#cd3131", brightGreen: "#14ce14", brightYellow: "#b5ba00", brightBlue: "#0451a5", brightMagenta: "#bc05bc", brightCyan: "#0598bc", brightWhite: "#000000",
+    black: "#000000", red: "#cd3131", green: "#107c10", yellow: "#949800", blue: "#0451a5", magenta: "#bc05bc", cyan: "#0598bc", white: "#555555",
+    brightBlack: "#666666", brightRed: "#cd3131", brightGreen: "#14ce14", brightYellow: "#b5ba00", brightBlue: "#0451a5", brightMagenta: "#bc05bc", brightCyan: "#0598bc", brightWhite: "#a5a5a5",
   },
 });
 const fit = new FitAddon();
@@ -88,6 +90,16 @@ async function follow(): Promise<void> {
   }
 }
 
+// Capture phase, so xterm doesn't scroll as well; the box keeps its size, so the fit is called here.
+function zoom(event: WheelEvent): void {
+  if (!event.ctrlKey) return;
+  event.preventDefault();
+  event.stopPropagation();
+  term.options.fontSize = Math.max(1, (term.options.fontSize ?? 14) + (event.deltaY < 0 ? 1 : -1));
+  localStorage.setItem(FONT_KEY, String(term.options.fontSize));
+  fit.fit();
+}
+
 const resized = new ResizeObserver(() => box.value?.clientWidth && fit.fit());
 onMounted(() => {
   term.open(box.value!);
@@ -104,7 +116,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="term"><div ref="box" class="term-box"></div></div>
+  <div class="term" @wheel.capture="zoom"><div ref="box" class="term-box"></div></div>
 </template>
 
 <style scoped>

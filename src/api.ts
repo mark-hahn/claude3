@@ -1,11 +1,13 @@
 // The page's side of a backend (server/main.ts): commands go up as POSTs, everything else comes
 // down the backend's event stream, one for all its projects.
-import { reactive } from "vue";
+import { reactive, ref } from "vue";
 import { HOSTS, type HostName, type Tab } from "../shared/config.ts";
-import type { ServerEvent, StreamEvent } from "../shared/types.ts";
+import type { QuotaUse, ServerEvent, StreamEvent } from "../shared/types.ts";
 
 // The backends whose Claude login needs renewing, as each last said.
 export const authNeeded = reactive<Record<HostName, boolean>>({ wsl: false, win: false, srv: false });
+// The account's plan use, the newest reading any backend sent, for every footer.
+export const quotaUse = ref<QuotaUse | null>(null);
 
 async function answer<T>(host: HostName, res: Response): Promise<T> {
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
@@ -67,6 +69,10 @@ function openStream(host: HostName, stream: Stream): void {
     const event = JSON.parse(message.data as string) as StreamEvent;
     if (event.type === "projects") return onTabs(host, event.tabs);
     if (event.type === "auth") return void (authNeeded[host] = event.needed);
+    if (event.type === "quota") {
+      if (event.use.at >= (quotaUse.value?.at ?? 0)) quotaUse.value = event.use;
+      return;
+    }
     const listener = stream.listeners.get(event.tab);
     if (listener) listener.onEvent(event);
     else if (event.type === "state") stream.held.set(event.tab, event);

@@ -173,8 +173,24 @@ export type ServerEvent =
   | { type: "returned"; sessionId: string; prompt: string; images: string[]; files: (AttachedFile & { dataUri: string })[]; notice?: string };
 
 // A backend's one event stream: its list of projects and whether its Claude login needs renewing,
-// on connect and at every change, and each project's events marked with its id.
-export type StreamEvent = { type: "projects"; tabs: Tab[] } | { type: "auth"; needed: boolean } | (ServerEvent & { tab: string });
+// on connect and at every change, the plan's use on connect and at each turn's end, and each project's events marked with its id.
+export type StreamEvent = { type: "projects"; tabs: Tab[] } | { type: "auth"; needed: boolean } | { type: "quota"; use: QuotaUse } | (ServerEvent & { tab: string });
+
+// The account's plan use from the backend's newest reading (one account behind every host): each
+// window's (5h, 7d, Fable) percent and reset in epoch seconds, and the month's extra-usage spend.
+export interface QuotaUse {
+  at: number;
+  windows: { pct: number | null; resetsAt: number | null }[];
+  spentUsd: number | null;
+}
+
+// The footer's red spend in place of the ponytail stat: $0.00 once a window not yet reset is at 95%,
+// where extra usage (real dollars) is next; past 100% the month's extra-usage spend. Null below 95%.
+export function quotaSpend(use: QuotaUse | null, nowMs: number): string | null {
+  const live = (use?.windows ?? []).filter((window) => window.resetsAt === null || window.resetsAt * 1000 > nowMs);
+  const pct = Math.max(0, ...live.map((window) => window.pct ?? 0));
+  return pct < 95 ? null : "$" + (pct >= 100 ? use!.spentUsd ?? 0 : 0).toFixed(2);
+}
 
 // One line of the Files tree.
 export interface FileEntry {

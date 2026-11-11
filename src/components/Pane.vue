@@ -7,13 +7,14 @@
 // prompt editor.
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { HostName, Tab } from "../../shared/config.ts";
-import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, modelChoice, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
-import { post, postHost } from "../api.ts";
+import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, modelChoice, quotaSpend, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
+import { post, postHost, quotaUse } from "../api.ts";
 import { cropRect } from "../cropRect.ts";
 import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
 import { answerText, fillBox, occurrences, renderMarkdown, shownText, textHits, withoutDetails } from "../render.ts";
 import { loadWaiting, saveWaiting, type Waiting } from "../waitingImages.ts";
+import { wheelZoom } from "../wheelZoom.ts";
 import FolderPicker from "./FolderPicker.vue";
 
 // active: this pane's tab is the one on show, so the page-wide keys are its. search: the sidebar's
@@ -22,6 +23,8 @@ const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: Run
 const emit = defineEmits<{ started: [sessionId: string]; deployDue: [due: boolean] }>();
 
 const historyEl = ref<HTMLElement>();
+// Ctrl-wheel on the bars and boxes sizes their text alone, the same in every tab.
+const zoom = wheelZoom("pane-font-size");
 const runPopEl = ref<HTMLDialogElement>();
 const runText = ref("");
 const runErrorEl = ref<HTMLDialogElement>();
@@ -409,7 +412,8 @@ function applyDelta(turnId: string, next: RunningStatus | null): void {
 const drafted = (): string[] => [...drafts].filter(([, text]) => text.trim()).map(([id]) => id).concat(draft.value.trim() && props.session ? [props.session.id] : [], Object.keys(waiting), Object.keys(waitingFiles));
 // Text picked in the Snips joins the end of the prompt, on a line of its own, with the cursor after it.
 // An edit through Monaco, so ctrl-z takes it back. False when the box couldn't take it.
-// Into an empty box (no text, pictures or files) it is sent at once; a send that is cancelled or fails leaves it in the box.
+// Into an empty box (no text, pictures or files) it is sent at once, after a dialog when the session has turns (commitChoice);
+// a send that is cancelled or fails leaves it in the box.
 function appendPrompt(text: string): boolean {
   const box = promptBox;
   if (!box || box.getOption(monaco.editor.EditorOption.readOnly)) return false;
@@ -424,7 +428,7 @@ function appendPrompt(text: string): boolean {
   box.focus();
   box.setPosition(model.getPositionAt(model.getValueLength()));
   box.revealPosition(box.getPosition()!);
-  if (empty) void submit();
+  if (empty) void submit(undefined, false, true);
   return true;
 }
 const focusPrompt =(): void => (promptMarkdown.value ? promptMdEl.value : promptBox)?.focus();
@@ -780,18 +784,24 @@ async function deployOk(): Promise<boolean> {
 // Before a prompt to a session with turns: when HEAD was committed after its last prompt, the
 // conversation is likely about work that's done, so a dialog asks New session (this prompt
 // starts one), Continue (send it here) or Cancel. A failed check doesn't hold the prompt up.
-async function commitChoice(): Promise<"new" | "continue" | ""> {
+// snips: the Snips' text sent straight from an empty box, which nobody looked at the conversation
+// for, so any turns at all ask the same question, commit or not.
+async function commitChoice(snips = false): Promise<"new" | "continue" | ""> {
   const last = turns().at(-1);
   if (!last) return "continue";
-  let head: { at: number; subject: string };
-  try {
-    head = await post<{ at: number; subject: string }>(props.tab, "lastCommit", {});
-  } catch (error) {
-    report(new Error(`Couldn't check ${props.tab.label} for a commit since this conversation's last prompt (the prompt is sent anyway): ${error instanceof Error ? error.message : String(error)}`));
-    return "continue";
+  if (snips) {
+    commitText.value = `${props.tab.label}: this conversation already has prompts. Send the Snips' text to it, or start a new session with it?`;
+  } else {
+    let head: { at: number; subject: string };
+    try {
+      head = await post<{ at: number; subject: string }>(props.tab, "lastCommit", {});
+    } catch (error) {
+      report(new Error(`Couldn't check ${props.tab.label} for a commit since this conversation's last prompt (the prompt is sent anyway): ${error instanceof Error ? error.message : String(error)}`));
+      return "continue";
+    }
+    if (head.at <= last.createdAt) return "continue";
+    commitText.value = `${props.tab.label}: a commit was made after this conversation's last prompt.\n\n${head.subject}`;
   }
-  if (head.at <= last.createdAt) return "continue";
-  commitText.value = `${props.tab.label}: a commit was made after this conversation's last prompt.\n\n${head.subject}`;
   const dialog = commitPopEl.value!;
   dialog.returnValue = "";
   dialog.showModal();
@@ -815,7 +825,7 @@ function checkDeploySoon(): void {
 }
 watch(() => [props.active, props.version], checkDeploySoon, { immediate: true });
 
-async function submit(text = draft.value, keepDraft = false): Promise<void> {
+async function submit(text = draft.value, keepDraft = false, snips = false): Promise<void> {
   if ((text.trim() === "r" || text.trim() === "v") && !keepDraft) {
     draft.value = "";
     return runScript(text.trim() === "v");
@@ -827,17 +837,17 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
   if (sending) return;
   sending = true;
   try {
-    await send(text, keepDraft);
+    await send(text, keepDraft, snips);
   } finally {
     sending = false;
   }
 }
 let sending = false;
 
-async function send(text: string, keepDraft: boolean): Promise<void> {
+async function send(text: string, keepDraft: boolean, snips: boolean): Promise<void> {
   if (!keepDraft && !(await deploySetupOk())) return;
   if (!keepDraft && !(await deployOk())) return;
-  const choice = keepDraft ? "continue" : await commitChoice();
+  const choice = keepDraft ? "continue" : await commitChoice(snips);
   if (!choice) return;
   const fresh = !props.session || choice === "new";
   // Sending during a run stops that run and takes this prompt instead; a run waiting on a
@@ -1268,6 +1278,7 @@ const stats = computed(() => {
     turns: live ? live.turns : last?.turns ?? 0,
     graftSaved: props.session?.graftSavedUsd ?? 0,
     pony: skips,
+    spend: quotaSpend(quotaUse.value, now.value),
     quiet: shortTime(live ? live.sinceEventMs + since : 0),
     duration: shortTime(spent),
   };
@@ -1408,7 +1419,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="pane" :class="{ 'big-prompt-editor': bigPrompt }" @click.capture="copyCodeBlock">
-    <div ref="historyEl" class="history" tabindex="-1"></div>
+    <div ref="historyEl" class="history" tabindex="-1" @wheel="zoom"></div>
     <dialog ref="runPopEl" class="run-pop" @close="runClosed">
       <pre>{{ runText }}</pre>
       <form method="dialog"><button autofocus>OK</button></form>
@@ -1466,7 +1477,8 @@ onBeforeUnmount(() => {
             {{ Math.round((contextUsed || 0) / 1000) }}/{{ inK(compactAt) }}
           </div>
           <div v-if="stats.graftSaved > 0.25" class="status" title="What graft has saved this session">${{ stats.graftSaved.toFixed(2) }}</div>
-          <div v-if="stats.pony === 0 || ceilings === 0" class="status" title="Ponytail skips this session : ponytail comments in the project">{{ stats.pony }}:{{ ceilings }}</div>
+          <div v-if="stats.spend" class="status spend" title="A plan window (5h, 7d or Fable) is at 95%: past 100% extra usage costs real dollars, and this shows the month's extra-usage spend">{{ stats.spend }}</div>
+          <div v-else-if="stats.pony === 0 || ceilings === 0" class="status" title="Ponytail skips this session : ponytail comments in the project">{{ stats.pony }}:{{ ceilings }}</div>
           <div class="status" title="Time since anything new showed in the pane">{{ stats.quiet }}</div>
           <div class="status" title="Time spent responding in this session">{{ stats.duration }}</div>
         </div>
@@ -1477,14 +1489,15 @@ onBeforeUnmount(() => {
 
 <style>
 /* Ported from claude2's conversation pane. Not scoped: the history is built by script, and its
-   elements carry no scope attribute. Font sizes stay in 14-18px and text is solid black (CLAUDE.md). */
+   elements carry no scope attribute. Font sizes stay in 14-18px and text is solid black (CLAUDE.md),
+   except the history's ctrl-wheel size (--pane-font-size, 1em below it), at the user's asking. */
 .pane { height: 100%; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; background: var(--page); }
 .pane > .history { grid-area: 1 / 1; }
 .pane .dock { display: flex; align-items: stretch; gap: 10px; border-top: 1px solid var(--border); background: var(--page); padding: 8px 12px; }
 .pane .dock-controls { display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 4px; flex: 0 1 auto; min-width: 0; margin-left: auto; }
 .pane .dock-controls button { min-height: 0; padding: 3px 8px; }
 /* contain: no long code line in a box sets the pane's minimum width; only the dock does (Project's grid). */
-.pane .history { overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 10px 12px 4px; outline: none; contain: inline-size; }
+.pane .history { overflow-y: auto; overflow-x: hidden; min-height: 0; padding: 10px 12px 4px; outline: none; contain: inline-size; font-size: var(--pane-font-size, 14px); }
 .pane .turn { margin-bottom: 4px; }
 .pane .turn.selected .prompt-bar { outline: 2px solid #f28b82; outline-offset: -2px; }
 .pane .prompt-bar { width: 100%; height: 1.65em; border: 1px solid #eadf90; background: var(--yellow); color: var(--ink); display: block; text-align: left; padding: 1px 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; cursor: pointer; min-height: 0; font: inherit; }
@@ -1498,10 +1511,10 @@ onBeforeUnmount(() => {
 ::highlight(search-selection) { background-color: #ffc9c9; }
 .pane .response { margin: 4px 0 8px; border-left: 3px solid var(--border); padding: 8px 10px; background: var(--surface); overflow-wrap: anywhere; overflow-x: hidden; }
 .pane .response.error { border-left-color: #c62828; }
-.pane .response.markdown { font: 14px/1.5 Aptos, "Segoe UI", sans-serif; white-space: normal; }
+.pane .response.markdown { font: 1em/1.5 Aptos, "Segoe UI", sans-serif; white-space: normal; }
 .pane .response.markdown > :first-child { margin-top: 0; }
-.pane .response.markdown h1, .pane .response.markdown h2 { font-size: 14px; font-weight: 700; margin: 14px 0 6px; padding-bottom: 3px; border-bottom: 1px solid var(--border); }
-.pane .response.markdown h3, .pane .response.markdown h4, .pane .response.markdown h5, .pane .response.markdown h6 { font-size: 14px; font-weight: 700; margin: 12px 0 5px; }
+.pane .response.markdown h1, .pane .response.markdown h2 { font-size: 1em; font-weight: 700; margin: 14px 0 6px; padding-bottom: 3px; border-bottom: 1px solid var(--border); }
+.pane .response.markdown h3, .pane .response.markdown h4, .pane .response.markdown h5, .pane .response.markdown h6 { font-size: 1em; font-weight: 700; margin: 12px 0 5px; }
 .pane .response.markdown p { margin: 0 0 8px; }
 .pane .response.markdown ul, .pane .response.markdown ol { margin: 0 0 8px; padding-left: 24px; }
 .pane .response.markdown li { margin: 2px 0; }
@@ -1511,10 +1524,10 @@ onBeforeUnmount(() => {
 /* Above the closing answer: heavier than a markdown rule so the two never get confused. */
 .pane .response.markdown hr.answer-rule { border-top: 2px solid #000; }
 .pane .response.markdown a { color: var(--ink); }
-.pane .response.markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; background: rgba(0,0,0,0.05); border-radius: 4px; padding: 1px 4px; }
+.pane .response.markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 1em; background: rgba(0,0,0,0.05); border-radius: 4px; padding: 1px 4px; }
 .pane .response.markdown pre { background: #f2f1ec; border: 1px solid var(--border); border-radius: 8px; margin: 0 0 10px; padding: 8px 10px; overflow: auto; }
 .pane .response.markdown pre code { background: none; padding: 0; white-space: pre; }
-.pane .response.markdown table { border-collapse: collapse; margin: 0 0 10px; font-size: 14px; }
+.pane .response.markdown table { border-collapse: collapse; margin: 0 0 10px; font-size: 1em; }
 .pane .response.markdown th, .pane .response.markdown td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
 .pane .response.markdown th { background: rgba(0,0,0,0.05); }
 /* A run of tool lines between the prose, shown only while the box's tool groups are. */
@@ -1554,6 +1567,7 @@ onBeforeUnmount(() => {
 .pane .status { white-space: nowrap; }
 .pane .context { cursor: pointer; }
 .pane .context.over { background: #ffd0d0; border-radius: 4px; padding: 0 5px; margin: 0 -5px; }
+.pane .spend { color: #c62828; font-weight: bold; }
 /* Every dock control keeps a white fill. */
 .pane .dock-controls button { background: #fff; }
 .pane .dock-controls button:hover:not(:disabled) { background: #fff; border-color: #000; }

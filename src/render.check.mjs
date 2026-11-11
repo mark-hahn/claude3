@@ -1,7 +1,7 @@
 // Self-check for the markdown renderer, answer text and trash-list picking ported from claude2: `node src/render.check.mjs`.
 // The ports un-doubled every backslash of claude2's template-literal source, so a missed one shows here.
 import assert from "node:assert/strict";
-import { AUTH_FAILED, imageNote, typedPrompt } from "../shared/types.ts";
+import { AUTH_FAILED, imageNote, quotaSpend, typedPrompt } from "../shared/types.ts";
 import { extraBlankLines, headingEnter, joinLines } from "./blankLines.ts";
 import { cropRect } from "./cropRect.ts";
 import { modifiedLine } from "./diffLine.ts";
@@ -18,6 +18,18 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+
+// The footer's red spend: none below 95%, $0.00 from 95%, the month's spend from 100%, and a window past its reset counts for nothing.
+{
+  const now = 1_000_000_000_000;
+  const use = (pct, resetsAt = now / 1000 + 60) => ({ at: now, windows: [{ pct: 10, resetsAt: null }, { pct, resetsAt }], spentUsd: 3.5 });
+  assert.equal(quotaSpend(null, now), null);
+  assert.equal(quotaSpend(use(94.9), now), null);
+  assert.equal(quotaSpend(use(95), now), "$0.00");
+  assert.equal(quotaSpend(use(100), now), "$3.50");
+  assert.equal(quotaSpend({ ...use(100), spentUsd: null }, now), "$0.00");
+  assert.equal(quotaSpend(use(100, now / 1000 - 1), now), null, "reset since the reading");
+}
 
 // Always a session open: Clean lands before the card is made, a burst of events makes one card,
 // and a failed open doesn't jam the queue.

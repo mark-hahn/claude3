@@ -59,7 +59,7 @@ import { contextTable } from "./contextStats.ts";
 import { fileActions, upload } from "./files.ts";
 import { GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "./gitGraph.ts";
 import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
-import { checkCosts, QuotaService, speechmaticsCost } from "./quota.ts";
+import { checkCosts, QuotaService, speechmaticsCost, type QuotaState } from "./quota.ts";
 import { stampProblem, stampTime } from "./stamp.ts";
 import { termRead, termResize, termSend } from "./term.ts";
 
@@ -271,6 +271,19 @@ const windows = (fs.existsSync(WINDOWS_FILE) ? JSON.parse(fs.readFileSync(WINDOW
 const runs = new Map<string, Promise<void>>();
 // One per backend; its token-refresh probe runs in DATA_DIR so no project gets its transcript.
 const quota = new QuotaService(DATA_DIR, DATA_DIR, () => models, log);
+
+// The plan's use for every footer (QuotaUse), to every page. state: one the caller already holds;
+// otherwise a reading, which the stats server's lease keeps to one endpoint call per cycle for the fleet.
+async function sendQuota(state?: QuotaState): Promise<void> {
+  try {
+    state ??= await quota.read(false);
+    if (state.at) {
+      broadcast({ type: "quota", use: { at: state.at, windows: state.windows.map(({ pct, resetsAt }) => ({ pct, resetsAt })), spentUsd: state.credits?.spentUsd ?? null } });
+    }
+  } catch (error) {
+    log(`Quota for the footer failed: ${errorText(error)}`);
+  }
+}
 
 // claude2's authNeeded, per host as each host has its own login: set when a turn dies on an
 // expired login, cleared by a sign-in or an answered turn. A file, so it outlasts a restart.
@@ -537,6 +550,7 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
     save(project);
     sendSession(project, session);
     void sendCeilings(project);
+    void sendQuota();
   }
 }
 
@@ -661,6 +675,7 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "quota") {
     const [history, apiCosts] = await Promise.all([quota.history(body.force === true), checkCosts(log)]);
+    void sendQuota(history.state);
     return { ...history, apiCosts };
   }
   if (name === "quotaSync") {
@@ -1244,6 +1259,7 @@ const server = createServer((req, res) => {
     for (const project of projects.values()) {
       void sendCeilings(project);
     }
+    void sendQuota();
     req.on("close", () => clients.delete(res));
     return;
   }

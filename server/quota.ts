@@ -1,6 +1,6 @@
 // claude2's QuotaService (src/quota.ts), ported nearly verbatim for the Settings pane's Quotas tab.
-// Left out: the footer's 95% alert (claude3 has no such stat yet) and claude2's Windows-side VS Code
-// storage; the local history and meta files live in ~/.claude3 instead. The stats server
+// Left out: claude2's footer alert (main.ts's sendQuota sends every reading to the footers instead)
+// and claude2's Windows-side VS Code storage; the local history and meta files live in ~/.claude3 instead. The stats server
 // (claude-stats/server.mjs, STATS_URL) holds the account's one history and the lease, for every backend.
 import { spawn } from "child_process";
 import * as fs from "fs/promises";
