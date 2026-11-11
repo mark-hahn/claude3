@@ -8,6 +8,7 @@ import "@xterm/xterm/css/xterm.css";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
+import { findBack } from "../termFind.ts";
 import FolderPicker from "./FolderPicker.vue";
 
 const props = defineProps<{ tab: Tab; active: boolean }>();
@@ -60,7 +61,28 @@ term.attachCustomKeyEventHandler((event) => {
   return event.key !== "v";
 });
 // Selecting copies, a double-click's word too (VS Code's copyOnSelection).
-term.onSelectionChange(() => term.hasSelection() && void navigator.clipboard.writeText(term.getSelection()));
+term.onSelectionChange(() => !finding && term.hasSelection() && void navigator.clipboard.writeText(term.getSelection()));
+
+// The header's search box: Enter selects the last place its text is in the buffer, and each Enter after
+// that the one above. The last hit is the selection, while it still reads as the text; from the top one
+// the search goes round to the bottom. A hit out of view is scrolled to the middle. Red: no hit at all.
+const findText = ref("");
+const missed = ref(false);
+// Set while a hit is being selected, which is not for the clipboard.
+let finding = false;
+function find(): void {
+  const text = findText.value;
+  if (!text) return;
+  const buffer = term.buffer.active;
+  const last = term.getSelection().toLowerCase() === text.toLowerCase() ? term.getSelectionPosition()?.start : undefined;
+  const hit = findBack(buffer, term.cols, text, last) ?? (last ? findBack(buffer, term.cols, text) : null);
+  missed.value = !hit;
+  if (!hit) return;
+  finding = true;
+  term.select(hit.col, hit.row, hit.length);
+  finding = false;
+  if (hit.row < buffer.viewportY || hit.row >= buffer.viewportY + term.rows) term.scrollToLine(Math.max(0, hit.row - Math.floor(term.rows / 2)));
+}
 
 // Keys one request at a time, so they reach the shell in order; those typed meanwhile go together.
 let pending = "";
@@ -153,7 +175,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="term" @wheel.capture="zoom">
-    <div class="term-head"><span class="term-cwd">{{ cwd }}</span><button title="Pick a folder for the shell to cd to" @click="picker?.open(cwd)">Path</button><button title="Clear all but the prompt line" @click="clear">Clr</button><span class="term-idle" title="Time since the shell's last output or key">{{ idle }}</span></div>
+    <div class="term-head"><span class="term-cwd">{{ cwd }}</span><button class="term-path" title="Pick a folder for the shell to cd to" @click="picker?.open(cwd)">Path</button><input v-model="findText" class="tabs-input" :class="{ missed }" spellcheck="false" aria-label="Search the terminal's text, from the bottom up" @input="missed = false" @keydown.enter.prevent="find" @keydown.esc.prevent="term.focus()" /><button title="Clear all but the prompt line" @click="clear">Clr</button><span class="term-idle" title="Time since the shell's last output or key">{{ idle }}</span></div>
     <div ref="box" class="term-box"></div>
     <FolderPicker ref="picker" :host="tab.host" @pick="cd" />
   </div>
@@ -163,7 +185,14 @@ onBeforeUnmount(() => {
 /* The padding is the outer div's: the fit measures the inner one. */
 .term { min-height: 0; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 6px; padding: 6px 0 0 10px; background: #f9f9f7; }
 .term-head { display: flex; align-items: center; gap: 8px; padding: 0 10px 6px 0; border-bottom: 1px solid var(--border); color: #000; font-size: 14px; }
-.term-head button { min-height: 0; padding: 3px 10px; }
+/* All but the folder is 20% smaller than the page's 14px controls (at the user's asking). */
+.term-head button, .term-head .tabs-input, .term-idle { font-size: 11.2px; }
+.term-head button { min-height: 0; padding: 2px 8px; border-radius: 6px; }
+/* The search box is 1.25 times the Path button, whose width is set for that. */
+.term-head { --path-width: 45px; }
+.term-head .term-path { width: var(--path-width); padding: 2px 0; }
+.term-head .tabs-input { flex: none; width: calc(var(--path-width) * 1.25); padding: 2px 6px; border-radius: 5px; }
+.term-head .tabs-input.missed { background: #ffd6d6; }
 .term-cwd { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .term-idle { flex: none; margin: 0 10px 0 4px; font-variant-numeric: tabular-nums; }
 .term-box { min-height: 0; }

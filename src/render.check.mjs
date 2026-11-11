@@ -10,6 +10,7 @@ import { MessageHistory } from "./messageHistory.ts";
 import { pick } from "./pick.ts";
 import { answerText, matchCount, occurrences, renderMarkdown } from "./render.ts";
 import { byName, folderName, foldersBetween, nextTab, sameName } from "./tabList.ts";
+import { findBack } from "./termFind.ts";
 import { wheelZoom } from "./wheelZoom.ts";
 import { fileActions, numberedName } from "../server/files.ts";
 import { headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "../server/gitGraph.ts";
@@ -440,5 +441,17 @@ assert.equal(fableWindow(weekly("Fable 5.2", 7, early), weekly("Fable 5.1", 3, e
 assert.equal(fableWindow(weekly("Fable 5.2", 7, early), weekly("Fable 5.1", null, early)).pct, 7);
 assert.deepEqual(fableWindow(weekly("Opus", 5, early)), { key: "model", label: "Fable", pct: null, resetsAt: null });
 assert.equal(modelScopedWindow(undefined).pct, null);
+
+// The Term pane's search: from the bottom up, case ignored, each next hit ending before the last, a wrapped line read as one.
+{
+  const rows = [["foo bar", false], ["01234567fo", false], ["o tail", true], ["a foo foo", false]];
+  const buffer = { length: rows.length, getLine: (y) => rows[y] && { isWrapped: rows[y][1], translateToString: (trim) => (trim ? rows[y][0].trimEnd() : rows[y][0].padEnd(10)) } };
+  const hits = [];
+  for (let hit = findBack(buffer, 10, "FOO"); hit; hit = findBack(buffer, 10, "FOO", { x: hit.col, y: hit.row })) hits.push([hit.col, hit.row, hit.length]);
+  assert.deepEqual(hits, [[6, 3, 3], [2, 3, 3], [8, 1, 3], [0, 0, 3]]);
+  assert.deepEqual(findBack(buffer, 10, "o", { x: 3, y: 2 }), { col: 0, row: 2, length: 1 });
+  assert.equal(findBack(buffer, 10, "zzz"), null);
+  assert.equal(findBack(buffer, 10, ""), null);
+}
 
 console.log("render checks passed");
