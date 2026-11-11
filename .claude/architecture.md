@@ -33,7 +33,7 @@ on the laptop, and talks to each backend directly.
   column, each tab with its own state (`sides[id]`: "", "files", "file", "git", "snips" or "settings"), so it is as it was left when the tab comes back.
   Each tab's label has a dot: green with a session active, else light red when its Git or Run button
   is highlighted (`dirty` and `deployDue` come up through Project's `highlighted`), else none. Those
-  two are re-read for every open project, on show or not; closed ones are skipped. Centered between the last tab and Files is the name of the selected session of the tab on show (`sessionName` up through Project).
+  two are re-read for every project, on show or not, closed ones too (their git status every 30s, not 2s), for the Tabs button: light red, with the same dot on each flagged name in its dialog, while any project is highlighted. Centered between the last tab and Files is the name of the selected session of the tab on show (`sessionName` up through Project).
 - `src/components/FolderPicker.vue`: the VS Code-style folder picker `<dialog>` on any host, fed by
   the backend's `folders`; used by the Tabs dialog and the Files pane. Its styles are Tabs.vue's, unscoped for that.
 - `src/components/Files.vue`: the Files column: header rows and a tree of the tab's host, with
@@ -59,7 +59,7 @@ on the laptop, and talks to each backend directly.
   --source=HEAD --staged --worktree` the rest plus a rename's old path, all as `:(top,literal)` pathspecs since status paths
   are from the repo's top), and the dialog stays open. "Describe changes" in its header (`describeChanges` action) sends the
   uncommitted diff and untracked files' text to `claude -p` on Opus 5.5 and puts its reply (at most
-  2 short sentences) in the message box. Up and Down in the box walk old messages as VS Code's does (`src/messageHistory.ts`, a port of its SCMInput, checked by `npm test`), but the list is the branch's last 100 messages from `git log`, not a store of its own. Above the box is the newest commit's subject, from the same log (`git` action with `log`, sent only while the dialog is open, so on its 2s poll); a click edits it in place and Enter amends and pushes (`reword` action, `rewordHead` in `server/gitGraph.ts`: fetch, refuse if the upstream has commits the branch lacks, `commit --amend --only` keeping the body and leaving staged files out, `push --force-with-lease`, and back to the old commit if the push fails). Status is re-read for every open project, on show or not: on showing, session events (a turn starting or ending),
+  2 short sentences) in the message box. Up and Down in the box walk old messages as VS Code's does (`src/messageHistory.ts`, a port of its SCMInput, checked by `npm test`), but the list is the branch's last 100 messages from `git log`, not a store of its own. Above the box is the newest commit's subject, from the same log (`git` action with `log`, sent only while the dialog is open, so on its 2s poll); a click edits it in place and Enter amends and pushes (`reword` action, `rewordHead` in `server/gitGraph.ts`: fetch, refuse if the upstream has commits the branch lacks, `commit --amend --only` keeping the body and leaving staged files out, `push --force-with-lease`, and back to the old commit if the push fails). Status is re-read for every project, on show or not (a closed one's poll only every 30s): on showing, session events (a turn starting or ending),
   and every 2s while the page is visible. Every backend git call sets `GIT_OPTIONAL_LOCKS=0`, so the polling never holds the index lock against a real `git add`.
 - `src/components/GitGraph.vue`: the tab row Log button's pane, unrelated to the Git button's dialog: `git log --graph` (`gitGraph` action, newest 1000 commits, laid out by `server/gitGraph.ts`: no hash or star on show, a commit with branch or tag names has its message on a second line) as rows of text, on which ctrl-click copies a commit's full hash and alt-click its message, re-read every 2s while on show. The button is disabled when the Git button's status finds no repo (`noRepo` up through Project).
 - `src/components/ReAuth.vue`: the sidebar's red Re-Auth button and its `<dialog>`, which walks
@@ -213,7 +213,7 @@ on the laptop, and talks to each backend directly.
   script (claude3, claude2, tv, finance on hahnca.com). A script can write paths into the stamp
   and then only those count: claude3's writes `server shared`, what `--if-stale` hashes, so
   docs and page-only edits don't ask for a deploy. The footer's Run button is highlighted
-  while the same check finds files; it is re-read for every open project on showing, window focus,
+  while the same check finds files; it is re-read for every project, open or closed, on showing, window focus,
   session events, and a ./run's result.
 - **Deploy setup.** Before the deploy warning, a prompt in a project whose `Tab.deploySetup` (in its
   backend's `projects.json`) isn't "done" or "none" goes through `deploySetupOk` in Pane. With no

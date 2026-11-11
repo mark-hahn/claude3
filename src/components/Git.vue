@@ -112,7 +112,6 @@ async function refresh(): Promise<void> {
 // Session events come in bursts (a Clean sends one per session), so they're gathered first.
 let timer = 0;
 function refreshSoon(): void {
-  if (!props.tab.open) return;
   window.clearTimeout(timer);
   timer = window.setTimeout(refresh, 300);
 }
@@ -121,10 +120,13 @@ watch(() => [props.active, props.version], refreshSoon, { immediate: true });
 // For the Files tree's edits and other programs'. One request at a time, or a backend that stopped
 // answering would use up the browser's few connections to it.
 // ponytail: polling, not file watches, as the Files tree does; change it if the 2s lag ever matters.
+// Closed projects too, every 30s, for the Tabs button's highlight.
 // ponytail: one `git status` per open tab every 2s; poll tabs out of sight less often if that gets heavy.
 let polling = false;
+let ticks = 0;
 async function poll(): Promise<void> {
-  if (polling || document.hidden || !props.tab.open) return;
+  ticks++;
+  if (polling || document.hidden || (!props.tab.open && ticks % 15)) return;
   polling = true;
   await refresh();
   polling = false;

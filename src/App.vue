@@ -101,7 +101,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
         <svg viewBox="0 0 20 16" width="20" height="16" aria-hidden="true"><rect x="1" y="1.5" width="18" height="13" rx="3" /><path d="M7.5 1.5H4a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3h3.5z" fill="currentColor" /></svg>
       </button>
       <span class="project-buttons"></span>
-      <Tabs ref="tabsDialog" :tabs="sorted" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
+      <Tabs ref="tabsDialog" :tabs="sorted" :highlighted="highlighted" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
       <button v-for="tab in opened" :key="tab.id" class="tab" :class="[tab.host, { selected: tab.id === current }]" :title="`${tab.path} (${tab.host}). Ctrl-click: close`" @click="clickTab(tab, $event)">
         <span v-if="busy[tab.id] || highlighted[tab.id]" class="tab-dot" :class="{ due: !busy[tab.id] }" :title="busy[tab.id] ? 'Responding' : 'Git or Run is highlighted'">&#x25CF;</span>{{ tab.label }}
       </button>

@@ -9,8 +9,8 @@ import { post, postHost } from "../api.ts";
 import { closeOnBackdrop, folderName, sameName } from "../tabList.ts";
 import FolderPicker from "./FolderPicker.vue";
 
-// Every project, in name order.
-const props = defineProps<{ tabs: Tab[] }>();
+// Every project, in name order, and which have their Git or Run button highlighted, open or closed.
+const props = defineProps<{ tabs: Tab[]; highlighted: Record<string, boolean> }>();
 const emit = defineEmits<{ show: [host: HostName, path: string]; closed: [] }>();
 
 const HOST_NAMES = Object.keys(HOSTS) as HostName[];
@@ -27,6 +27,7 @@ const error = ref("");
 const editing = ref("");
 const editName = ref("");
 
+const due = computed(() => props.tabs.some((tab) => props.highlighted[tab.id]));
 const canCreate = computed(() => !!path.value && !!name.value.trim() && !creating.value);
 
 const messageOf = (problem: unknown): string => (problem instanceof Error ? problem.message : String(problem));
@@ -122,7 +123,7 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
 </script>
 
 <template>
-  <button ref="button" class="tab tabs-toggle" title="Add, open, close, rename or delete projects" aria-label="Tabs" @click="open">
+  <button ref="button" class="tab tabs-toggle" :class="{ due }" :title="`Add, open, close, rename or delete projects${due ? '. A project has its Git or Run button highlighted' : ''}`" aria-label="Tabs" @click="open">
     <svg viewBox="0 0 20 16" width="20" height="16" aria-hidden="true"><path d="M1 14.5V6h18v8.5zM2 6V2.5h4.5V6M7.75 6V2.5h4.5V6M13.5 6V2.5H18V6" /></svg>
   </button>
   <dialog ref="dialog" class="tabs-pop" @pointerdown="closeOnBackdrop" @close="emit('closed')">
@@ -163,7 +164,7 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
           @keydown.esc.prevent="finishRename(tab, false)"
           @blur="finishRename(tab, true)"
         />
-        <template v-else>{{ tab.host }}:&nbsp;&nbsp; {{ tab.label }}</template>
+        <template v-else><span v-if="highlighted[tab.id]" class="tab-dot due" title="Git or Run is highlighted">&#x25CF;</span>{{ tab.host }}:&nbsp;&nbsp; {{ tab.label }}</template>
       </div>
     </section>
   </dialog>
@@ -174,6 +175,8 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
 <style>
 /* With the row's 6px gap, twice the space the tabs have between them. */
 .tabs-toggle { margin-right: 6px; color: #666; }
+.tabs-toggle.due { background: #fbd9d9; border-color: #e4a7a7; }
+.tabs-toggle.due:hover { background: linear-gradient(var(--wash), var(--wash)), #fbd9d9; }
 .tabs-toggle svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
 .tabs-pop { width: min(280px, 92vw); max-height: 86vh; padding: 12px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: var(--ink); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2); }
 .tabs-pop[open] { display: flex; flex-direction: column; gap: 10px; }

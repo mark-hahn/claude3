@@ -754,12 +754,11 @@ async function commitChoice(): Promise<"new" | "continue" | ""> {
 }
 
 // The Run button is highlighted while that same check finds changed files. Re-read like the Git
-// button's count, while the project is open, on show or not, and after a ./run, which resets the check.
+// button's count, open or closed (for the Tabs button), on show or not, and after a ./run, which resets the check.
 const deployDue = ref(false);
 watch(deployDue, (due) => emit("deployDue", due));
 let deployTimer = 0;
 function checkDeploySoon(): void {
-  if (!props.tab.open) return;
   window.clearTimeout(deployTimer);
   deployTimer = window.setTimeout(() => {
     post<{ files: string[] }>(props.tab, "deployNeeded", {}).then(
