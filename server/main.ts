@@ -29,8 +29,8 @@
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
 //        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
 //        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
-//        termRead { id, at, cols, rows } -> { id, at, text, reset, idle } (the Term pane's pty, started on first ask: its output past at, waiting up to 2s for some; reset: the whole last 1000 lines; idle: ms since the last output or key)
-//        termSend { data } -> {} (keys as typed) | termResize { cols, rows } -> {} | termClear {} -> {} (the buffer down to the prompt line) (server/term.ts)
+//        each with term, 0 to 2: which of the pane's terminals. termRead { id, at, cols, rows } -> { id, at, text, reset, idle, exited } (its pty, started on first ask: its output past at, waiting up to 2s for some; reset: the whole last 1000 lines; idle: ms since the last output or key)
+//        termSend { data } -> {} (keys as typed) | termResize { cols, rows } -> {} | termClear {} -> {} (the buffer down to the prompt line) | termClose {} -> {} (an exited terminal the page took out: forgotten) (server/term.ts)
 //        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
 //        revert { tracked, untracked } -> {} (tracked paths back as HEAD has them, staged and on disk; untracked ones deleted)
 //        describeChanges -> { text } (Opus 5.5's commit message for the uncommitted changes)
@@ -61,7 +61,7 @@ import { GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordH
 import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
 import { checkCosts, QuotaService, speechmaticsCost, type QuotaState } from "./quota.ts";
 import { stampProblem, stampTime } from "./stamp.ts";
-import { termClear, termRead, termResize, termSend } from "./term.ts";
+import { termClear, termClose, termRead, termResize, termSend } from "./term.ts";
 
 const hostName = process.argv[2] as HostName;
 const host = HOSTS[hostName];
@@ -754,19 +754,25 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (name === "gitGraph") {
     return { lines: layoutGraph(await git(project, ...GRAPH_ARGS)) };
   }
+  // The Term pane's terminals, three a project at most, each with its own pty.
+  const shell = `${project.tab.id}#${[1, 2].includes(Number(body.term)) ? Number(body.term) : 0}`;
   if (name === "termRead") {
-    return await termRead(project.tab.id, project.tab.path, String(body.id ?? ""), Number(body.at), Number(body.cols), Number(body.rows));
+    return await termRead(shell, project.tab.path, String(body.id ?? ""), Number(body.at), Number(body.cols), Number(body.rows));
   }
   if (name === "termSend") {
-    termSend(project.tab.id, project.tab.path, String(body.data ?? ""));
+    termSend(shell, project.tab.path, String(body.data ?? ""));
     return {};
   }
   if (name === "termResize") {
-    termResize(project.tab.id, Number(body.cols), Number(body.rows));
+    termResize(shell, Number(body.cols), Number(body.rows));
     return {};
   }
   if (name === "termClear") {
-    termClear(project.tab.id);
+    termClear(shell);
+    return {};
+  }
+  if (name === "termClose") {
+    termClose(shell);
     return {};
   }
   if (name === "reword") {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The tab row's Term pane: xterm.js on the project's pty (server/term.ts), bash or PowerShell on win,
+// One terminal of the tab row's Term pane (Project stacks up to three): xterm.js on its own pty (server/term.ts), bash or PowerShell on win,
 // kept by the backend while the pane is closed. Keys go up as typed, Ctrl-C included; selecting text
 // (a double-click's word too) copies it, with text selected Ctrl-C copies it instead, and Ctrl-V pastes.
 import { FitAddon } from "@xterm/addon-fit";
@@ -11,7 +11,11 @@ import { post } from "../api.ts";
 import { findBack } from "../termFind.ts";
 import FolderPicker from "./FolderPicker.vue";
 
-const props = defineProps<{ tab: Tab; active: boolean }>();
+// index: which of the pane's terminals this is, 0 to 2, each with its own shell. count: how many the pane has.
+const props = defineProps<{ tab: Tab; active: boolean; index: number; count: number }>();
+// add: the header's +. exit: the shell has exited and this isn't the only terminal, so Project takes it out.
+const emit = defineEmits<{ add: []; exit: [] }>();
+const call = <T = Record<string, unknown>,>(action: string, body: Record<string, unknown>): Promise<T> => post<T>(props.tab, action, { term: props.index, ...body });
 const box = ref<HTMLElement>();
 const messageOf = (problem: unknown): string => (problem instanceof Error ? problem.message : String(problem));
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -36,6 +40,8 @@ const fit = new FitAddon();
 term.loadAddon(fit);
 // The header's folder: each prompt sends it as OSC 7 with a bare path (server/term.ts).
 const cwd = ref(props.tab.path);
+// In pieces that each end at a slash, so a folder too long for the header wraps after one.
+const cwdParts = computed(() => cwd.value.split(/(?<=[\\/])/));
 term.parser.registerOscHandler(7, (data) => {
   cwd.value = data;
   return true;
@@ -93,7 +99,7 @@ async function flush(): Promise<void> {
   const data = pending;
   pending = "";
   try {
-    await post(props.tab, "termSend", { data });
+    await call("termSend", { data });
   } catch (problem) {
     window.alert(`Term: ${messageOf(problem)}`);
   }
@@ -104,7 +110,7 @@ term.onData((data) => {
   pending += data;
   void flush();
 });
-term.onResize(({ cols, rows }) => void post(props.tab, "termResize", { cols, rows }).catch(() => undefined));
+term.onResize(({ cols, rows }) => void call("termResize", { cols, rows }).catch(() => undefined));
 
 // A long poll: the backend answers at once with output this page hasn't seen, else after 2s.
 let alive = true;
@@ -117,8 +123,9 @@ async function follow(): Promise<void> {
       continue;
     }
     try {
-      const got = await post<{ id: string; at: number; text: string; reset: boolean; idle: number }>(props.tab, "termRead", { id, at, cols: term.cols, rows: term.rows });
+      const got = await call<{ id: string; at: number; text: string; reset: boolean; idle: number; exited: boolean }>("termRead", { id, at, cols: term.cols, rows: term.rows });
       if (!alive) return;
+      if (got.exited && props.count > 1) return emit("exit");
       if (got.reset) term.reset();
       if (got.text) term.write(got.text);
       lastAt.value = Date.now() - got.idle;
@@ -144,7 +151,7 @@ function cd(folder: string): void {
 function clear(): void {
   term.clear();
   term.focus();
-  post(props.tab, "termClear", {}).catch((problem) => window.alert(`Term: ${messageOf(problem)}`));
+  call("termClear", {}).catch((problem) => window.alert(`Term: ${messageOf(problem)}`));
 }
 
 // Capture phase, so xterm doesn't scroll as well; the box keeps its size, so the fit is called here.
@@ -165,6 +172,7 @@ onMounted(() => {
   term.focus();
   void follow();
 });
+defineExpose({ focus: () => term.focus() });
 onBeforeUnmount(() => {
   alive = false;
   clearInterval(ticker);
@@ -175,7 +183,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="term" @wheel.capture="zoom">
-    <div class="term-head"><span class="term-cwd">{{ cwd }}</span><button class="term-path" title="Pick a folder for the shell to cd to" @click="picker?.open(cwd)">Path</button><input v-model="findText" class="tabs-input" :class="{ missed }" spellcheck="false" aria-label="Search the terminal's text, from the bottom up" @input="missed = false" @keydown.enter.prevent="find" @keydown.esc.prevent="term.focus()" /><button title="Clear all but the prompt line" @click="clear">Clr</button><span class="term-idle" title="Time since the shell's last output or key">{{ idle }}</span></div>
+    <div class="term-head"><span class="term-cwd"><span v-for="(part, at) in cwdParts" :key="at">{{ part }}</span></span><button title="Add a terminal below this pane's others, three at most" aria-label="Add a terminal" :disabled="count >= 3" @click="emit('add')">+</button><button class="term-path" title="Pick a folder for the shell to cd to" @click="picker?.open(cwd)">Path</button><input v-model="findText" class="tabs-input" :class="{ missed }" spellcheck="false" aria-label="Search the terminal's text, from the bottom up" @input="missed = false" @keydown.enter.prevent="find" @keydown.esc.prevent="term.focus()" /><button title="Clear all but the prompt line" @click="clear">Clr</button><span class="term-idle" title="Time since the shell's last output or key">{{ idle }}</span></div>
     <div ref="box" class="term-box"></div>
     <FolderPicker ref="picker" :host="tab.host" @pick="cd" />
   </div>
@@ -183,7 +191,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* The padding is the outer div's: the fit measures the inner one. */
-.term { min-height: 0; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 6px; padding: 6px 0 0 10px; background: #f9f9f7; }
+/* The black line is above each terminal's header (at the user's asking). */
+.term { min-height: 0; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 6px; padding: 6px 0 0 10px; border-top: 1px solid #000; background: #f9f9f7; }
 .term-head { display: flex; align-items: center; gap: 8px; padding: 0 10px 6px 0; border-bottom: 1px solid var(--border); color: #000; font-size: 14px; }
 /* All but the folder is 20% smaller than the page's 14px controls (at the user's asking). */
 .term-head button, .term-head .tabs-input, .term-idle { font-size: 11.2px; }
@@ -194,6 +203,8 @@ onBeforeUnmount(() => {
 .term-head .tabs-input { flex: none; width: calc(var(--path-width) * 1.25); padding: 2px 6px; border-radius: 5px; }
 .term-head .tabs-input.missed { background: #ffd6d6; }
 .term-cwd { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+/* Each piece stays whole while it fits a line, so the folder wraps after a slash. */
+.term-cwd span { display: inline-block; max-width: 100%; }
 .term-idle { flex: none; margin: 0 10px 0 4px; font-variant-numeric: tabular-nums; }
 .term-box { min-height: 0; }
 </style>

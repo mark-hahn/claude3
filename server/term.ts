@@ -1,4 +1,4 @@
-// The Term pane's shells: one pty per project, in its folder, through node-pty (what VS Code's
+// The Term pane's shells: one pty per terminal (main.ts keys them, three a project at most), in the project's folder, through node-pty (what VS Code's
 // terminal uses): bash on Linux, PowerShell on Windows. Kept here, so closing the pane or
 // reloading the page loses nothing. The page's xterm.js gets the raw output, colours and all, and
 // sends keys as typed. The last LINES lines are kept, to replay to a page that comes in fresh.
@@ -24,6 +24,8 @@ interface Shell {
   rows: number;
   // Date.now() of the last output or key, for the header's idle time.
   last: number;
+  // Its pty has exited and no key has started another: the page takes such a terminal out, unless it is the only one.
+  exited: boolean;
   changed: Promise<void>;
   wake: () => void;
 }
@@ -72,9 +74,13 @@ function start(shell: Shell, cwd: string): void {
     }
     const pty = spawn(windows ? "powershell.exe" : "bash", args, { name: "xterm-256color", cols: shell.cols, rows: shell.rows, cwd, env: { ...childEnv(), TERM: "xterm-256color", COLORTERM: "truecolor" } });
     shell.pty = pty;
+    shell.exited = false;
     pty.onData((data) => append(shell, data));
     pty.onExit(({ exitCode }) => {
-      if (shell.pty === pty) shell.pty = undefined;
+      if (shell.pty === pty) {
+        shell.pty = undefined;
+        shell.exited = true;
+      }
       append(shell, `\r\n[exited ${exitCode}; press a key to start another]\r\n`);
     });
   } catch (problem) {
@@ -87,7 +93,7 @@ function start(shell: Shell, cwd: string): void {
 function shellFor(project: string, cwd: string, cols = 80, rows = 24): Shell {
   let shell = shells.get(project);
   if (!shell) {
-    shell = { id: randomUUID(), text: "", base: 0, cols: size(cols, 80), rows: size(rows, 24), last: Date.now(), changed: Promise.resolve(), wake: () => undefined };
+    shell = { id: randomUUID(), text: "", base: 0, cols: size(cols, 80), rows: size(rows, 24), last: Date.now(), exited: false, changed: Promise.resolve(), wake: () => undefined };
     const made = shell;
     shell.changed = new Promise((resolve) => (made.wake = resolve));
     shells.set(project, shell);
@@ -99,11 +105,11 @@ function shellFor(project: string, cwd: string, cols = 80, rows = 24): Shell {
 // What the page at (id, at) hasn't seen, waiting up to 2s for some. reset: the page's copy is from
 // another shell or fell behind the buffer, and text is the whole of it. idle: ms since the last output or key,
 // a span rather than a time, so the two clocks needn't agree.
-export async function termRead(project: string, cwd: string, id: string, at: number, cols: number, rows: number): Promise<{ id: string; at: number; text: string; reset: boolean; idle: number }> {
+export async function termRead(project: string, cwd: string, id: string, at: number, cols: number, rows: number): Promise<{ id: string; at: number; text: string; reset: boolean; idle: number; exited: boolean }> {
   const shell = shellFor(project, cwd, cols, rows);
   if (id === shell.id && at === end(shell)) await Promise.race([shell.changed, new Promise((resolve) => setTimeout(resolve, 2000))]);
-  if (id !== shell.id || !(at >= shell.base && at <= end(shell))) return { id: shell.id, at: end(shell), text: shell.text, reset: true, idle: Date.now() - shell.last };
-  return { id: shell.id, at: end(shell), text: shell.text.slice(at - shell.base), reset: false, idle: Date.now() - shell.last };
+  if (id !== shell.id || !(at >= shell.base && at <= end(shell))) return { id: shell.id, at: end(shell), text: shell.text, reset: true, idle: Date.now() - shell.last, exited: shell.exited };
+  return { id: shell.id, at: end(shell), text: shell.text.slice(at - shell.base), reset: false, idle: Date.now() - shell.last, exited: shell.exited };
 }
 
 export function termSend(project: string, cwd: string, data: string): void {
@@ -125,6 +131,13 @@ export function termClear(project: string): void {
   shell.base = end(shell) - keep.length;
   shell.text = keep;
   shell.pty?.clear();
+}
+
+// A terminal the page has taken out of the pane after its shell's exit: forgotten, so one added
+// there later starts afresh. A pty still running is ended.
+export function termClose(project: string): void {
+  shells.get(project)?.pty?.kill();
+  shells.delete(project);
 }
 
 export function termResize(project: string, cols: number, rows: number): void {

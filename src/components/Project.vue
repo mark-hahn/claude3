@@ -25,6 +25,20 @@ import Term from "./Term.vue";
 // focusAsked: a change puts the cursor in the prompt box of the tab on show. sidebarAsked: a change
 // toggles the sidebar of the tab on show.
 const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number; sidebarAsked: number }>();
+// The Term pane's terminals by slot (0 to 2, each its own shell in the backend), top to bottom, sharing
+// the column's height equally. A header's + adds the lowest free slot at the bottom, three at most. One
+// whose shell exits is taken out, unless it is the only one, and the backend forgets its slot.
+const terms = ref([0]);
+const termPanes = ref<InstanceType<typeof Term>[]>([]);
+function addTerm(): void {
+  const free = [0, 1, 2].find((slot) => !terms.value.includes(slot));
+  if (free !== undefined) terms.value.push(free);
+}
+function closeTerm(slot: number): void {
+  terms.value = terms.value.filter((one) => one !== slot);
+  post(props.tab, "termClose", { term: slot }).catch((problem) => window.alert(`Term: ${problem instanceof Error ? problem.message : String(problem)}`));
+  void nextTick(() => termPanes.value.at(-1)?.focus());
+}
 const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; showFiles: []; highlighted: [on: boolean]; noRepo: [none: boolean]; sessionName: [name: string] }>();
 
 // Plain objects mutated in place as text streams in; `version` tells Vue when the shape changed.
@@ -523,7 +537,7 @@ onBeforeUnmount(() => {
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
     <GitGraph v-if="side === 'git'" :tab="tab" :active="active" />
-    <Term v-if="side === 'term'" :tab="tab" :active="active" />
+    <div v-if="side === 'term'" class="terms"><Term v-for="slot in terms" :key="slot" ref="termPanes" :tab="tab" :active="active" :index="slot" :count="terms.length" @add="addTerm" @exit="closeTerm(slot)" /></div>
     <Files v-if="side.startsWith('file')" ref="filesPane" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" @attach="(path) => pane?.attach(path, tab.host)" />
   </div>
 </template>
@@ -540,6 +554,8 @@ onBeforeUnmount(() => {
 .project.with-snips { grid-template-columns: var(--sidebar-width, 300px) 7px 1fr 7px minmax(0, calc((100vw - var(--sidebar-width, 300px)) * var(--side-share, 0.5))); }
 /* Ctrl-B: with the sidebar and divider out of the grid, the pane moves over to the first column. */
 .project.no-sidebar { grid-template-columns: minmax(0, 1fr); }
+/* The Term pane's terminals, one to three, in equal rows. */
+.terms { min-height: 0; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(0, 1fr); }
 .project.no-sidebar.with-snips { grid-template-columns: 1fr 7px minmax(0, calc(100vw * var(--side-share, 0.5))); }
 .project.no-sidebar > .sidebar, .project.no-sidebar > .divider:not(.side-divider) { display: none; }
 .sidebar { box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 10px; line-height: 1.5; }
