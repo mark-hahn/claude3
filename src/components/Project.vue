@@ -18,9 +18,10 @@ import Pane from "./Pane.vue";
 import ReAuth from "./ReAuth.vue";
 import Settings from "./Settings.vue";
 import Snips from "./Snips.vue";
+import Term from "./Term.vue";
 
 // active: this is the tab on show. side: what this tab has open right of the pane ("", "snips",
-// "settings", "git", "files" for the tree or "file" for its editor), through App's column toggles.
+// "settings", "git", "term", "files" for the tree or "file" for its editor), through App's column toggles.
 // focusAsked: a change puts the cursor in the prompt box of the tab on show. sidebarAsked: a change
 // toggles the sidebar of the tab on show.
 const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number; sidebarAsked: number }>();
@@ -522,6 +523,7 @@ onBeforeUnmount(() => {
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
     <GitGraph v-if="side === 'git'" :tab="tab" :active="active" />
+    <Term v-if="side === 'term'" :tab="tab" :active="active" />
     <Files v-if="side.startsWith('file')" ref="filesPane" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" @attach="(path) => pane?.attach(path, tab.host)" />
   </div>
 </template>

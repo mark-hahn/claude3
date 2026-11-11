@@ -29,6 +29,8 @@
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
 //        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
 //        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
+//        termRead { id, at, cols, rows } -> { id, at, text, reset } (the Term pane's pty, started on first ask: its output past at, waiting up to 2s for some; reset: the whole last 1000 lines)
+//        termSend { data } -> {} (keys as typed) | termResize { cols, rows } -> {} (server/term.ts)
 //        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
 //        revert { tracked, untracked } -> {} (tracked paths back as HEAD has them, staged and on disk; untracked ones deleted)
 //        describeChanges -> { text } (Opus 5.5's commit message for the uncommitted changes)
@@ -59,6 +61,7 @@ import { GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordH
 import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
 import { checkCosts, QuotaService, speechmaticsCost } from "./quota.ts";
 import { stampProblem, stampTime } from "./stamp.ts";
+import { termRead, termResize, termSend } from "./term.ts";
 
 const hostName = process.argv[2] as HostName;
 const host = HOSTS[hostName];
@@ -735,6 +738,17 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "gitGraph") {
     return { lines: layoutGraph(await git(project, ...GRAPH_ARGS)) };
+  }
+  if (name === "termRead") {
+    return await termRead(project.tab.id, project.tab.path, String(body.id ?? ""), Number(body.at), Number(body.cols), Number(body.rows));
+  }
+  if (name === "termSend") {
+    termSend(project.tab.id, project.tab.path, String(body.data ?? ""));
+    return {};
+  }
+  if (name === "termResize") {
+    termResize(project.tab.id, Number(body.cols), Number(body.rows));
+    return {};
   }
   if (name === "reword") {
     await rewordHead((...args) => git(project, ...args), String(body.hash ?? ""), String(body.message ?? "").trim());

@@ -57,7 +57,7 @@ const noRepo = reactive<Record<string, boolean>>({});
 // Per tab: the name of its selected session, on show in the strip for the tab on show.
 const sessionNames = reactive<Record<string, string>>({});
 // The Files, Git graph, Snips and Settings share the column right of the pane, one at a time: "" (closed),
-// "files" (the tree), "file" (its editor), "git", "snips" or "settings". Each tab has its own, and one
+// "files" (the tree), "file" (its editor), "git", "term", "snips" or "settings". Each tab has its own, and one
 // toggle each here acts on the tab on show. The toggle's name being "files", the Files button takes
 // the editor back to the tree.
 const sides = reactive<Record<string, string>>({});
@@ -108,6 +108,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
       <span class="session-name">{{ sessionNames[current] }}</span>
       <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" title="Open or close the Files: a tree of the project's folder, and an editor" @click="toggle('files')">Files</button>
       <button class="tab git-toggle" :class="{ active: side === 'git' }" :aria-pressed="side === 'git'" :disabled="!currentTab || noRepo[current]" title="Open or close the Log pane: a graph of the project's commits" @click="toggle('git')">Log</button>
+      <button class="tab term-toggle" :class="{ active: side === 'term' }" :aria-pressed="side === 'term'" :disabled="!currentTab" title="Open or close the Term pane: a shell in the project's folder (bash, PowerShell on win)" @click="toggle('term')">Term</button>
       <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" :disabled="!currentTab" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
       <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" :disabled="!currentTab" title="Open or close the Settings: quotas" aria-label="Settings" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
@@ -134,7 +135,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
 /* Takes the row's free space, so it is centered between the last tab and Files. A basis of 0 so it never wraps the row. */
 .tabs .session-name { flex: 1 1 0; min-width: 0; align-self: center; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tabs .files-toggle { margin-left: auto; }
-.tabs .files-toggle.active, .tabs .git-toggle.active, .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
+.tabs .files-toggle.active, .tabs .git-toggle.active, .tabs .term-toggle.active, .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
 /* 20% over the tab's 14px. The line-height keeps the bigger glyph from making its tab taller. */
 .tabs .tab-dot { color: #1a8f2e; margin-right: 6px; font-size: 16.8px; line-height: 1; }
 .tabs .tab-dot.due { color: #f08080; }

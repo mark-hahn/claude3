@@ -37,6 +37,11 @@ SRV_DIR=/root/dev/apps/claude3Srv
 STATS_DIR=/root/dev/apps/claude-stats
 # package.json only for its "type": "module", which makes Node read the .ts files as ES modules.
 FILES=(package.json server shared)
+# node-pty for the Term pane, the one package the backends load: its JS, the Linux build npm install
+# made here (WSL and hahnca.com both have glibc 2.39) and the Windows prebuilds, less debug symbols.
+# -R keeps the paths, so each lands under node_modules/ beside server/.
+PTY=(node_modules/node-pty/package.json node_modules/node-pty/lib node_modules/node-pty/build/Release/pty.node node_modules/node-pty/prebuilds/win32-x64)
+copy_pty() { rsync "$1" -R --delete --exclude='*.pdb' "${PTY[@]}" "$2/"; }
 # What the versions hash: only a change here makes --if-stale deploy. Written into .deployed so
 # the page's Run highlight and deploy warning count the same files. skills/ is in it too, though
 # no version hashes it: every run copies what changed there (sync_skills).
@@ -172,6 +177,7 @@ for host in "${HOSTS[@]}"; do
     npm run build
     mkdir -p "$WSL_DIR"
     rsync -a --delete "${FILES[@]}" dist "$WSL_DIR/"
+    copy_pty -a "$WSL_DIR"
     echo "$VERSION" > "$WSL_DIR/version"
     # A system unit, not a user one: everything here runs as root, and a user unit would need
     # lingering to start before anyone logs in.
@@ -210,6 +216,8 @@ EOF
     # Whatever holds the port is the old backend, whichever launcher started it. exit 0: with
     # nothing on the port, Get-NetTCPConnection still leaves an error and PowerShell exits 1.
     (cd /mnt/c && powershell.exe -NoProfile -Command "Get-NetTCPConnection -LocalPort 7311 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id \$_.OwningProcess -Force }; exit 0" | tr -d '\r')
+    # Only now: the running backend holds node-pty's DLLs open.
+    copy_pty -rt "$WIN_DIR"
     # Opened by Explorer, so the backend outlives this script and is never elevated, same as at
     # logon. An "r" in the page runs this elevated, and a plain terminal can't stop a backend
     # started that way. A shortcut because Explorer takes no arguments for what it opens.
@@ -220,6 +228,7 @@ EOF
     echo "== $REMOTE =="
     ssh "$REMOTE" "mkdir -p $SRV_DIR"
     rsync -a --delete "${FILES[@]}" "$REMOTE:$SRV_DIR/"
+    copy_pty -a "$REMOTE:$SRV_DIR"
     ssh "$REMOTE" "echo $VERSION > $SRV_DIR/version"
     # node itself is the pm2 script (interpreter none), as tv-api runs xvfb-run: pm2's own
     # wrapper would not load a .ts file.
