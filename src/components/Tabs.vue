@@ -41,12 +41,21 @@ function setPath(folder: string): void {
 // Sync, so openWith's folder isn't emptied by this running after it.
 watch(host, () => setPath(""), { flush: "sync" });
 
-function open(): void {
+function open(event?: MouseEvent): void {
+  if (event?.ctrlKey) return openFlagged();
   error.value = "";
   // Upper left, just under the button.
   const { left, bottom } = button.value!.getBoundingClientRect();
   dialog.value!.style.margin = `${bottom + 4}px 0 0 ${left}px`;
   dialog.value!.showModal();
+}
+
+// Ctrl-click on the button: open every closed project with a red or green dot, no dialog.
+function openFlagged(): void {
+  const flagged = props.tabs.filter((tab) => !tab.open && (props.highlighted[tab.id] || props.busy[tab.id]));
+  Promise.all(flagged.map((tab) => post(tab, "openProject", { open: true })))
+    .catch((problem) => window.alert(messageOf(problem)))
+    .finally(() => emit("closed"));
 }
 
 // The Files bar's Prj: the new-project fields filled in from a folder.
@@ -124,7 +133,7 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
 </script>
 
 <template>
-  <button ref="button" class="tab tabs-toggle" :class="{ due: due && !running, running }" :title="`Add, open, close, rename or delete projects${running ? '. A project has a session running' : due ? '. A project has its Git or Run button highlighted' : ''}`" aria-label="Tabs" @click="open">
+  <button ref="button" class="tab tabs-toggle" :class="{ due: due && !running, running }" :title="`Add, open, close, rename or delete projects${running ? '. A project has a session running' : due ? '. A project has its Git or Run button highlighted' : ''}. Ctrl-click opens every project with a red or green dot`" aria-label="Tabs" @click="open">
     <svg viewBox="0 0 20 16" width="20" height="16" aria-hidden="true"><path d="M1 14.5V6h18v8.5zM2 6V2.5h4.5V6M7.75 6V2.5h4.5V6M13.5 6V2.5H18V6" /></svg>
   </button>
   <dialog ref="dialog" class="tabs-pop" @pointerdown="closeOnBackdrop" @close="emit('closed')">

@@ -38,7 +38,7 @@ on the laptop, and talks to each backend directly.
   the backend's `folders`; used by the Tabs dialog and the Files pane. Its styles are Tabs.vue's, unscoped for that.
 - `src/components/Files.vue`: the Files column: header rows and a tree of the tab's host, with
   `FileEditor.vue` in its place in file mode. Holds only what the backend last listed. Stays mounted while its tab is hidden; both stop polling then (`active`).
-- `src/components/Tabs.vue`: the row's Tabs button and its `<dialog>`: host, Path (the folder picker), name
+- `src/components/Tabs.vue`: the row's Tabs button (ctrl-click opens every closed project with a red or green dot, no dialog) and its `<dialog>`: host, Path (the folder picker), name
   and Create above the list of every project, where a click opens or closes one, a hold renames and
   ctrl-click deletes. It keeps no copy of the list: changes go to the backend and come back as a
   `projects` event. The dialog stays open after Create, with that project's tab on show behind it,
