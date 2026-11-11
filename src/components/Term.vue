@@ -14,9 +14,9 @@ import FolderPicker from "./FolderPicker.vue";
 // index: which of the pane's terminals this is, 0 to 2, each with its own shell. count: how many the pane has.
 // host: where its shell runs, which needn't be the tab's. start: the folder the shell starts in.
 const props = defineProps<{ tab: Tab; active: boolean; index: number; count: number; host: HostName; start: string }>();
-// add: another terminal, on that host starting in that folder (the header's +: one like this; the Path
-// dialog's selector: another host's home). exit: the shell has exited and this isn't the only terminal, so Project takes it out.
-const emit = defineEmits<{ add: [host: HostName, start: string]; exit: [] }>();
+// add: another terminal, on that host starting in that folder (the header's +: the project's host and folder; the Path
+// dialog: a folder picked on another host). close: Project takes this terminal out (the header's Close, or its shell has exited and it isn't the only one).
+const emit = defineEmits<{ add: [host: HostName, start: string]; close: [] }>();
 const call = <T = Record<string, unknown>,>(action: string, body: Record<string, unknown>): Promise<T> => postHost<T>(props.host, action, { tab: props.tab.id, term: props.index, cwd: props.start, ...body });
 const box = ref<HTMLElement>();
 const messageOf = (problem: unknown): string => (problem instanceof Error ? problem.message : String(problem));
@@ -58,6 +58,8 @@ const idle = computed(() => {
   return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
 });
 term.attachCustomKeyEventHandler((event) => {
+  // Ctrl-R and Ctrl-Shift-R are left to the browser, to reload the page (at the user's asking: the shell's history search loses its key).
+  if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "r") return false;
   if (event.type !== "keydown" || !event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return true;
   if (event.key === "c" && term.hasSelection()) {
     event.preventDefault();
@@ -116,6 +118,8 @@ term.onResize(({ cols, rows }) => void call("termResize", { cols, rows }).catch(
 
 // A long poll: the backend answers at once with output this page hasn't seen, else after 2s.
 let alive = true;
+// The read on its way to the backend, for close to wait on.
+let reading: Promise<unknown> = Promise.resolve();
 async function follow(): Promise<void> {
   let id = "";
   let at = 0;
@@ -125,9 +129,11 @@ async function follow(): Promise<void> {
       continue;
     }
     try {
-      const got = await call<{ id: string; at: number; text: string; reset: boolean; idle: number; exited: boolean }>("termRead", { id, at, cols: term.cols, rows: term.rows });
+      const read = call<{ id: string; at: number; text: string; reset: boolean; idle: number; exited: boolean }>("termRead", { id, at, cols: term.cols, rows: term.rows });
+      reading = read;
+      const got = await read;
       if (!alive) return;
-      if (got.exited && props.count > 1) return emit("exit");
+      if (got.exited && props.count > 1) return close();
       if (got.reset) term.reset();
       if (got.text) term.write(got.text);
       lastAt.value = Date.now() - got.idle;
@@ -140,23 +146,26 @@ async function follow(): Promise<void> {
   }
 }
 
-// The header's Path: the folder picker, from the shell's folder, and a cd to the one picked, after
-// clearing any half-typed line (bash's Ctrl-E Ctrl-U; PowerShell's is left as it is).
+// The header's Path: the folder picker with a host selector left of its box, opened on this terminal's
+// host at its shell's folder. Another host chosen there only moves the picker to that host's home
+// folder (back on this one, to the shell's folder); nothing is done until Ok. A folder picked on this
+// host is a cd to it, after clearing any half-typed line (bash's Ctrl-E Ctrl-U; PowerShell's is left
+// as it is); one on another host is a new terminal there, starting in it. With three terminals the
+// selector is off.
 const picker = ref<InstanceType<typeof FolderPicker>>();
+const pickHost = ref<HostName>(props.host);
+function showHost(host: HostName): void {
+  pickHost.value = host;
+  picker.value?.open(host === props.host ? cwd.value : HOSTS[host].home, host);
+}
+function picked(folder: string): void {
+  if (pickHost.value !== props.host) return emit("add", pickHost.value, folder);
+  cd(folder);
+}
 function cd(folder: string): void {
   pending += props.host === "win" ? `Set-Location -LiteralPath '${folder.replaceAll("'", "''")}'\r` : `\x05\x15cd -- '${folder.replaceAll("'", "'\\''")}'\r`;
   void flush();
   term.focus();
-}
-
-// The Path dialog's selector, on this terminal's host: another host adds a terminal there, in its home
-// folder, and the dialog is done. Off with three terminals already.
-function otherHost(event: Event): void {
-  const select = event.target as HTMLSelectElement;
-  const host = select.value as HostName;
-  select.value = props.host;
-  picker.value?.close();
-  emit("add", host, HOSTS[host].home);
 }
 
 // The header's Clr: all but the prompt line, here and in the backend's buffer (so a reload keeps it cleared).
@@ -164,6 +173,15 @@ function clear(): void {
   term.clear();
   term.focus();
   call("termClear", {}).catch((problem) => window.alert(`Term: ${messageOf(problem)}`));
+}
+
+// The header's Close, or the shell's exit with other terminals left: no more reads here, Project takes
+// the terminal out, and the backend forgets its shell, ending one still running. That waits for the read
+// on its way to be answered (2s at most), since one arriving after it would start the shell again.
+function close(): void {
+  alive = false;
+  emit("close");
+  void reading.catch(() => undefined).then(() => call("termClose", {})).catch((problem) => window.alert(`Term: ${messageOf(problem)}`));
 }
 
 // Capture phase, so xterm doesn't scroll as well; the box keeps its size, so the fit is called here.
@@ -195,10 +213,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="term" @wheel.capture="zoom">
-    <div class="term-head"><span class="term-cwd">{{ host }}: <span v-for="(part, at) in cwdParts" :key="at">{{ part }}</span></span><button title="Add a terminal like this one right below it, three at most" aria-label="Add a terminal" :disabled="count >= 3" @click="emit('add', host, start)">+</button><button class="term-path" title="Pick a folder for the shell to cd to" @click="picker?.open(cwd)">Path</button><input v-model="findText" class="tabs-input" :class="{ missed }" spellcheck="false" aria-label="Search the terminal's text, from the bottom up" @input="missed = false" @keydown.enter.prevent="find" @keydown.esc.prevent="term.focus()" /><button title="Clear all but the prompt line" @click="clear">Clr</button><span class="term-idle" title="Time since the shell's last output or key">{{ idle }}</span></div>
+    <div class="term-head"><span class="term-cwd">{{ host }}: <span v-for="(part, at) in cwdParts" :key="at">{{ part }}</span></span><button title="Add a terminal right below, on the project's host in the project's folder, three at most" aria-label="Add a terminal" :disabled="count >= 3" @click="emit('add', tab.host, tab.path)">+</button><button class="term-path" title="Pick a folder for the shell to cd to, or one on another host for a new terminal there" @click="showHost(host)">Path</button><input v-model="findText" class="tabs-input" :class="{ missed }" spellcheck="false" aria-label="Search the terminal's text, from the bottom up" @input="missed = false" @keydown.enter.prevent="find" @keydown.esc.prevent="term.focus()" /><button title="Clear all but the prompt line" @click="clear">Clr</button><button title="End this terminal's shell and take it out of the pane; the last one closes the pane" @click="close">Close</button><span class="term-idle" title="Time since the shell's last output or key">{{ idle }}</span></div>
     <div ref="box" class="term-box"></div>
-    <FolderPicker ref="picker" :host="host" @pick="cd">
-      <select :value="host" :disabled="count >= 3" aria-label="Host" title="Another host: a new terminal there, in its home folder (three terminals at most)" @change="otherHost"><option v-for="(_, name) in HOSTS" :key="name">{{ name }}</option></select>
+    <FolderPicker ref="picker" :host="host" @pick="picked">
+      <select :value="pickHost" :disabled="count >= 3" aria-label="Host" title="The host whose folders these are. Ok on another host's folder adds a terminal there, starting in it (three terminals at most)" @change="showHost(($event.target as HTMLSelectElement).value as HostName)"><option v-for="(_, name) in HOSTS" :key="name">{{ name }}</option></select>
     </FolderPicker>
   </div>
 </template>

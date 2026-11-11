@@ -133,8 +133,8 @@ export function termClear(project: string): void {
   shell.pty?.clear();
 }
 
-// A terminal the page has taken out of the pane after its shell's exit: forgotten, so one added
-// there later starts afresh. A pty still running is ended.
+// A terminal the page has taken out of the pane (its Close, or its shell's exit): forgotten, so one
+// added there later starts afresh. A pty still running is ended.
 export function termClose(project: string): void {
   shells.get(project)?.pty?.kill();
   shells.delete(project);

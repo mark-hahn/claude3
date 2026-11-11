@@ -2,7 +2,7 @@
 // The VS Code-style folder picker on any host, a modal dialog fed by the backend's `folders`. Shared
 // by the Tabs dialog and the Files pane; its styles are Tabs.vue's. With `files` it picks a file
 // instead (the footer's File): files are listed after the folders, in plain type, and a click picks one.
-// The slot is left of the box: the Term pane's host selector.
+// The slot is left of the box: the Term pane's host selector, which calls open again for another host.
 import { computed, ref } from "vue";
 import type { HostName } from "../../shared/config.ts";
 import { postHost } from "../api.ts";
@@ -44,7 +44,8 @@ function open(start: string, on: HostName = props.host): void {
   host = on;
   found.value = { asked: "", path: "", entries: [] };
   void list(start);
-  dialog.value?.showModal();
+  // Already open when the Term pane's selector moves it to another host.
+  if (!dialog.value?.open) dialog.value?.showModal();
 }
 
 function pick(): void {
@@ -53,7 +54,7 @@ function pick(): void {
   dialog.value?.close();
 }
 
-defineExpose({ open, close: () => dialog.value?.close() });
+defineExpose({ open });
 </script>
 
 <template>

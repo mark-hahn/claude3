@@ -28,17 +28,21 @@ const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked:
 // The Term pane's terminals, top to bottom, sharing the column's height equally: each a slot (0 to 2,
 // its own shell in its host's backend), the host its shell is on (any, not only the tab's) and the
 // folder it starts in. A terminal asks for another (its + or its Path dialog's host selector), which takes
-// the lowest free slot and goes right below the one that asked, three at most. One whose shell exits is taken out, unless it is
-// the only one, and its backend forgets the slot.
+// the lowest free slot and goes right below the one that asked, three at most. One that closes (its
+// Close, or its shell's exit unless it is the only one) is taken out, and has its backend forget the slot
+// itself. Closing the last one closes the pane, which opens next on the project's own terminal.
 const terms = ref([{ slot: 0, host: props.tab.host, cwd: props.tab.path }]);
 const termPanes = ref<InstanceType<typeof Term>[]>([]);
 function addTerm(asker: number, host: HostName, cwd: string): void {
   const slot = [0, 1, 2].find((free) => !terms.value.some((one) => one.slot === free));
   if (slot !== undefined) terms.value.splice(terms.value.findIndex((one) => one.slot === asker) + 1, 0, { slot, host, cwd });
 }
-function closeTerm(gone: { slot: number; host: HostName }): void {
-  terms.value = terms.value.filter((one) => one.slot !== gone.slot);
-  postHost(gone.host, "termClose", { tab: props.tab.id, term: gone.slot }).catch((problem) => window.alert(`Term: ${problem instanceof Error ? problem.message : String(problem)}`));
+function closeTerm(slot: number): void {
+  if (terms.value.length === 1) {
+    terms.value = [{ slot: 0, host: props.tab.host, cwd: props.tab.path }];
+    return emit("closeSide");
+  }
+  terms.value = terms.value.filter((one) => one.slot !== slot);
   void nextTick(() => termPanes.value.at(-1)?.focus());
 }
 const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; showFiles: []; highlighted: [on: boolean]; noRepo: [none: boolean]; sessionName: [name: string] }>();
@@ -539,7 +543,7 @@ onBeforeUnmount(() => {
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
     <GitGraph v-if="side === 'git'" :tab="tab" :active="active" />
-    <div v-if="side === 'term'" class="terms"><Term v-for="one in terms" :key="one.slot" ref="termPanes" :tab="tab" :active="active" :index="one.slot" :host="one.host" :start="one.cwd" :count="terms.length" @add="(host, cwd) => addTerm(one.slot, host, cwd)" @exit="closeTerm(one)" /></div>
+    <div v-if="side === 'term'" class="terms"><Term v-for="one in terms" :key="one.slot" ref="termPanes" :tab="tab" :active="active" :index="one.slot" :host="one.host" :start="one.cwd" :count="terms.length" @add="(host, cwd) => addTerm(one.slot, host, cwd)" @close="closeTerm(one.slot)" /></div>
     <Files v-if="side.startsWith('file')" ref="filesPane" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" @attach="(path) => pane?.attach(path, tab.host)" />
   </div>
 </template>

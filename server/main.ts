@@ -30,7 +30,7 @@
 //        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
 //        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
 //        each with term, 0 to 2: which of the tab's terminals, and cwd, the folder its shell starts in (the tab needn't be this host's). termRead { id, at, cols, rows } -> { id, at, text, reset, idle, exited } (its pty, started on first ask: its output past at, waiting up to 2s for some; reset: the whole last 1000 lines; idle: ms since the last output or key)
-//        termSend { data } -> {} (keys as typed) | termResize { cols, rows } -> {} | termClear {} -> {} (the buffer down to the prompt line) | termClose {} -> {} (an exited terminal the page took out: forgotten) (server/term.ts)
+//        termSend { data } -> {} (keys as typed) | termResize { cols, rows } -> {} | termClear {} -> {} (the buffer down to the prompt line) | termClose {} -> {} (a terminal the page took out, by its Close or its shell's exit: forgotten, a pty still running ended) (server/term.ts)
 //        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
 //        revert { tracked, untracked } -> {} (tracked paths back as HEAD has them, staged and on disk; untracked ones deleted)
 //        describeChanges -> { text } (Opus 5.5's commit message for the uncommitted changes)
