@@ -213,7 +213,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="term" @wheel.capture="zoom">
-    <div class="term-head"><span class="term-cwd">{{ host }}: <span v-for="(part, at) in cwdParts" :key="at">{{ part }}</span></span><button title="Add a terminal right below, on the project's host in the project's folder, three at most" aria-label="Add a terminal" :disabled="count >= 3" @click="emit('add', tab.host, tab.path)">+</button><button class="term-path" title="Pick a folder for the shell to cd to, or one on another host for a new terminal there" @click="showHost(host)">Path</button><input v-model="findText" class="tabs-input" :class="{ missed }" spellcheck="false" aria-label="Search the terminal's text, from the bottom up" @input="missed = false" @keydown.enter.prevent="find" @keydown.esc.prevent="term.focus()" /><button title="Clear all but the prompt line" @click="clear">Clr</button><button title="End this terminal's shell and take it out of the pane; the last one closes the pane" @click="close">Close</button><span class="term-idle" title="Time since the shell's last output or key">{{ idle }}</span></div>
+    <div class="term-head"><span class="term-cwd">{{ host }}: <span v-for="(part, at) in cwdParts" :key="at">{{ part }}</span></span><span class="term-bar"><button title="Add a terminal right below, on the project's host in the project's folder, three at most" aria-label="Add a terminal" :disabled="count >= 3" @click="emit('add', tab.host, tab.path)">+</button><button class="term-path" title="Pick a folder for the shell to cd to, or one on another host for a new terminal there" @click="showHost(host)">Path</button><input v-model="findText" class="tabs-input" :class="{ missed }" spellcheck="false" aria-label="Search the terminal's text, from the bottom up" @input="missed = false" @keydown.enter.prevent="find" @keydown.esc.prevent="term.focus()" /><button title="Clear all but the prompt line" @click="clear">Clr</button><button title="End this terminal's shell and take it out of the pane; the last one closes the pane" @click="close">Close</button><span class="term-idle" title="Time since the shell's last output or key">{{ idle }}</span></span></div>
     <div ref="box" class="term-box"></div>
     <FolderPicker ref="picker" :host="host" @pick="picked">
       <select :value="pickHost" :disabled="count >= 3" aria-label="Host" title="The host whose folders these are. Ok on another host's folder adds a terminal there, starting in it (three terminals at most)" @change="showHost(($event.target as HTMLSelectElement).value as HostName)"><option v-for="(_, name) in HOSTS" :key="name">{{ name }}</option></select>
@@ -225,7 +225,10 @@ onBeforeUnmount(() => {
 /* The padding is the outer div's: the fit measures the inner one. */
 /* The black line is above each terminal's header (at the user's asking). */
 .term { min-height: 0; min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 6px; padding: 6px 0 0 10px; border-top: 1px solid #000; background: #f9f9f7; }
-.term-head { display: flex; align-items: center; gap: 8px; padding: 0 10px 6px 0; border-bottom: 1px solid var(--border); color: #000; font-size: 14px; }
+/* One row while the folder fits left of the buttons, search box and time; else it goes below them, on a row
+   of its own. wrap-reverse: the folder comes first, so the buttons' line, the second, is the upper one.
+   In a column too narrow even for them, they wrap onto a second row of theirs, still above the folder's. */
+.term-head { display: flex; flex-wrap: wrap-reverse; align-items: center; gap: 6px 8px; padding: 0 10px 6px 0; border-bottom: 1px solid var(--border); color: #000; font-size: 14px; }
 /* All but the folder is 20% smaller than the page's 14px controls (at the user's asking). */
 .term-head button, .term-head .tabs-input, .term-idle { font-size: 11.2px; }
 .term-head button { min-height: 0; padding: 2px 8px; border-radius: 6px; }
@@ -234,7 +237,8 @@ onBeforeUnmount(() => {
 .term-head .term-path { width: var(--path-width); padding: 2px 0; }
 .term-head .tabs-input { flex: none; width: calc(var(--path-width) * 1.25); padding: 2px 6px; border-radius: 5px; }
 .term-head .tabs-input.missed { background: #ffd6d6; }
-.term-cwd { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.term-cwd { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.term-bar { flex: 0 1 auto; min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px 8px; margin-left: auto; }
 /* Each piece stays whole while it fits a line, so the folder wraps after a slash. */
 .term-cwd span { display: inline-block; max-width: 100%; }
 .term-idle { flex: none; margin: 0 10px 0 4px; font-variant-numeric: tabular-nums; }
