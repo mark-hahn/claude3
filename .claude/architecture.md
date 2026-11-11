@@ -225,6 +225,7 @@ on the laptop, and talks to each backend directly.
   "started"; Check runs `deployCheck` again and an alert gives the result; Not needed sets "none"
   and sends; Continue sends and leaves the flag. Set up, Check and Cancel leave the prompt in the
   box. With "started" the dialog comes with no check first, Check focused. The flag comes back to the page in a `projects` event.
+  A `./run` (Run, "r", "v") asks the same first (`runScript`, `deploySetupOk("run")`), where Continue and Not needed start it; the deploy warning's Deploy skips the question, which its prompt already passed.
 - **Commit warning.** After the deploy check, a prompt to a session with turns asks `lastCommit`
   (HEAD's `%ct` and subject); HEAD newer than the last turn's `createdAt` opens a `<dialog>`:
   New session (the prompt starts one, as from the draft, and leaves the running one alone),

@@ -603,7 +603,10 @@ const runWaitKey = (): string => `runWait:${props.tab.id}`;
 
 // Also the footer's Run button (ctrl-click: "v"). It leaves the prompt box's text alone and never
 // takes focus, so the Enter that dismisses the result can't land on it and run ./run again.
-async function runScript(restartVite: boolean): Promise<void> {
+// It asks the deploy-setup question first, as a prompt does, unless the caller already has
+// (the deploy warning's Deploy comes after a prompt's).
+async function runScript(restartVite: boolean, askSetup = true): Promise<void> {
+  if (askSetup && !(await deploySetupOk("run"))) return;
   sessionStorage.setItem(runWaitKey(), "1");
   sessionStorage.removeItem(runFailKey());
   runLive = true;
@@ -658,25 +661,27 @@ async function awaitRun(): Promise<void> {
 // this prompt stays in its box; Check checks again and sets the flag when ./run passes. Not
 // needed sets "none" and sends the prompt, as Continue does without touching the flag; Set up,
 // Check and Cancel don't send it. Once Set up has run ("started"), the dialog comes with no check first.
+// A ./run (Run, "r", "v") asks the same, for the same flag; `what` is what goes on or doesn't.
 const SETUP_PROMPT = "Set up deploy for claude3's Run button: use the deployable skill (~/.claude/skills/deployable/SKILL.md) on this project.";
-async function deploySetupOk(): Promise<boolean> {
+async function deploySetupOk(what: "prompt" | "run" = "prompt"): Promise<boolean> {
   const state = props.tab.deploySetup;
   if (state === "done" || state === "none") return true;
   setupStarted.value = state === "started";
+  const held = what === "prompt" ? "Your prompt stays in the box" : "./run doesn't start";
   let problems: string[] = [];
   if (!setupStarted.value) {
     try {
       ({ problems } = await post<{ problems: string[] }>(props.tab, "deployCheck", {}));
     } catch (error) {
       // As with the deploy warning, a failed check doesn't hold the prompt up.
-      report(new Error(`Couldn't check whether ${props.tab.label} is set up for the Run button (the prompt is sent anyway): ${error instanceof Error ? error.message : String(error)}`));
+      report(new Error(`Couldn't check whether ${props.tab.label} is set up for the Run button (${what === "prompt" ? "the prompt is sent" : "./run starts"} anyway): ${error instanceof Error ? error.message : String(error)}`));
       return true;
     }
     if (!problems.length) return true;
   }
   setupText.value = setupStarted.value
-    ? `${props.tab.label}: Claude was asked to set up its deploy for the Run button, in a session of its own.\n\nCheck reads ./run and ./deploy without running them, and stops this question when they pass.\nYour prompt stays in the box unless you pick Continue.`
-    : `${props.tab.label} isn't set up for claude3's Run button:\n${problems.map((problem) => `- ${problem}`).join("\n")}\n\nSet up: Claude does it in a new session (the deployable skill).\nCheck: check again, after fixing it yourself.\nNot needed: nothing to deploy here; never ask again.\nYour prompt stays in the box unless you pick Continue or Not needed.`;
+    ? `${props.tab.label}: Claude was asked to set up its deploy for the Run button, in a session of its own.\n\nCheck reads ./run and ./deploy without running them, and stops this question when they pass.\n${held} unless you pick Continue.`
+    : `${props.tab.label} isn't set up for claude3's Run button:\n${problems.map((problem) => `- ${problem}`).join("\n")}\n\nSet up: Claude does it in a new session (the deployable skill).\nCheck: check again, after fixing it yourself.\nNot needed: nothing to deploy here; never ask again.\n${held} unless you pick Continue or Not needed.`;
   await nextTick(); // the autofocus attribute follows setupStarted before showModal reads it
   const dialog = setupPopEl.value!;
   dialog.returnValue = "";
@@ -694,7 +699,7 @@ async function deploySetupOk(): Promise<boolean> {
       await post(props.tab, "deploySetup", { state: "none" });
     }
   } catch (error) {
-    report(new Error(`Deploy setup for ${props.tab.label} failed (the prompt wasn't sent): ${error instanceof Error ? error.message : String(error)}`));
+    report(new Error(`Deploy setup for ${props.tab.label} failed (${what === "prompt" ? "the prompt wasn't sent" : "./run didn't start"}): ${error instanceof Error ? error.message : String(error)}`));
     return false;
   }
   return choice === "continue" || choice === "none";
@@ -719,7 +724,7 @@ async function deployOk(): Promise<boolean> {
   dialog.returnValue = "";
   dialog.showModal();
   await new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
-  if (dialog.returnValue === "deploy") void runScript(false);
+  if (dialog.returnValue === "deploy") void runScript(false, false);
   return dialog.returnValue === "continue";
 }
 
