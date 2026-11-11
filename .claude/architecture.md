@@ -350,12 +350,12 @@ on the laptop, and talks to each backend directly.
   unseen; a read that fails keeps them so. A copy never saved reads as empty and editable.
 - Monaco's `addCommand` keys are page-wide and every tab has its own editor, so editor keys are
   `addAction`s. Monaco is about 4MB of the built page. Its theme and `addKeybindingRules` are page-wide
-  too: the Files editor is stock Monaco (plus word wrap and the line dots) but must use the `claude2` theme, and is kept out of the
+  too: the Files editor is stock Monaco (plus word wrap and the line dots, coloured by the language Monaco infers from the file's name or `#!` line: every language's Monarch colouring is registered, loaded on first use, JSON as JavaScript, Vue as HTML, `.log` by a small Monarch language of its own, none of the worker-backed language services) but must use the `claude2` theme, and is kept out of the
   user's key rules, all but Ctrl-D, by its `stockEditor` context key. The ctrl-wheel font size of it and of the Snips is
   `addWheelZoom` in `monaco.ts`, each editor with its own remembered size, since Monaco's `mouseWheelZoom` is page-wide too.
   The Files tree (with its rendered markdown) and the Log pane aren't Monaco: `src/wheelZoom.ts` does the same with a remembered CSS variable on the root, one per pane.
 - Every page element follows CLAUDE.md's display rules: font sizes 14–18px only (the exceptions,
   at the user's asking, are the ctrl-wheel size of the Files pane, the Log pane and the Snips, which has no limits, and the 12px tooltip `#tip`), text solid black
-  or a colour, never grey. Monaco's markdown keeps the stock light theme's token colours (blue
-  headings), and its one grey token is pinned to black in `monaco.ts`. A disabled button keeps its enabled look under a 50% white
+  or a colour, never grey. Monaco's markdown and the Files editor's languages keep the stock light theme's token colours (blue
+  headings), its other greys too (at the user's asking); only html delimiters are pinned to black in `monaco.ts`. A disabled button keeps its enabled look under a 50% white
   overlay (`style.css`, at the user's asking, though it pales the label), a paused quota age by its background; only status icons (tab dot, card clocks) keep colour.

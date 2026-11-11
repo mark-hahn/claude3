@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The Files pane's file mode: one file on the tab's host in a stock Monaco editor, of the prompt
-// box's and Snips' custom keys only Ctrl-D, uncoloured, wrapped, their line dots in place of line numbers, no minimap. Live as Snips are: saved half a second after the
+// box's and Snips' custom keys only Ctrl-D, coloured by the language its name or #! line implies, wrapped, their line dots in place of line numbers, no minimap. Live as Snips are: saved half a second after the
 // typing stops and at once on close, and read again when the file changes on disk. A save is
 // refused if the file changed since it was read, and then nothing more is saved until Reload.
 // With the file's last line in view it is in tail mode, shown by the header's path going yellow:
@@ -128,7 +128,10 @@ async function reload(): Promise<void> {
 }
 
 onMounted(() => {
-  editor = monaco.editor.create(host.value!, { value: props.file.text, language: "plaintext", theme: "claude2", automaticLayout: true, fontSize: 14, minimap: { enabled: false }, lineNumbers: "off", wordWrap: "on", scrollBeyondLastLine: false, lineDecorationsWidth: 14, glyphMargin: false, folding: false, editContext: false });
+  // Monaco picks the language from the model's name and first line. The query keeps two editors
+  // of one file from sharing a model name, which Monaco refuses.
+  const model = monaco.editor.createModel(props.file.text, undefined, monaco.Uri.file(props.file.path).with({ query: String(Math.random()) }));
+  editor = monaco.editor.create(host.value!, { model, theme: "claude2", automaticLayout: true, fontSize: 14, minimap: { enabled: false }, lineNumbers: "off", wordWrap: "on", scrollBeyondLastLine: false, lineDecorationsWidth: 14, glyphMargin: false, folding: false, editContext: false });
   addLineDots(editor);
   addWheelZoom(editor, "claude3.fileFontSize");
   editor.createContextKey("stockEditor", true);
@@ -148,6 +151,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.clearInterval(poller);
   if (dirty) flush();
+  // An editor given a model leaves it alive.
+  editor?.getModel()?.dispose();
   editor?.dispose();
   editor = null;
 });

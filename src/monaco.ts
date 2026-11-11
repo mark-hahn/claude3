@@ -1,11 +1,12 @@
 // claude2's Monaco setup (its webviews.ts monacoScript / monacoStyle), shared by the prompt box and
 // the Snips: the worker, the theme, the user's editing keys, the editor options, the gutter's line
 // dots, the list keys (Tab, Shift-Tab, Enter, Backspace, #), and the untabbing of text that arrives.
-// Every editor feature, but only the markdown language.
+// Every editor feature, and every language's colouring (each loaded on first use) but none of the
+// language services, which need workers of their own.
 import * as monaco from "monaco-editor/editor/editor.api";
 import "monaco-editor/features/register.all";
 import "monaco-editor/editor/browser/coreCommands";
-import "monaco-editor/languages/definitions/markdown/register";
+import "monaco-editor/languages/definitions/register.all";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import { headingEnter } from "./blankLines.ts";
 import "./monaco.css";
@@ -17,6 +18,36 @@ self.MonacoEnvironment = { getWorker: () => new EditorWorker() };
 const themeColors = { "editor.background": "#fcfcfb", foreground: "#000000", descriptionForeground: "#000000", "input.placeholderForeground": "#000000", "keybindingLabel.foreground": "#000000" };
 // Black wherever the stock light theme greys text: html delimiters, widget text, placeholders.
 monaco.editor.defineTheme("claude2", { base: "vs", inherit: true, rules: [{ token: "delimiter.html", foreground: "000000" }], colors: themeColors });
+// JSON's only colouring is in its language service; JavaScript's does it well enough. Vue as
+// HTML: the template's tags, <script> as JavaScript (even lang="ts"), <style> as CSS. Shell
+// scripts without an extension (./run, ./deploy) are known by their #! line.
+monaco.languages.register({ id: "javascript", extensions: [".json", ".jsonc"] });
+monaco.languages.register({ id: "html", extensions: [".vue"] });
+monaco.languages.register({ id: "shell", firstLine: "^#!.*\\b(ba|z)?sh\\b" });
+// Logs, such as vite-console.log's "[22:30:57] log ...": the leading [time] and the level after
+// it (blue, warn purple, errors red), [tags] red and (tags) blue as the prompt box shows them,
+// dates and times, error and warning words, strings, numbers.
+// Each rule is tried at the start of what is left of the line, so words are eaten whole by the
+// last rule rather than matched from their middle.
+monaco.languages.register({ id: "log", extensions: [".log"] });
+const logLevel = { cases: { "error|uncaught|unhandled|fatal": "constant", "warn|warning": "keyword.flow", "@default": "keyword" } };
+monaco.languages.setMonarchTokensProvider("log", {
+  ignoreCase: true,
+  tokenizer: {
+    root: [
+      [/^(\[[^\]]*\])(\s*)(\w+)/, ["type", "", logLevel]],
+      [/\[[^\]]*\]/, "string"],
+      [/\([^)]*\)/, "keyword"],
+      [/\d{4}-\d\d-\d\d([T ]\d\d:\d\d(:\d\d)?(\.\d+)?Z?)?|\d\d?:\d\d(:\d\d(\.\d+)?)?/, "type"],
+      [/(errors?|fail(s|ed|ure)?|fatal|uncaught|unhandled|exception)\b/, "constant"],
+      [/warn(ing|ings)?\b/, "keyword.flow"],
+      [/(true|false|null|undefined)\b/, "keyword"],
+      [/"[^"]*"/, "string"],
+      [/\d+(\.\d+)?\b/, "number"],
+      [/\w+/, ""],
+    ],
+  },
+});
 // The user's own VS Code editing keys. Ctrl-D is otherwise Monaco's add-next-match, and
 // shift-alt-left/right its smart select.
 const { KeyMod, KeyCode } = monaco;
