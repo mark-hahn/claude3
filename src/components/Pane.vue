@@ -27,6 +27,9 @@ const runErrorEl = ref<HTMLDialogElement>();
 const runErrorText = ref("");
 const deployPopEl = ref<HTMLDialogElement>();
 const deployText = ref("");
+const setupPopEl = ref<HTMLDialogElement>();
+const setupText = ref("");
+const setupStarted = ref(false);
 const commitPopEl = ref<HTMLDialogElement>();
 const commitText = ref("");
 const promptHostEl = ref<HTMLElement>();
@@ -646,6 +649,55 @@ async function awaitRun(): Promise<void> {
   showRun(head, head);
 }
 
+// Before a prompt, until the project's ./run is set up for the Run button (the deployable skill;
+// the flag is the project's deploySetup, kept by its backend). With no flag yet the backend's
+// check runs first, and a project that passes it is marked set up and its prompt goes on with no
+// dialog. Otherwise a dialog asks: Set up sends the skill to a new session, which isn't opened, so
+// this prompt stays in its box; Check checks again and sets the flag when ./run passes. Not
+// needed sets "none" and sends the prompt, as Continue does without touching the flag; Set up,
+// Check and Cancel don't send it. Once Set up has run ("started"), the dialog comes with no check first.
+const SETUP_PROMPT = "Set up deploy for claude3's Run button: use the deployable skill (~/.claude/skills/deployable/SKILL.md) on this project.";
+async function deploySetupOk(): Promise<boolean> {
+  const state = props.tab.deploySetup;
+  if (state === "done" || state === "none") return true;
+  setupStarted.value = state === "started";
+  let problems: string[] = [];
+  if (!setupStarted.value) {
+    try {
+      ({ problems } = await post<{ problems: string[] }>(props.tab, "deployCheck", {}));
+    } catch (error) {
+      // As with the deploy warning, a failed check doesn't hold the prompt up.
+      report(new Error(`Couldn't check whether ${props.tab.label} is set up for the Run button (the prompt is sent anyway): ${error instanceof Error ? error.message : String(error)}`));
+      return true;
+    }
+    if (!problems.length) return true;
+  }
+  setupText.value = setupStarted.value
+    ? `${props.tab.label}: Claude was asked to set up its deploy for the Run button, in a session of its own.\n\nCheck reads ./run and ./deploy without running them, and stops this question when they pass.\nYour prompt stays in the box unless you pick Continue.`
+    : `${props.tab.label} isn't set up for claude3's Run button:\n${problems.map((problem) => `- ${problem}`).join("\n")}\n\nSet up: Claude does it in a new session (the deployable skill).\nCheck: check again, after fixing it yourself.\nNot needed: nothing to deploy here; never ask again.\nYour prompt stays in the box unless you pick Continue or Not needed.`;
+  await nextTick(); // the autofocus attribute follows setupStarted before showModal reads it
+  const dialog = setupPopEl.value!;
+  dialog.returnValue = "";
+  dialog.showModal();
+  await new Promise((resolve) => dialog.addEventListener("close", resolve, { once: true }));
+  const choice = dialog.returnValue;
+  try {
+    if (choice === "setup") {
+      await post(props.tab, "prompt", { sessionId: "", prompt: SETUP_PROMPT, images: [] });
+      await post(props.tab, "deploySetup", { state: "started" });
+    } else if (choice === "check") {
+      const { problems } = await post<{ problems: string[] }>(props.tab, "deployCheck", {});
+      window.alert(problems.length ? `${props.tab.label}: the deploy setup isn't finished.\n\n${problems.map((problem) => `- ${problem}`).join("\n")}` : `${props.tab.label}: deploy is set up. Press Run to deploy.`);
+    } else if (choice === "none") {
+      await post(props.tab, "deploySetup", { state: "none" });
+    }
+  } catch (error) {
+    report(new Error(`Deploy setup for ${props.tab.label} failed (the prompt wasn't sent): ${error instanceof Error ? error.message : String(error)}`));
+    return false;
+  }
+  return choice === "continue" || choice === "none";
+}
+
 // Before a prompt: when files changed since the project's ./deploy (or ./run) last finished, a
 // dialog asks Deploy, Continue or Cancel. Deploy does what the prompt "r" does and leaves the
 // prompt unsent in the box. A failed check doesn't hold the prompt up.
@@ -716,6 +768,7 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
   }
   // Pictures alone are a prompt, not an empty box.
   if ((!text.trim() && (keepDraft || !images().length)) || (props.session?.trashed ?? false)) return;
+  if (!keepDraft && !(await deploySetupOk())) return;
   if (!keepDraft && !(await deployOk())) return;
   const choice = keepDraft ? "continue" : await commitChoice();
   if (!choice) return;
@@ -1247,6 +1300,10 @@ onBeforeUnmount(() => {
     <dialog ref="deployPopEl" class="run-pop">
       <pre>{{ deployText }}</pre>
       <form method="dialog"><button value="deploy">Deploy</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
+    </dialog>
+    <dialog ref="setupPopEl" class="run-pop">
+      <pre>{{ setupText }}</pre>
+      <form method="dialog"><button value="setup" :autofocus="!setupStarted">Set up</button> <button value="check" :autofocus="setupStarted">Check</button> <button value="none">Not needed</button> <button value="continue">Continue</button> <button value="">Cancel</button></form>
     </dialog>
     <dialog ref="commitPopEl" class="run-pop">
       <pre>{{ commitText }}</pre>

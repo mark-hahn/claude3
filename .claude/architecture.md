@@ -129,6 +129,11 @@ on the laptop, and talks to each backend directly.
   the hosts that don't answer with the repo's hash. The WSL deploy builds the page first, so a
   type error anywhere in `src/` fails it. A failed host leaves `.deployed` unstamped (the deploy
   warning stays up) and makes `deploy --if-stale`, and so `run`, exit 1.
+- `skills/deployable/SKILL.md`: a Claude Code skill for every other project: how its `./run` must
+  behave for the Run button on each host and how its deploy skips what is already there, including
+  a new project about to get a skeleton. `deploy` copies `skills/` (rsync, merged, never
+  `--delete`) into `~/.claude/skills` on wsl, win and srv on every run, stale or not. It restates
+  `runScript`, `deployNeeded` and `deployCheck`: change it with them.
 - `run`: stops this repo's vite if one is running (it holds port 5310), `deploy --if-stale`, then
   starts vite detached (`setsid nohup`, output in `vite.log`), waits for its ready line, and exits. So starting the page also restarts any backend whose
   server code changed, cutting that backend's running turns. Page-only changes never restart one.
@@ -204,19 +209,29 @@ on the laptop, and talks to each backend directly.
   `./deploy` (or `./run` when it has none) touches `.deployed` (gitignored) when it finishes, and
   any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Deploy
   (same as "r" below, the prompt stays unsent in the box), Continue or Cancel. No script or no
-  stamp yet means no warning. The touch lines live in each project's own
+  stamp yet, or no git repo (a new project), means no warning. The touch lines live in each project's own
   script (claude3, claude2, tv, finance on hahnca.com). A script can write paths into the stamp
   and then only those count: claude3's writes `server shared`, what `--if-stale` hashes, so
   docs and page-only edits don't ask for a deploy. The footer's Run button is highlighted
   while the same check finds files; it is re-read for every open project on showing, window focus,
   session events, and a ./run's result.
+- **Deploy setup.** Before the deploy warning, a prompt in a project whose `Tab.deploySetup` (in its
+  backend's `projects.json`) isn't "done" or "none" goes through `deploySetupOk` in Pane. With no
+  flag it first asks the backend's `deployCheck` (`./run` there, parses, no CR, executable off
+  Windows, not the skill's "nothing to deploy yet" stub, and paths written into `.deployed` by a
+  redirect in it or `./deploy`; a bare `touch .deployed` is the old kind and fails). Passing sets
+  "done" and the prompt goes on with no dialog; otherwise a `<dialog>` lists the problems. Set up
+  sends `SETUP_PROMPT` (use the deployable skill) to a new session, which isn't opened, and sets
+  "started"; Check runs `deployCheck` again and an alert gives the result; Not needed sets "none"
+  and sends; Continue sends and leaves the flag. Set up, Check and Cancel leave the prompt in the
+  box. With "started" the dialog comes with no check first, Check focused. The flag comes back to the page in a `projects` event.
 - **Commit warning.** After the deploy check, a prompt to a session with turns asks `lastCommit`
   (HEAD's `%ct` and subject); HEAD newer than the last turn's `createdAt` opens a `<dialog>`:
   New session (the prompt starts one, as from the draft, and leaves the running one alone),
   Continue or Cancel. The "/compact" auto-send (`keepDraft`) skips both checks.
   Either check failing (a stale backend answers "No such session.") shows an alert, then the prompt is sent.
 - **"r".** A prompt of just `r`, or the footer's Run button (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
-  project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. A failed ./run (non-zero exit, or no result) also opens a red-bordered error dialog on top (`.run-error`): the failure line plus the output's `!!` lines, kept in sessionStorage (`runFail:`) until its OK. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On WSL it runs through `systemd-run`
+  project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. A failed ./run (non-zero exit, or no result) also opens a red-bordered error dialog on top (`.run-error`): the failure line plus the output's `!!` lines, kept in sessionStorage (`runFail:`) until its OK. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On win it runs as `C:\Program Files\Git\bin\bash.exe ./run`, since Windows can't start a script by its `#!` line (every project's `./run` is bash); on srv it is spawned directly. On WSL it runs through `systemd-run`
   (`KillMode=process`), outside claude3.service's cgroup, so claude3's own `./run` restarting
   this backend kills neither the script nor the vite it leaves running. The page's request
   dies with the backend then, so the script's output and exit code go to

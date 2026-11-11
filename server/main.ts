@@ -20,6 +20,8 @@
 //        run -> { output } (the project's ./run, the prompt box's "r")
 //        runResult -> { done, code, output } (the last ./run's output so far and, when it's over, its exit code)
 //        deployNeeded -> { script, files } (project files changed since .deployed; see deployNeeded)
+//        deploySetup { state } -> {} (the project's deploySetup: "started" or "none")
+//        deployCheck -> { problems } (./run and ./deploy against the deployable skill; none sets deploySetup "done")
 //        lastCommit -> { at, subject } (HEAD's commit time in ms, 0 with no commits, and its subject)
 //        clean -> {} (every session to the trash) | git { log? } -> { files: [{ x, y, path }], log?: { hash, subject, messages } } (git status; log: the branch's newest commit and its last 100 messages)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
@@ -714,6 +716,17 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (name === "deployNeeded") {
     return await deployNeeded(project);
   }
+  if (name === "deploySetup") {
+    if (body.state !== "started" && body.state !== "none") {
+      throw new Error(`No deploy setup state ${JSON.stringify(body.state)}.`);
+    }
+    project.tab.deploySetup = body.state;
+    saveTabs();
+    return {};
+  }
+  if (name === "deployCheck") {
+    return await deployCheck(project);
+  }
   if (name === "lastCommit") {
     // No repo or no commits yet: nothing was committed, so at is 0.
     const line = await git(project, "log", "-1", "--format=%ct %s").catch(() => "");
@@ -817,6 +830,10 @@ function errorText(error: unknown): string {
 // vite running stays loaded as long as vite does, so a fixed name would refuse every later ./run.
 // Done at the script's exit, not its pipes' close: a detached child may hold them open.
 // restartVite sets RESTART_VITE=1 for it (the page's "v" prompt); claude3's ./run then restarts vite.
+// Windows can't start a script by its #! line, so there ./run goes through Git Bash; every
+// project's ./run is bash on every host. The ~/.claude/skills/deployable skill (skills/ here) is
+// what tells a project's Claude how to write one; keep it in step with this, deployNeeded and deployCheck.
+const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
 function runScript(project: Project, restartVite: boolean): Promise<string> {
   const cwd = project.tab.path;
   if (!fs.existsSync(path.join(cwd, "run"))) {
@@ -829,10 +846,12 @@ function runScript(project: Project, restartVite: boolean): Promise<string> {
   const detached = hostName === "wsl";
   const [command, ...args] = detached
     ? ["systemd-run", "--quiet", "--collect", "--wait", "--expand-environment=no", "-p", "KillMode=process", "-p", `WorkingDirectory=${cwd}`, "-E", `PATH=${process.env.PATH}`, "-E", `HOME=${os.homedir()}`, ...(restartVite ? ["-E", "RESTART_VITE=1"] : []), "/bin/sh", "-c", './run > "$1" 2>&1; code=$?; echo $code > "$2"; exit $code', "sh", logFile, statusFile]
-    : ["./run"];
+    : hostName === "win"
+      ? [GIT_BASH, "./run"]
+      : ["./run"];
   log(`./run in ${cwd}`);
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env: { ...process.env, ...(restartVite ? { RESTART_VITE: "1" } : {}) }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, { cwd, env: { ...process.env, ...(restartVite ? { RESTART_VITE: "1" } : {}) }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     let output = "";
     let exited = false; // something the script left running may hold the pipes and keep writing
     const take = (chunk: Buffer): void => {
@@ -894,7 +913,14 @@ async function deployNeeded(project: Project): Promise<{ script: string; files: 
   } catch {
     return { script, files: [] }; // never stamped: unknown, so no warning
   }
-  const listed = (await git(project, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...paths)).split("\0").filter(Boolean);
+  let listed: string[];
+  try {
+    listed = (await git(project, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...paths)).split("\0").filter(Boolean);
+  } catch (error) {
+    // A new project's ./run can come before its `git init`: no repo, no warning, as with no stamp.
+    if (/not a git repository/i.test(String(error))) return { script, files: [] };
+    throw error;
+  }
   const files = [...new Set(listed)].filter((file) => {
     try {
       return fs.statSync(path.join(cwd, file)).mtimeMs > stamp;
@@ -903,6 +929,49 @@ async function deployNeeded(project: Project): Promise<{ script: string; files: 
     }
   });
   return { script, files };
+}
+
+// The deploy-setup dialog's Check: what the deployable skill promises of ./run and ./deploy, read
+// without running either. No problems marks the project's deploySetup "done", so the page stops
+// asking. It can't tell whether a deploy skips what is unchanged; the first Runs show that.
+async function deployCheck(project: Project): Promise<{ problems: string[] }> {
+  const cwd = project.tab.path;
+  const problems: string[] = [];
+  const texts: string[] = [];
+  let run: string | undefined;
+  for (const name of ["run", "deploy"]) {
+    const file = path.join(cwd, name);
+    if (!fs.existsSync(file)) continue;
+    const text = fs.readFileSync(file, "utf8");
+    texts.push(text);
+    if (name === "run") run = text;
+    if (text.includes("\r")) problems.push(`./${name} has CR line endings; bash needs LF.`);
+    // Windows runs it through Git Bash, which needs no mode bits.
+    if (hostName !== "win") {
+      try {
+        fs.accessSync(file, fs.constants.X_OK);
+      } catch {
+        problems.push(`./${name} isn't executable (chmod +x ${name}).`);
+      }
+    }
+    const syntax = await new Promise<string>((resolve) =>
+      execFile(hostName === "win" ? GIT_BASH : "bash", ["-n", name], { cwd, timeout: 20_000, windowsHide: true }, (error, _out, stderr) => resolve(error ? (stderr || error.message).trim() : "")),
+    );
+    if (syntax) problems.push(`./${name} doesn't parse: ${syntax}`);
+  }
+  if (run === undefined) problems.push("There is no ./run.");
+  // The skill's stub for a project with no code yet says this; it isn't a deploy.
+  else if (run.includes("nothing to deploy yet")) problems.push("./run is still the stub that deploys nothing. Once the project has code, ask Claude to finish it with the deployable skill.");
+  // The skill's stamp holds the deploy's paths (`echo ... > .deployed`); a bare touch is the old
+  // kind, which counts every file, docs included, and comes with a deploy that redoes everything.
+  else if (!texts.some((text) => />\s*\.deployed\b/.test(text))) {
+    problems.push(texts.some((text) => text.includes(".deployed")) ? "The stamp .deployed is only touched: the deploy should write the paths it depends on into it (echo ... > .deployed)." : "Neither ./run nor ./deploy writes .deployed, the stamp the deploy warning reads.");
+  }
+  if (!problems.length) {
+    project.tab.deploySetup = "done";
+    saveTabs();
+  }
+  return { problems };
 }
 
 // The Git popup's "Describe changes": everything a commit would take (the diff against HEAD, plus

@@ -19,6 +19,10 @@ export interface Tab {
   roots?: string[];
   // The root on show: -1 is the project folder, absent is the last in the list.
   rootIdx?: number;
+  // Whether ./run is set up for the Run button (the deployable skill). Absent: the page asks before
+  // a prompt; "started": Claude was set to it, the page asks to check; "done": the check passed;
+  // "none": nothing to deploy. Either of the last two and the page stops asking.
+  deploySetup?: "started" | "done" | "none";
 }
 
 // What a backend starts from until it has a list of its own. Their ids are the labels they had

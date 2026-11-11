@@ -10,6 +10,7 @@
 # The version is a hash of server/ and shared/, written beside each deployed copy and answered at
 # GET /version. Page-only changes (src/) don't change it, so they never restart a backend. The stats
 # server has a version of its own, the hash of claude-stats/, so a change to it restarts no backend.
+# Every run, stale or not, also copies what changed in skills/ to each host's ~/.claude/skills.
 # Usage: ./deploy [stats] [wsl] [win] [srv]              deploy and restart these (none named: all four)
 #        ./deploy --if-stale [stats] [wsl] [win] [srv]   only those not running this version
 # A restart cuts that backend's running turns.
@@ -36,8 +37,9 @@ STATS_DIR=/root/dev/apps/claude-stats
 # package.json only for its "type": "module", which makes Node read the .ts files as ES modules.
 FILES=(package.json server shared)
 # What the versions hash: only a change here makes --if-stale deploy. Written into .deployed so
-# the page's Run highlight and deploy warning count the same files.
-SOURCES=(server shared claude-stats)
+# the page's Run highlight and deploy warning count the same files. skills/ is in it too, though
+# no version hashes it: every run copies what changed there (sync_skills).
+SOURCES=(server shared claude-stats skills)
 hashed() { find "$@" -type f -print0 | sort -z | xargs -0 sha1sum | sha1sum | cut -c1-12; }
 VERSION=$(hashed server shared)
 STATS_VERSION=$(hashed claude-stats)
@@ -85,6 +87,17 @@ pm2_rows() {
     }'
 }
 
+# skills/ to the host's ~/.claude/skills, where every project's Claude on it finds them (the
+# deployable skill: how a project's ./run should deploy). Merged in, never --delete: the folder
+# holds the user's other skills. rsync copies only what changed and prints a line for each.
+sync_skills() {
+  case $1 in
+  wsl) rsync -rtO --out-format="== wsl skills: %n" skills/ /root/.claude/skills/ ;;
+  win) rsync -rtO --out-format="== win skills: %n" skills/ /mnt/c/Users/mark/.claude/skills/ ;;
+  srv) rsync -rtO --out-format="== srv skills: %n" skills/ "$REMOTE:.claude/skills/" ;;
+  esac
+}
+
 wait_up() {
   local version
   version=$(wanted "$1")
@@ -105,6 +118,7 @@ if [ "${1:-}" = "--if-stale" ]; then
   [ ${#HOSTS[@]} -gt 0 ] || HOSTS=("${ALL[@]}")
   failed=0
   for host in "${HOSTS[@]}"; do
+    sync_skills "$host" || { echo "!! $host skills copy failed" >&2; failed=1; }
     now=$(running "$host")
     if [ "$now" = "$(wanted "$host")" ]; then
       echo "== $host backend running version $now"
@@ -124,6 +138,7 @@ HOSTS=("$@")
 [ ${#HOSTS[@]} -gt 0 ] || HOSTS=("${ALL[@]}")
 
 for host in "${HOSTS[@]}"; do
+  sync_skills "$host"
   case $host in
   stats)
     echo "== claude-stats on $REMOTE =="
