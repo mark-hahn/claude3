@@ -3,7 +3,7 @@
 // tab strip. One text, kept on the stats server (claude-stats, the backend's `snips` action), so
 // every tab on every host edits the same copy. Read when it opens and whenever the window gets focus back; saved half a
 // second after the typing stops, and at once on close. Esc closes it; Ctrl+Enter moves the selected text
-// to the end of the prompt and the cursor there, takes the blank lines around the removed text
+// to the end of the prompt and the cursor there (an empty prompt sends it at once), takes the blank lines around the removed text
 // down to one and closes the Snips; with nothing selected it types two bare newlines, no margin or dash. A Monaco editor with
 // claude2's editing (src/monaco.ts).
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";

@@ -402,6 +402,7 @@ function applyDelta(turnId: string, next: RunningStatus | null): void {
 const drafted = (): string[] => [...drafts].filter(([, text]) => text.trim()).map(([id]) => id).concat(draft.value.trim() && props.session ? [props.session.id] : [], Object.keys(waiting));
 // Text picked in the Snips joins the end of the prompt, on a line of its own, with the cursor after it.
 // An edit through Monaco, so ctrl-z takes it back. False when the box couldn't take it.
+// Into an empty box (no text, no pictures) it is sent at once; a send that is cancelled or fails leaves it in the box.
 function appendPrompt(text: string): boolean {
   const box = promptBox;
   if (!props.session?.trashed) leaveRestored();
@@ -410,12 +411,14 @@ function appendPrompt(text: string): boolean {
   const model = box.getModel()!;
   const end = model.getPositionAt(model.getValueLength());
   const value = model.getValue();
+  const empty = !value.trim() && !images().length;
   box.pushUndoStop();
   box.executeEdits("claude3", [{ range: monaco.Range.fromPositions(end), text: (value && !value.endsWith("\n") ? "\n" : "") + untab(text) }]);
   box.pushUndoStop();
   box.focus();
   box.setPosition(model.getPositionAt(model.getValueLength()));
   box.revealPosition(box.getPosition()!);
+  if (empty) void submit();
   return true;
 }
 const focusPrompt =(): void => (promptMarkdown.value ? promptMdEl.value : promptBox)?.focus();
