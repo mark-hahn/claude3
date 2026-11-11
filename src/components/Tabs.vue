@@ -163,7 +163,7 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
           @keydown.esc.prevent="finishRename(tab, false)"
           @blur="finishRename(tab, true)"
         />
-        <template v-else>{{ tab.label }}</template>
+        <template v-else>{{ tab.host }}:&nbsp;&nbsp; {{ tab.label }}</template>
       </div>
     </section>
   </dialog>
