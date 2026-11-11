@@ -80,10 +80,6 @@ const drafts = new Map<string, string>();
 for (const key of Object.keys(localStorage)) {
   if (key.startsWith(draftKey(""))) drafts.set(key.slice(draftKey("").length), localStorage.getItem(key)!);
 }
-// The prompt box's text when something other than sending emptied it (a session switch, a page
-// reload); Ctrl+Enter in an empty box puts it back. Every edit is saved under lostKey for the reload.
-const lostKey = (): string => `lostPrompt:${props.tab.id}`;
-let clearedDraft = localStorage.getItem(lostKey()) ?? "";
 
 const turns = (): ClaudeTurn[] => props.session?.turns ?? [];
 const typedText = (turn: ClaudeTurn): string => typedPrompt(turn.prompt);
@@ -808,7 +804,6 @@ watch(() => [props.active, props.version], checkDeploySoon, { immediate: true })
 async function submit(text = draft.value, keepDraft = false): Promise<void> {
   if ((text.trim() === "r" || text.trim() === "v") && !keepDraft) {
     draft.value = "";
-    localStorage.removeItem(lostKey());
     return runScript(text.trim() === "v");
   }
   // Pictures alone are a prompt, not an empty box.
@@ -834,11 +829,7 @@ async function send(text: string, keepDraft: boolean): Promise<void> {
   // Sending during a run stops that run and takes this prompt instead; a run waiting on a
   // background task takes it as a follow-up.
   if (!fresh && props.status?.active && props.status.phase !== "background" && !window.confirm("Stop the running response and send this prompt instead?")) return;
-  if (!keepDraft) {
-    draft.value = "";
-    localStorage.removeItem(lostKey());
-    if (clearedDraft === text) clearedDraft = "";
-  }
+  if (!keepDraft) draft.value = "";
   // Every waiting picture rides with this prompt; a failed send puts them back.
   const key = sessionKey();
   const sending = keepDraft ? [] : images();
@@ -864,16 +855,11 @@ async function send(text: string, keepDraft: boolean): Promise<void> {
   }
 }
 
-// Ctrl+Enter in the prompt box. In an empty one it puts back a lost prompt, or else shows the last one.
+// Ctrl+Enter in the prompt box. An empty one shows the last prompt instead.
 function sendKey(): void {
   if (props.session?.trashed) return;
   if (restoredTurn.value) return leaveRestored();
-  if (!draft.value.trim() && !images().length) {
-    if (!clearedDraft) return restoreLast();
-    draft.value = clearedDraft;
-    clearedDraft = "";
-    return;
-  }
+  if (!draft.value.trim() && !images().length) return restoreLast();
   void submit();
 }
 
@@ -1222,7 +1208,6 @@ watch(
     if (id !== switchedFrom) {
       // Another session in the pane: its own draft, picks and a fresh view.
       if (switchedFrom !== null) drafts.set(switchedFrom, draft.value);
-      if (draft.value.trim()) clearedDraft = draft.value;
       // An empty card taking over from the new-session draft keeps what was typed there.
       draft.value = drafts.get(id) || (switchedFrom === "" && !turns().length ? draft.value : "");
       if (switchedFrom === "") {
@@ -1264,11 +1249,6 @@ watch(draft, (text) => {
   // Text from elsewhere (a returned prompt) takes the box over a restored prompt.
   if (text && restoredTurn.value) leaveRestored();
   if (promptBox && !restoredTurn.value && promptBox.getValue() !== text) promptBox.setValue(untab(text));
-  // For a reload: the box's text, or in an empty box what Ctrl+Enter would put back. Text deleted
-  // by hand isn't lost, so it mustn't come back after a reload.
-  const lost = text.trim() ? text : clearedDraft;
-  if (lost) localStorage.setItem(lostKey(), lost);
-  else localStorage.removeItem(lostKey());
   const key = draftKey(props.session?.id ?? "");
   if (text) localStorage.setItem(key, text);
   else localStorage.removeItem(key);
