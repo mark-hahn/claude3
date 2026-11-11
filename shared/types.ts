@@ -23,7 +23,7 @@ export const TOOL_DETAIL_MARK = "⁢";
 export const ANSWER_MARK = "⁤";
 
 // The sentence each attached picture adds to the prompt, which is what gets the CLI to read it.
-export const imageNote = (file: string): string => `[A screenshot of the user's desktop is attached. Read the image file ${file} to view it.]`;
+export const imageNote = (file: string): string => `[An image is attached. Read the image file ${file} to view it.]`;
 // A file attached to a prompt by the footer's File (a picked image goes as a picture instead): where
 // it was picked, and once sent, the copy the CLI reads, under ~/.claude3/files on the session's host.
 export interface AttachedFile {
@@ -38,7 +38,8 @@ export interface AttachedFile {
 // The sentence each attached file adds to the prompt.
 export const fileNote = (file: AttachedFile): string => `[A file is attached: ${file.path} on the ${file.host} host, copied to ${file.stored} when attached. Read that copy to view it.]`;
 // A stored prompt as it was typed, without those sentences: a prompt bar draws icons for them.
-export const typedPrompt = (prompt: string): string => prompt.replace(/\n\n\[A screenshot of the user's desktop is attached\. Read the image file [^\]]* to view it\.\]/g, "").replace(/\n\n\[A file is attached: .*? Read that copy to view it\.\]/g, "");
+// The screenshot wording is the old image note, still in older sessions' transcripts.
+export const typedPrompt = (prompt: string): string => prompt.replace(/\n\n\[(?:An image|A screenshot of the user's desktop) is attached\. Read the image file [^\]]* to view it\.\]/g, "").replace(/\n\n\[A file is attached: .*? Read that copy to view it\.\]/g, "");
 
 // What the CLI says when this host's Claude login is gone: claude2's test, plus its words for no login at all.
 export const AUTH_FAILED = /failed to authenticate|oauth session expired|not logged in/i;

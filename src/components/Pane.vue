@@ -1133,7 +1133,7 @@ function showFile(file: AttachedFile): void {
     file.name,
     `${file.kind === "pdf" ? "PDF" : "Text"}, ${file.size.toLocaleString()} bytes, modified ${new Date(file.mtime).toLocaleString()}`,
     `On ${file.host}: ${file.path}`,
-    file.stored ? `Sent with this prompt. Claude was given the copy at ${file.stored}` : `Waiting on the next prompt. Ctrl-click its ${FILE} to remove it.`,
+    ...(file.stored ? [] : [`Waiting on the next prompt. Ctrl-click its ${FILE} to remove it.`]),
   ].join("\n");
   if (props.active) filePopEl.value!.showModal();
 }
