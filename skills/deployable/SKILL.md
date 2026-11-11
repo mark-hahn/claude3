@@ -36,9 +36,9 @@ the user should see when they press Run.
 - **Deploy warning and Run highlight.** Before each prompt claude3 looks for `./deploy` (else
   `./run`) and the stamp file `.deployed`. Any file `git ls-files --cached --others
   --exclude-standard` lists that is newer than the stamp means a deploy is due: the Run button is
-  highlighted and a prompt asks Deploy / Continue / Cancel. If `.deployed` contains
-  whitespace-separated paths (relative to the project root), only files under them count; an
-  empty stamp counts every file, docs included. No script, no stamp, or no git repo: no warning.
+  highlighted and a prompt asks Deploy / Continue / Cancel. If `.deployed` contains paths, one
+  per line (relative to the project root; spaces and git globs are fine), only files under them
+  count; an empty stamp counts every file, docs included. No script, no stamp, or no git repo: no warning.
 
 ## What to build
 
@@ -66,7 +66,8 @@ executable (`chmod +x`).
    `|| true` on a step that matters. Stopping at the first failure is fine: the skipping makes a
    re-run redo only what is left.
 4. **Stamp at the end, on success only:** write the paths the deploy depends on into `.deployed`,
-   e.g. `echo src server package.json package-lock.json > .deployed`. Stamp even when every step
+   one per line, e.g. `printf '%s\n' src server "my dir" package.json > .deployed` (not `echo`,
+   which puts them all on one line, read as a single path). Stamp even when every step
    was skipped, so the warning clears. Add `.deployed` and any hash/version files the deploy keeps
    to `.gitignore`, and to the packaging ignore list if the project builds a package from the folder.
 5. **End the output with** `trap 'echo; echo "====== ENDED ======"' EXIT` near the top of the

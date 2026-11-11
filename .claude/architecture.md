@@ -211,8 +211,9 @@ on the laptop, and talks to each backend directly.
   (same as "r" below, the prompt stays unsent in the box), Continue or Cancel. No script or no
   stamp yet, or no git repo (a new project), means no warning. The touch lines live in each project's own
   script (claude3, claude2, tv, finance on hahnca.com). A script can write paths into the stamp
-  and then only those count: claude3's writes `server shared`, what `--if-stale` hashes, so
-  docs and page-only edits don't ask for a deploy. The footer's Run button is highlighted
+  and then only those count (one git pathspec per line, so spaces work; written with
+  `printf '%s\n'`, and deployCheck fails an `echo` into it): claude3's writes `SOURCES` from
+  `./deploy` (`server shared claude-stats skills`), so docs and page-only edits don't ask for a deploy. The footer's Run button is highlighted
   while the same check finds files; it is re-read for every project, open or closed, on showing, window focus,
   session events, and a ./run's result.
 - **Deploy setup.** Before the deploy warning, a prompt in a project whose `Tab.deploySetup` (in its

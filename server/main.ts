@@ -909,7 +909,8 @@ async function deployNeeded(project: Project): Promise<{ script: string; files: 
   try {
     const deployed = path.join(cwd, ".deployed");
     stamp = fs.statSync(deployed).mtimeMs;
-    paths = fs.readFileSync(deployed, "utf8").split(/\s+/).filter(Boolean);
+    // One path (git pathspec, globs allowed) per line, so a path may hold spaces: printf '%s\n' src "my dir" > .deployed
+    paths = fs.readFileSync(deployed, "utf8").split(/\r?\n/).filter(Boolean);
   } catch {
     return { script, files: [] }; // never stamped: unknown, so no warning
   }
@@ -962,10 +963,14 @@ async function deployCheck(project: Project): Promise<{ problems: string[] }> {
   if (run === undefined) problems.push("There is no ./run.");
   // The skill's stub for a project with no code yet says this; it isn't a deploy.
   else if (run.includes("nothing to deploy yet")) problems.push("./run is still the stub that deploys nothing. Once the project has code, ask Claude to finish it with the deployable skill.");
-  // The skill's stamp holds the deploy's paths (`echo ... > .deployed`); a bare touch is the old
-  // kind, which counts every file, docs included, and comes with a deploy that redoes everything.
+  // The skill's stamp holds the deploy's paths, one per line (`printf '%s\n' ... > .deployed`); a bare
+  // touch is the old kind, which counts every file, docs included, and comes with a deploy that redoes everything.
   else if (!texts.some((text) => />\s*\.deployed\b/.test(text))) {
-    problems.push(texts.some((text) => text.includes(".deployed")) ? "The stamp .deployed is only touched: the deploy should write the paths it depends on into it (echo ... > .deployed)." : "Neither ./run nor ./deploy writes .deployed, the stamp the deploy warning reads.");
+    problems.push(texts.some((text) => text.includes(".deployed")) ? "The stamp .deployed is only touched: the deploy should write the paths it depends on into it, one per line (printf '%s\\n' ... > .deployed)." : "Neither ./run nor ./deploy writes .deployed, the stamp the deploy warning reads.");
+  }
+  // echo puts every path on one line, which now reads as a single path that matches nothing.
+  else if (texts.some((text) => /\becho\b[^\n]*>\s*\.deployed\b/.test(text))) {
+    problems.push("The stamp .deployed is written with echo, all on one line: it needs one path per line (printf '%s\\n' ... > .deployed).");
   }
   if (!problems.length) {
     project.tab.deploySetup = "done";
