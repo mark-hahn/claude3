@@ -32,4 +32,23 @@ if (Notification.permission === 'default') {
   document.addEventListener('click', () => void Notification.requestPermission(), { capture: true, once: true })
 }
 
-createApp(App).mount('#app')
+// Errors nothing caught, Vue's and the page's own, in a dialog: the console alone goes unread.
+// Each message once per page load, since a broken render throws again on every update.
+// Errors without an error object are skipped: ResizeObserver's harmless loop notice is one.
+const shown = new Set<string>()
+function showError(error: unknown): void {
+  const text = error instanceof Error ? error.message : String(error)
+  if (shown.has(text)) return
+  shown.add(text)
+  window.alert(`Page error: ${text}\n\nIf part of the page is missing, reload it.`)
+}
+window.addEventListener('error', (event) => { if (event.error) showError(event.error) })
+window.addEventListener('unhandledrejection', (event) => showError(event.reason))
+
+const app = createApp(App)
+// Replaces Vue's own logging, so it is logged here (and mirrored to vite-console.log).
+app.config.errorHandler = (error, _instance, info) => {
+  console.error(`Vue error in ${info}:`, error)
+  showError(error)
+}
+app.mount('#app')

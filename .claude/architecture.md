@@ -33,7 +33,7 @@ on the laptop, and talks to each backend directly.
   column, each tab with its own state (`sides[id]`: "", "files", "file", "git", "snips" or "settings"), so it is as it was left when the tab comes back.
   Each tab's label has a dot: green with a session active, else light red when its Git or Run button
   is highlighted (`dirty` and `deployDue` come up through Project's `highlighted`), else none. Those
-  two are re-read for every project, on show or not, closed ones too (their git status every 30s, not 2s), for the Tabs button: light red, with the same dot on each flagged name in its dialog, while any project is highlighted. Centered between the last tab and Files is the name of the selected session of the tab on show (`sessionName` up through Project).
+  two are re-read for every project, on show or not, closed ones too (their git status every 30s, not 2s), for the Tabs button: light red, with the same dot on each flagged name in its dialog, while any project is highlighted; light green instead (and a green dot) while any project has a session running (`busy`). Centered between the last tab and Files is the name of the selected session of the tab on show (`sessionName` up through Project).
 - `src/components/FolderPicker.vue`: the VS Code-style folder picker `<dialog>` on any host, fed by
   the backend's `folders`; used by the Tabs dialog and the Files pane. Its styles are Tabs.vue's, unscoped for that.
 - `src/components/Files.vue`: the Files column: header rows and a tree of the tab's host, with
@@ -353,6 +353,9 @@ on the laptop, and talks to each backend directly.
 - Enter in any modal `<dialog>` presses its `autofocus` button, or its only button (`src/main.ts`,
   window capture, ahead of Pane's Enter), unless focus is on a button, input, textarea, select or link.
   A click on a dialog's text leaves focus on the body, where Pane's Enter would act behind the dialog.
+- Errors nothing caught (Vue's `app.config.errorHandler`, window `error` and `unhandledrejection`)
+  get a `window.alert` from `src/main.ts`, each message once per page load (a broken render repeats
+  on every update). Window errors without an error object, like ResizeObserver's loop notice, are skipped.
 - Not ported yet from claude2: pasted images, File, export, presets (M),
   Stats/Models/Instructions/Settings tabs, the git changes check, prompt
   suggestions, arrow-key navigation.
