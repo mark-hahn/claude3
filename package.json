@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "test": "node src/render.check.mjs && node claude-stats/test.mjs"
+    "test": "node src/render.check.mjs && node server/stamp.check.mjs && node claude-stats/test.mjs"
   },
   "dependencies": {
     "monaco-editor": "^0.57.0",

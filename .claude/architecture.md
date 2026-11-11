@@ -140,7 +140,10 @@ on the laptop, and talks to each backend directly.
   and `shared/`, which the backend answers at `GET /version`; `deploy --if-stale` redeploys only
   the hosts that don't answer with the repo's hash. The WSL deploy builds the page first, so a
   type error anywhere in `src/` fails it. A failed host leaves `.deployed` unstamped (the deploy
-  warning stays up) and makes `deploy --if-stale`, and so `run`, exit 1.
+  warning stays up) and makes `deploy --if-stale`, and so `run`, exit 1. Only a run over every
+  target stamps (`stamp`): `./deploy wsl` leaves the stamp alone, the other hosts maybe still
+  being behind. The stamp's time is set back to when the script started, so a file saved while it
+  ran still counts as undeployed.
 - `skills/deployable/SKILL.md`: a Claude Code skill for every other project: how its `./run` must
   behave for the Run button on each host and how its deploy skips what is already there, including
   a new project about to get a skeleton. `deploy` copies `skills/` (rsync, merged, never
@@ -149,6 +152,10 @@ on the laptop, and talks to each backend directly.
 - `run`: stops this repo's vite if one is running (it holds port 5310), `deploy --if-stale`, then
   starts vite detached (`setsid nohup`, output in `vite.log`), waits for its ready line, and exits. So starting the page also restarts any backend whose
   server code changed, cutting that backend's running turns. Page-only changes never restart one.
+  It exits 1 when a host failed or vite's ready line never came, so the page's error dialog shows it.
+- `server/stamp.ts`: the deploy stamp's rules that need no project to try (`stampProblem`: how a
+  script must write `.deployed`; `stampTime`: when a stamp counts from), with `stamp.check.mjs`
+  (`npm test`). `deployNeeded` and `deployCheck` in `main.ts` use them.
 
 ## Main flows
 
@@ -185,6 +192,7 @@ on the laptop, and talks to each backend directly.
   prompt can follow up a background wait) → `runTurn` stores the turn, posts `session`, names the
   session on its first prompt, and runs the CLI. Text and status go out as `delta` every 80ms.
   The result settles the turn (`markAnswer` puts the answer mark in), saves, posts `session`.
+  The checks before a send (deploy setup, deploy warning, commit warning) take a few round trips with the text still in the box, so `submit` lets one send through at a time (`sending`): a second Ctrl+Enter meanwhile does nothing.
   Each session's unsent text is saved on every edit in localStorage (`draft:<tab>:<session id>`,
   '' for the new-session draft, removed on send), so it is back in its box after a reload and
   `Pane.drafted` still spares its session from the sweep. Separately, text a session switch or
@@ -225,28 +233,37 @@ on the laptop, and talks to each backend directly.
   script (claude3, claude2, tv, finance on hahnca.com). A script can write paths into the stamp
   and then only those count (one git pathspec per line, so spaces work; written with
   `printf '%s\n'`, and deployCheck fails an `echo` into it): claude3's writes `SOURCES` from
-  `./deploy` (`server shared claude-stats skills`), so docs and page-only edits don't ask for a deploy. The footer's Run button is highlighted
+  `./deploy` (`server shared claude-stats skills`), so docs and page-only edits don't ask for a deploy.
+  Three more things count as changed. A file the stamp names on a line of its own, even one git
+  ignores (an `.env`). A tracked file gone since the deploy, shown as `name (deleted)`: the backend
+  keeps the list of tracked files a stamp covered when it first saw it (`stampFiles`,
+  `~/.claude3/run-<tab>.files`). And a file saved while the deploy was running: a stamp written
+  during the Run button's `./run` counts from that run's start (`stampTime`, from `run-<tab>.start`
+  and the status file's time), which also flags, until the next Run, a file the deploy itself
+  rewrote under the stamped paths (`npm install` and a lock file). A `./run` from a terminal keeps
+  its stamp's own time; claude3's `deploy` back-dates its stamp itself. The footer's Run button is highlighted
   while the same check finds files; it is re-read for every project, open or closed, on showing, window focus,
   session events, and a ./run's result.
 - **Deploy setup.** Before the deploy warning, a prompt in a project whose `Tab.deploySetup` (in its
   backend's `projects.json`) isn't "done" or "none" goes through `deploySetupOk` in Pane. With no
   flag it first asks the backend's `deployCheck` (`./run` there, parses, no CR, executable off
   Windows, not the skill's "nothing to deploy yet" stub, and paths written into `.deployed` by a
-  redirect in it or `./deploy`; a bare `touch .deployed` is the old kind and fails). Passing sets
-  "done" and the prompt goes on with no dialog; otherwise a `<dialog>` lists the problems. Set up
+  redirect in it or `./deploy`, at any path; a bare `touch .deployed` is the old kind and fails, as does an `echo`: `stampProblem`). Passing sets
+  "done" and the prompt goes on with no dialog; otherwise a `<dialog>` lists the problems, with Cancel as its Enter button (Set up starts a session that writes scripts, so it takes a click). Set up
   sends `SETUP_PROMPT` (use the deployable skill) to a new session and opens it (so the footer shows its
   status; the typed prompt stays as its own session's draft; once "started" the button reads "Set up again"), and sets
   "started"; Check runs `deployCheck` again and an alert gives the result; Not needed sets "none"
   and sends; Continue sends and leaves the flag. Set up, Check and Cancel leave the prompt in the
-  box. With "started" the dialog comes with no check first, Check focused. The flag comes back to the page in a `projects` event.
+  box. With "started" the dialog comes with no check first, Check focused, except for a prompt to the setup session itself (its first prompt is `SETUP_PROMPT`), which just goes. The flag comes back to the page in a `projects` event.
   A `./run` (Run, "r", "v") asks the same first (`runScript`, `deploySetupOk("run")`), where Continue and Not needed start it; the deploy warning's Deploy skips the question, which its prompt already passed.
+  A "done" project is checked again before each `./run` (not each prompt), and `deployCheck` drops the flag when it no longer passes, so a script broken since, or a rule the check gained, brings the question back.
 - **Commit warning.** After the deploy check, a prompt to a session with turns asks `lastCommit`
   (HEAD's `%ct` and subject); HEAD newer than the last turn's `createdAt` opens a `<dialog>`:
   New session (the prompt starts one, as from the draft, and leaves the running one alone),
   Continue or Cancel. The "/compact" auto-send (`keepDraft`) skips both checks.
   Either check failing (a stale backend answers "No such session.") shows an alert, then the prompt is sent.
 - **"r".** A prompt of just `r`, or the footer's Run button (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
-  project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. Terminal colour codes are stripped from the output first (`plain`; pm2 prints them even into a file). A failed ./run (non-zero exit, or no result) also opens a red-bordered error dialog on top (`.run-error`): the failure line plus the output's `!!` lines, kept in sessionStorage (`runFail:`) until its OK. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On win it runs as `C:\Program Files\Git\bin\bash.exe ./run`, since Windows can't start a script by its `#!` line (every project's `./run` is bash); on srv it is spawned directly. On WSL it runs through `systemd-run`
+  project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. Terminal colour codes are stripped from the output first (`plain`; pm2 prints them even into a file). A failed ./run (non-zero exit, or no result) also opens a red-bordered error dialog on top (`.run-error`): the failure line plus the output's `!!` lines, kept in sessionStorage (`runFail:`) until its OK. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On win it runs as `bash ./run` inside Git Bash (`C:\Program Files\Git\bin\bash.exe -c`), since Windows can't start a script by its `#!` line (every project's `./run` is bash); on srv it is spawned directly, under `timeout`. On WSL it runs through `systemd-run`
   (`KillMode=process`), outside claude3.service's cgroup, so claude3's own `./run` restarting
   this backend kills neither the script nor the vite it leaves running. The page's request
   dies with the backend then, so the script's output and exit code go to
@@ -254,6 +271,15 @@ on the laptop, and talks to each backend directly.
   `runResult` once a second until they're there (resuming after a reload, via sessionStorage).
   `deploy` sends its own output through `tee`, so a caller's pipe vanishing can't fail an echo
   under its `set -e`.
+  One `./run` per project at a time: the backend refuses a second while `run-<tab>.start` has no
+  status file beside it (for a minute past the limit, should the end never get written), and the
+  page's Run, with one going, only brings the live output back up (`runState`). The page names
+  each run with an id, kept in the start file and answered by `runResult`: a request that never
+  reached a backend (it was down) would otherwise show the previous run's result as its own.
+  After 5 minutes coreutils' `timeout` (Git Bash's own on win, wrapped around `./run` on every
+  host) stops the script and what it started, except what it detached with `setsid`; exit code
+  124 reads as "stopped after 5 minutes". Killing the spawned child stopped nothing on WSL
+  (systemd-run's client) or Windows (Git Bash's launcher).
 - **Files.** The tree's root is `Tab.roots[Tab.rootIdx]` (kept in `projects.json`, `setRoots`, back
   through a `projects` event) or else the project folder. Back and Fwd only move the index; a new root drops the entries past it first. Open folders are per tab in localStorage
   (`filesOpen:<tab>`), and the selected rows per root (`filesSelected:<tab>`, a list; click, ctrl-click and shift-click as in `src/pick.ts`, except that a click on a folder only opens or closes it, so only ctrl-click selects a folder and a shift-click's run takes in files only; the path row ending in a yellow `*` for more than one), the first scrolled into view on a new root, on opening the column or leaving file mode, and when a key puts the focus on the tree (`focusTree`), but not on a mouse press, which would move the row being clicked. Every open folder is listed again every 2s, so outside

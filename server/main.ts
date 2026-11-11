@@ -17,9 +17,9 @@
 //        new { keep } -> { session } (an empty "New session"; sweeps other empty ones, as discard does)
 //        discard { keep } -> {} (drop every session with no turns, except the ids in keep)
 //        open -> { session } (for a page with none open: any empty card, or a new one; sweeps nothing)
-//        run -> { output } (the project's ./run, the prompt box's "r")
-//        runResult -> { done, code, output } (the last ./run's output so far and, when it's over, its exit code)
-//        deployNeeded -> { script, files } (project files changed since .deployed; see deployNeeded)
+//        run { restartVite, id } -> { output } (the project's ./run, the prompt box's "r"; one at a time; id is the page's name for this run)
+//        runResult -> { done, code, output, id } (the last ./run's output so far and, when it's over, its exit code; id says whose run it is)
+//        deployNeeded -> { script, files } (project files changed or deleted since .deployed; see deployNeeded)
 //        deploySetup { state } -> {} (the project's deploySetup: "started" or "none")
 //        deployCheck -> { problems } (./run and ./deploy against the deployable skill; none sets deploySetup "done")
 //        lastCommit -> { at, subject } (HEAD's commit time in ms, 0 with no commits, and its subject)
@@ -57,6 +57,7 @@ import { fileActions, upload } from "./files.ts";
 import { GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "./gitGraph.ts";
 import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
 import { checkCosts, QuotaService, speechmaticsCost } from "./quota.ts";
+import { stampProblem, stampTime } from "./stamp.ts";
 
 const hostName = process.argv[2] as HostName;
 const host = HOSTS[hostName];
@@ -673,8 +674,7 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     saveTabs();
     await Promise.all([
       fs.promises.rm(project.file, { force: true }),
-      fs.promises.rm(runFile(project, "log"), { force: true }),
-      fs.promises.rm(runFile(project, "status"), { force: true }),
+      ...(["log", "status", "start", "files"] as const).map((kind) => fs.promises.rm(runFile(project, kind), { force: true })),
       removeSessionFiles(project.sessions.map((session) => session.id)),
     ]);
     return {};
@@ -714,7 +714,7 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     return {};
   }
   if (name === "run") {
-    return { output: await runScript(project, body.restartVite === true) };
+    return { output: await runScript(project, body.restartVite === true, String(body.id ?? "")) };
   }
   if (name === "runResult") {
     return runResult(project);
@@ -840,21 +840,38 @@ function errorText(error: unknown): string {
 // project's ./run is bash on every host. The ~/.claude/skills/deployable skill (skills/ here) is
 // what tells a project's Claude how to write one; keep it in step with this, deployNeeded and deployCheck.
 const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
-function runScript(project: Project, restartVite: boolean): Promise<string> {
+// Whether the project has that file. A folder of the name isn't one: a project at / has /run.
+const isFile = (cwd: string, name: string): boolean => fs.statSync(path.join(cwd, name), { throwIfNoEntry: false })?.isFile() ?? false;
+// How long a ./run may take. coreutils' timeout (Git Bash's own on Windows) then stops the script
+// and what it started, all but what it detached with setsid, and exits 124. Killing the child from
+// here stopped nothing: on WSL that is only systemd-run's client, on Windows only Git Bash's
+// launcher, and the script ran on under both.
+const RUN_LIMIT_S = 300;
+const TIMED_OUT = 124;
+function runScript(project: Project, restartVite: boolean, id: string): Promise<string> {
   const cwd = project.tab.path;
-  if (!fs.existsSync(path.join(cwd, "run"))) {
+  if (!isFile(cwd, "run")) {
     return Promise.reject(new Error(`No ./run in ${cwd}.`));
+  }
+  // One at a time: a second would remove the first's log and deploy on top of it. A run whose end
+  // was never written (its backend was stopped under it) stops counting a minute past the limit.
+  const last = lastRun(project);
+  if (last && last.ended === undefined && Date.now() - last.started < (RUN_LIMIT_S + 60) * 1000) {
+    return Promise.reject(new Error(`./run is already going in ${cwd} (started ${Math.round((Date.now() - last.started) / 1000)}s ago).`));
   }
   const logFile = runFile(project, "log");
   const statusFile = runFile(project, "status");
   fs.rmSync(logFile, { force: true });
   fs.rmSync(statusFile, { force: true });
+  // When it started and the page's id for it: see lastRun.
+  fs.writeFileSync(runFile(project, "start"), `${Date.now()} ${id}`);
   const detached = hostName === "wsl";
+  const limit = String(RUN_LIMIT_S);
   const [command, ...args] = detached
-    ? ["systemd-run", "--quiet", "--collect", "--wait", "--expand-environment=no", "-p", "KillMode=process", "-p", `WorkingDirectory=${cwd}`, "-E", `PATH=${process.env.PATH}`, "-E", `HOME=${os.homedir()}`, ...(restartVite ? ["-E", "RESTART_VITE=1"] : []), "/bin/sh", "-c", './run > "$1" 2>&1; code=$?; echo $code > "$2"; exit $code', "sh", logFile, statusFile]
+    ? ["systemd-run", "--quiet", "--collect", "--wait", "--expand-environment=no", "-p", "KillMode=process", "-p", `WorkingDirectory=${cwd}`, "-E", `PATH=${process.env.PATH}`, "-E", `HOME=${os.homedir()}`, ...(restartVite ? ["-E", "RESTART_VITE=1"] : []), "/bin/sh", "-c", 'timeout "$3" ./run > "$1" 2>&1; code=$?; echo $code > "$2"; exit $code', "sh", logFile, statusFile, limit]
     : hostName === "win"
-      ? [GIT_BASH, "./run"]
-      : ["./run"];
+      ? [GIT_BASH, "-c", `/usr/bin/timeout ${limit} bash ./run`]
+      : ["timeout", limit, "./run"];
   log(`./run in ${cwd}`);
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd, env: { ...process.env, ...(restartVite ? { RESTART_VITE: "1" } : {}) }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
@@ -866,31 +883,47 @@ function runScript(project: Project, restartVite: boolean): Promise<string> {
     };
     child.stdout.on("data", take);
     child.stderr.on("data", take);
-    const timer = setTimeout(() => child.kill(), 300_000);
-    child.on("error", (error) => (clearTimeout(timer), reject(error)));
+    child.on("error", (error) => {
+      fs.writeFileSync(statusFile, "1"); // nothing started; with no end written it would count as going
+      reject(error);
+    });
     child.on("exit", (code, signal) => {
-      clearTimeout(timer);
       exited = true;
-      if (!detached) {
-        fs.writeFileSync(statusFile, String(code ?? 1));
-      } else if (!output && fs.existsSync(logFile)) {
+      // WSL's wrapper has written its own, unless systemd-run never got as far as running it.
+      if (!fs.existsSync(statusFile)) fs.writeFileSync(statusFile, String(code ?? 1));
+      if (detached && !output && fs.existsSync(logFile)) {
         // Output from systemd-run itself would mean it failed, and that's the message to show.
         output = fs.readFileSync(logFile, "utf8").slice(-20_000);
       }
       if (code === 0) resolve(output.trim());
-      else reject(new Error(`./run failed (${signal ?? `exit ${code}`}):\n${output.trim()}`));
+      else reject(new Error(`${code === TIMED_OUT ? `./run was stopped after ${RUN_LIMIT_S / 60} minutes` : `./run failed (${signal ?? `exit ${code}`})`}:\n${output.trim()}`));
     });
   });
 }
 
-function runFile(project: Project, extension: "log" | "status"): string {
+// What the backend keeps about a project's ./run and stamp, in its own folder: the run's output
+// (log), exit code (status), start time and id (start), and what the stamp covered (files).
+function runFile(project: Project, extension: "log" | "status" | "start" | "files"): string {
   return path.join(DATA_DIR, `run-${project.tab.id.replace(/\W/g, "-")}.${extension}`);
+}
+
+// The Run button's last ./run: when it started, its page's id for it, and when it ended (the
+// status file's time; none while it goes on). null before the first. Files, not memory, since
+// claude3's own ./run restarts this backend under itself.
+function lastRun(project: Project): { started: number; id: string; ended?: number } | null {
+  try {
+    const [started, id = ""] = fs.readFileSync(runFile(project, "start"), "utf8").split(" ");
+    return { started: Number(started), id, ended: fs.statSync(runFile(project, "status"), { throwIfNoEntry: false })?.mtimeMs };
+  } catch {
+    return null; // none yet
+  }
 }
 
 // The last ./run's output so far, for the page's live view, and its result, for a page that lost
 // the answer to `run` (the backend restarted under it, or the page reloaded). No exit code written
-// yet means it's still going: both files are removed when a ./run starts.
-function runResult(project: Project): { done: boolean; code: number; output: string } {
+// yet means it's still going: both files are removed when a ./run starts. id is the run they
+// belong to, so a page whose request never arrived doesn't take an older run's result for its own.
+function runResult(project: Project): { done: boolean; code: number; output: string; id: string } {
   const read = (extension: "log" | "status"): string => {
     try {
       return fs.readFileSync(runFile(project, extension), "utf8").slice(-20_000).trim();
@@ -899,16 +932,41 @@ function runResult(project: Project): { done: boolean; code: number; output: str
     }
   };
   const status = read("status");
-  return { done: !!status, code: Number(status), output: read("log") };
+  return { done: !!status, code: Number(status), output: read("log"), id: lastRun(project)?.id ?? "" };
+}
+
+// The tracked files a stamp covered when this backend first saw it, kept on disk too, since the
+// backend restarts more often than most projects deploy. One of them gone later was deleted or
+// renamed after the deploy, which no newer file shows. Tracked ones only: an untracked file there
+// one moment and gone the next is an editor's swap or temp file.
+const stampSeen = new Map<string, { stamp: number; files: string[] }>();
+function stampFiles(project: Project, stamp: number, present: string[]): string[] {
+  const file = runFile(project, "files");
+  let seen = stampSeen.get(project.tab.id);
+  if (!seen) {
+    try {
+      seen = JSON.parse(fs.readFileSync(file, "utf8")) as { stamp: number; files: string[] };
+    } catch {} // none kept yet
+  }
+  if (seen?.stamp !== stamp) {
+    seen = { stamp, files: present };
+    fs.writeFileSync(file, JSON.stringify(seen));
+  }
+  stampSeen.set(project.tab.id, seen);
+  return seen.files;
 }
 
 // Whether the project needs a deploy before a prompt: its ./deploy (or ./run when it has none)
-// touches .deployed when it finishes, and any git-visible file newer than that is undeployed.
-// A script can write paths into .deployed, what its deploy depends on, and then only those count.
+// stamps .deployed when it finishes, and any git-visible file newer than that is undeployed.
+// A script can write paths into .deployed, what its deploy depends on, and then only those count;
+// a file named there on a line of its own counts even when git ignores it (an .env).
+// Also undeployed: a tracked file gone since the stamp was first seen (stampFiles) and, with paths
+// in the stamp, a file saved while the Run button's ./run was writing it (stampTime).
 // A project with neither script, or no stamp yet, never needs one. ponytail: an empty stamp counts every file, docs included.
+// ponytail: a stamp from a ./run in a terminal keeps its own time, so a file saved during that deploy is missed unless the script back-dates its stamp, as claude3's deploy does.
 async function deployNeeded(project: Project): Promise<{ script: string; files: string[] }> {
   const cwd = project.tab.path;
-  const script = ["deploy", "run"].find((name) => fs.existsSync(path.join(cwd, name))) ?? "";
+  const script = ["deploy", "run"].find((name) => isFile(cwd, name)) ?? "";
   if (!script) return { script, files: [] };
   let stamp: number;
   let paths: string[];
@@ -922,25 +980,34 @@ async function deployNeeded(project: Project): Promise<{ script: string; files: 
   }
   let listed: string[];
   try {
-    listed = (await git(project, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", ...paths)).split("\0").filter(Boolean);
+    // -t: "H path" for a tracked file, "? path" for an untracked one.
+    listed = (await git(project, "ls-files", "-z", "-t", "--cached", "--others", "--exclude-standard", "--", ...paths)).split("\0").filter(Boolean);
   } catch (error) {
     // A new project's ./run can come before its `git init`: no repo, no warning, as with no stamp.
     if (/not a git repository/i.test(String(error))) return { script, files: [] };
     throw error;
   }
-  const files = [...new Set(listed)].filter((file) => {
+  // Each file that is on disk, with its time; the tracked ones are what the stamp covers.
+  const times = new Map<string, number>();
+  const tracked = new Set<string>();
+  const take = (file: string, known: boolean): void => {
     try {
-      return fs.statSync(path.join(cwd, file)).mtimeMs > stamp;
-    } catch {
-      return false;
-    }
-  });
-  return { script, files };
+      times.set(file, fs.statSync(path.join(cwd, file)).mtimeMs);
+      if (known) tracked.add(file);
+    } catch {} // in git's index but not on disk
+  };
+  for (const entry of listed) take(entry.slice(2), !entry.startsWith("?"));
+  for (const entry of paths) if (!times.has(entry) && isFile(cwd, entry)) take(entry, false);
+  const deleted = stampFiles(project, stamp, [...tracked]).filter((file) => !fs.existsSync(path.join(cwd, file)));
+  const since = paths.length ? stampTime(stamp, lastRun(project)) : stamp;
+  const files = [...times].filter(([, at]) => at > since).map(([file]) => file);
+  return { script, files: [...files, ...deleted.map((file) => `${file} (deleted)`)] };
 }
 
 // The deploy-setup dialog's Check: what the deployable skill promises of ./run and ./deploy, read
 // without running either. No problems marks the project's deploySetup "done", so the page stops
-// asking. It can't tell whether a deploy skips what is unchanged; the first Runs show that.
+// asking before prompts; it still checks before each ./run, and a done project that fails then is
+// asked about again. It can't tell whether a deploy skips what is unchanged; the first Runs show that.
 async function deployCheck(project: Project): Promise<{ problems: string[] }> {
   const cwd = project.tab.path;
   const problems: string[] = [];
@@ -948,7 +1015,7 @@ async function deployCheck(project: Project): Promise<{ problems: string[] }> {
   let run: string | undefined;
   for (const name of ["run", "deploy"]) {
     const file = path.join(cwd, name);
-    if (!fs.existsSync(file)) continue;
+    if (!isFile(cwd, name)) continue;
     const text = fs.readFileSync(file, "utf8");
     texts.push(text);
     if (name === "run") run = text;
@@ -966,20 +1033,18 @@ async function deployCheck(project: Project): Promise<{ problems: string[] }> {
     );
     if (syntax) problems.push(`./${name} doesn't parse: ${syntax}`);
   }
+  const stamped = stampProblem(texts);
   if (run === undefined) problems.push("There is no ./run.");
   // The skill's stub for a project with no code yet says this; it isn't a deploy.
   else if (run.includes("nothing to deploy yet")) problems.push("./run is still the stub that deploys nothing. Once the project has code, ask Claude to finish it with the deployable skill.");
-  // The skill's stamp holds the deploy's paths, one per line (`printf '%s\n' ... > .deployed`); a bare
-  // touch is the old kind, which counts every file, docs included, and comes with a deploy that redoes everything.
-  else if (!texts.some((text) => />\s*\.deployed\b/.test(text))) {
-    problems.push(texts.some((text) => text.includes(".deployed")) ? "The stamp .deployed is only touched: the deploy should write the paths it depends on into it, one per line (printf '%s\\n' ... > .deployed)." : "Neither ./run nor ./deploy writes .deployed, the stamp the deploy warning reads.");
-  }
-  // echo puts every path on one line, which now reads as a single path that matches nothing.
-  else if (texts.some((text) => /\becho\b[^\n]*>\s*\.deployed\b/.test(text))) {
-    problems.push("The stamp .deployed is written with echo, all on one line: it needs one path per line (printf '%s\\n' ... > .deployed).");
-  }
-  if (!problems.length) {
+  // How one of them writes the stamp: its paths, one per line (stampProblem).
+  else if (stamped) problems.push(stamped);
+  if (!problems.length && project.tab.deploySetup !== "done") {
     project.tab.deploySetup = "done";
+    saveTabs();
+  } else if (problems.length && project.tab.deploySetup === "done") {
+    // It passed once and no longer does (the page checks a done project again at each ./run): the page asks again.
+    delete project.tab.deploySetup;
     saveTabs();
   }
   return { problems };

@@ -23,6 +23,7 @@ exec > >(tee --output-error=warn-nopipe /dev/null) 2>&1
 # ends with its own, or for the hosts --if-stale runs as their own processes: it comes once, at the end.
 [ -n "${DEPLOY_NESTED:-}" ] || trap 'echo; echo "====== ENDED ======"' EXIT
 cd "$(dirname "$0")"
+STARTED=$(date +%s.%N) # the stamp's time: see stamp
 # The prompt box's "r" runs this under the WSL backend's systemd service, whose PATH has none of
 # WSL's Windows directories, so reg.exe, powershell.exe and conhost.exe weren't found.
 PATH="$PATH:/mnt/c/Windows/System32:/mnt/c/Windows/System32/WindowsPowerShell/v1.0"
@@ -98,6 +99,21 @@ sync_skills() {
   esac
 }
 
+# Writes .deployed: claude3's page warns before a prompt when a file under those paths is newer
+# than it. Its time is set back to when this script started, since a file saved while it ran may
+# have missed the copy. Only a run over every target stamps: after one of named hosts the others
+# may still be behind, so the warning stays up until a full run (./run) finds nothing stale. That
+# goes for the hosts --if-stale deploys as their own processes too (silently: it stamps for them),
+# so one of them failing really does leave the stamp old.
+stamp() {
+  if [ ${#HOSTS[@]} -lt ${#ALL[@]} ]; then
+    [ -n "${DEPLOY_NESTED:-}" ] || echo "== only ${HOSTS[*]} deployed: the deploy warning stays up until ./run has been over every target"
+    return 0
+  fi
+  printf '%s\n' "${SOURCES[@]}" > .deployed
+  touch -d "@$STARTED" .deployed
+}
+
 wait_up() {
   local version
   version=$(wanted "$1")
@@ -130,7 +146,7 @@ if [ "${1:-}" = "--if-stale" ]; then
   done
   # A failed host leaves the stamp old, so the page's deploy warning and Run highlight stay up.
   [ $failed = 1 ] && exit 1
-  printf '%s\n' "${SOURCES[@]}" > .deployed # claude3's page warns before a prompt when those files are newer than this
+  stamp
   exit 0
 fi
 
@@ -217,4 +233,4 @@ EOF
   esac
 done
 echo "== done =="
-printf '%s\n' "${SOURCES[@]}" > .deployed # claude3's page warns before a prompt when those files are newer than this
+stamp

@@ -16,9 +16,11 @@ the user should see when they press Run.
 
 ## What claude3 does
 
-- **Runs `./run`** with no terminal and no stdin. Exit 0 is success. Otherwise an error dialog
-  shows the failure and every output line starting with `!!`. The page waits **5 minutes**, then
-  the run is killed and counted as failed. All output is shown, so print one short line per step.
+- **Runs `./run`** with no terminal and no stdin, one at a time per project (Run while one is
+  going only brings its output back up). Exit 0 is success. Otherwise an error dialog shows the
+  failure and every output line starting with `!!`. After **5 minutes** `timeout` stops the script
+  and everything it started, except what it detached with `setsid`, and the run counts as failed.
+  All output is shown, so print one short line per step.
 - **The host decides how `./run` is started.** You run on the same machine as the tab's backend:
   - **wsl** (WSL on the laptop, `uname -r` has `microsoft`): `systemd-run` as a transient unit
     with `KillMode=process`, so what `./run` leaves running survives. `HOME=/root`,
@@ -28,7 +30,8 @@ the user should see when they press Run.
     Windows programs started from here run elevated.
   - **srv** (hahnca.com): spawned by claude3's backend, which runs under pm2. `HOME=/root`,
     `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin`.
-  - **win** (Windows on the laptop): `C:\Program Files\Git\bin\bash.exe ./run`, with the user's
+  - **win** (Windows on the laptop): Git Bash (`C:\Program Files\Git\bin\bash.exe`) runs
+    `bash ./run` under its own `timeout`, with the user's
     logon environment plus Git Bash's `/mingw64/bin` and `/usr/bin`. Not elevated. Git Bash has
     find, sort, xargs, sha1sum, ssh, scp, curl, nohup, node, npm and git, but **no rsync and no
     setsid**. Paths look like `/c/Users/mark/...`. **Line endings must be LF**: a CR in `./run`
@@ -39,6 +42,14 @@ the user should see when they press Run.
   highlighted and a prompt asks Deploy / Continue / Cancel. If `.deployed` contains paths, one
   per line (relative to the project root; spaces and git globs are fine), only files under them
   count; an empty stamp counts every file, docs included. No script, no stamp, or no git repo: no warning.
+  - A file named on a line of its own counts even if git ignores it (an `.env`). Under a folder
+    or a glob, ignored files never count.
+  - A tracked file deleted or renamed since the deploy counts too.
+  - A stamp written while the Run button's `./run` is going counts from when that run
+    **started**, so a file saved during the deploy still raises the warning. So does a file the
+    deploy itself rewrites under the stamped paths (`npm install` and a lock file): the warning
+    then stays up until the next Run. Keep what the deploy writes out of the stamped paths where
+    you can.
 
 ## What to build
 
@@ -113,7 +124,9 @@ be installed:
 - claude3 asks before each prompt in this tab until its **Check** passes. Check reads `./run` and
   `./deploy` without running them: `./run` must exist, parse (`bash -n`), have no CR, be
   executable (except on win), not be the stub, and one of the two must write paths into the stamp
-  with a redirect (`> .deployed`); a bare `touch .deployed` doesn't count.
+  with a redirect (`> .deployed`, at any path: `> "$dir/.deployed"` is fine). A bare
+  `touch .deployed` doesn't count, and an `echo` into it fails. From then on the same check runs
+  before every Run, and a script that stops passing brings the question back.
 - Tell the user: pick Check in claude3's setup dialog (it comes up at the next prompt), then press
   Run. The first Run deploys everything once (nothing has been recorded yet), and a second Run with
   no changes should print only "up to date" lines.

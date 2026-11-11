@@ -9,7 +9,7 @@
 # vite runs detached (setsid nohup) with its output in vite.log (`tail -f vite.log` to watch), so
 # it outlives this script and whatever started it: a terminal, or a Claude session that would
 # otherwise sit waiting on it as a background task. The script waits for vite's ready line, prints
-# the log so far, and exits.
+# the log so far, and exits: with 1 if a host failed or vite didn't come up, so the Run dialog says so.
 cd "$(dirname "$0")"
 vite="$PWD/node_modules/.bin/vite"
 # The last thing printed, so deploy is told to leave it to this script.
@@ -32,4 +32,6 @@ for _ in {1..100}; do
   sleep 0.2
 done
 cat vite.log
+# Exit 0 only with vite ready: its error would otherwise be buried in a result that says "finished".
+grep -q "Local:" vite.log || { echo "!! vite did not start (its output is above)"; exit 1; }
 exit $deployed

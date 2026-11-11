@@ -578,6 +578,7 @@ function showRunLive(output: string): void {
 }
 function showRun(text: string, failure = ""): void {
   runLive = false;
+  runState = "";
   sessionStorage.setItem(runKey(), text);
   if (failure) sessionStorage.setItem(runFailKey(), failure);
   putRun(text);
@@ -596,18 +597,35 @@ watch(
   },
   { flush: "post" },
 );
-const askRun = () => post<{ done: boolean; code: number; output: string }>(props.tab, "runResult", {});
+const askRun = () => post<{ done: boolean; code: number; output: string; id?: string }>(props.tab, "runResult", {});
 
-// Set while a ./run's answer is due, so a page reloaded meanwhile picks up the wait.
-const runWaitKey = (): string => `runWait:${props.tab.id}`;
+// This page's id for the ./run whose answer is due, so a page reloaded meanwhile picks up the wait
+// and can tell that run's result from an older one's.
+const runIdKey = (): string => `runId:${props.tab.id}`;
+// One ./run at a time: "asking" while its setup question is out, "going" until its result shows.
+let runState: "" | "asking" | "going" = "";
 
 // Also the footer's Run button (ctrl-click: "v"). It leaves the prompt box's text alone and never
 // takes focus, so the Enter that dismisses the result can't land on it and run ./run again.
 // It asks the deploy-setup question first, as a prompt does, unless the caller already has
-// (the deploy warning's Deploy comes after a prompt's).
+// (the deploy warning's Deploy comes after a prompt's). With a ./run already going it starts no
+// second one: it brings the live output back up, which OK had hidden.
 async function runScript(restartVite: boolean, askSetup = true): Promise<void> {
-  if (askSetup && !(await deploySetupOk("run"))) return;
-  sessionStorage.setItem(runWaitKey(), "1");
+  if (runState === "asking") return;
+  if (runState === "going") {
+    runLive = true;
+    return putRun(runText.value);
+  }
+  runState = "asking";
+  let ok = false;
+  try {
+    ok = !askSetup || (await deploySetupOk("run"));
+  } finally {
+    runState = ok ? "going" : "";
+  }
+  if (!ok) return;
+  const id = crypto.randomUUID();
+  sessionStorage.setItem(runIdKey(), id);
   sessionStorage.removeItem(runFailKey());
   runLive = true;
   showRunLive("");
@@ -621,14 +639,14 @@ async function runScript(restartVite: boolean, askSetup = true): Promise<void> {
     );
   }, 1000);
   try {
-    const { output } = await post<{ output: string }>(props.tab, "run", { restartVite });
-    sessionStorage.removeItem(runWaitKey());
+    const { output } = await post<{ output: string }>(props.tab, "run", { restartVite, id });
+    sessionStorage.removeItem(runIdKey());
     showRun(`./run in ${props.tab.label} finished.\n\n${output}`);
   } catch (error) {
     // A network failure: a ./run that restarts this backend (claude3's own) cuts the answer off,
     // and the script runs on, so its result is fetched once the backend is back.
-    if (error instanceof TypeError) return awaitRun();
-    sessionStorage.removeItem(runWaitKey());
+    if (error instanceof TypeError) return awaitRun(id);
+    sessionStorage.removeItem(runIdKey());
     const message = error instanceof Error ? error.message : String(error);
     showRun(`./run in ${props.tab.label}: ${message}`, runFailure(`./run in ${props.tab.label}: ${message.split("\n")[0]}`, message));
   } finally {
@@ -636,20 +654,29 @@ async function runScript(restartVite: boolean, askSetup = true): Promise<void> {
   }
 }
 
-async function awaitRun(): Promise<void> {
+// The result of the ./run this page named id, asked of a backend that may be restarting.
+async function awaitRun(id: string): Promise<void> {
   for (let tries = 0; tries < 300; tries++) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     const result = await askRun().catch(() => null);
     if (!result) continue; // the backend is still restarting
+    // Another run's id: the request for this one never reached the backend (it was down), and what
+    // it has is an older run's result. A backend from before ids sends none and is taken at its word.
+    if (result.id && result.id !== id) {
+      sessionStorage.removeItem(runIdKey());
+      const head = `./run in ${props.tab.label} didn't start: its backend couldn't be reached. Press Run again.`;
+      return showRun(head, head);
+    }
     if (!result.done) {
       showRunLive(result.output);
       continue;
     }
-    sessionStorage.removeItem(runWaitKey());
-    const head = `./run in ${props.tab.label} ${result.code === 0 ? "finished" : `failed (exit ${result.code})`}.`;
+    sessionStorage.removeItem(runIdKey());
+    // 124 is the backend's time limit (timeout's exit code).
+    const head = `./run in ${props.tab.label} ${result.code === 0 ? "finished" : result.code === 124 ? "was stopped after 5 minutes" : `failed (exit ${result.code})`}.`;
     return showRun(`${head}\n\n${result.output}`, result.code === 0 ? "" : runFailure(head, result.output));
   }
-  sessionStorage.removeItem(runWaitKey());
+  sessionStorage.removeItem(runIdKey());
   const head = `./run in ${props.tab.label}: no result after 5 minutes.`;
   showRun(head, head);
 }
@@ -661,12 +688,18 @@ async function awaitRun(): Promise<void> {
 // prompt stays unsent, the draft of the session it was typed in; once "started" the button reads
 // "Set up again", so a second setup is meant); Check checks again and sets the flag when ./run passes. Not
 // needed sets "none" and sends the prompt, as Continue does without touching the flag; Set up,
-// Check and Cancel don't send it. Once Set up has run ("started"), the dialog comes with no check first.
-// A ./run (Run, "r", "v") asks the same, for the same flag; `what` is what goes on or doesn't.
+// Check and Cancel don't send it. Once Set up has run ("started"), the dialog comes with no check first,
+// except for a prompt to the setup session itself (an answer to its question), which just goes.
+// Enter is Cancel, as in the other dialogs before a prompt (Check once "started", which changes nothing):
+// Set up starts a session that writes scripts into the project, so it takes a click.
+// A ./run (Run, "r", "v") asks the same, for the same flag; `what` is what goes on or doesn't. It
+// also checks a "done" project again, so a script broken since, or a rule the check has gained, is
+// caught where it matters; the backend drops the flag when that fails.
 const SETUP_PROMPT = "Set up deploy for claude3's Run button: use the deployable skill (~/.claude/skills/deployable/SKILL.md) on this project.";
 async function deploySetupOk(what: "prompt" | "run" = "prompt"): Promise<boolean> {
   const state = props.tab.deploySetup;
-  if (state === "done" || state === "none") return true;
+  if (state === "none" || (state === "done" && what === "prompt")) return true;
+  if (state === "started" && what === "prompt" && turns()[0]?.prompt === SETUP_PROMPT) return true;
   setupStarted.value = state === "started";
   const held = what === "prompt" ? "Your prompt stays unsent, in its session's box," : "./run doesn't start";
   let problems: string[] = [];
@@ -777,6 +810,19 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
   }
   // Pictures alone are a prompt, not an empty box.
   if ((!text.trim() && (keepDraft || !images().length)) || (props.session?.trashed ?? false)) return;
+  // The checks before a send take a few round trips and the box keeps its text until they pass, so
+  // a second Ctrl+Enter meanwhile would send the same prompt again.
+  if (sending) return;
+  sending = true;
+  try {
+    await send(text, keepDraft);
+  } finally {
+    sending = false;
+  }
+}
+let sending = false;
+
+async function send(text: string, keepDraft: boolean): Promise<void> {
   if (!keepDraft && !(await deploySetupOk())) return;
   if (!keepDraft && !(await deployOk())) return;
   const choice = keepDraft ? "continue" : await commitChoice();
@@ -1265,9 +1311,11 @@ onMounted(() => {
   render();
   const pendingRun = sessionStorage.getItem(runKey());
   if (pendingRun !== null) showRun(pendingRun);
-  if (sessionStorage.getItem(runWaitKey()) !== null) {
+  const waitingRun = sessionStorage.getItem(runIdKey());
+  if (waitingRun !== null) {
     runLive = true;
-    void awaitRun();
+    runState = "going";
+    void awaitRun(waitingRun);
   }
   // Nothing arrives between API calls, so the clock ticks on its own.
   ticker = window.setInterval(() => {
@@ -1312,7 +1360,7 @@ onBeforeUnmount(() => {
     </dialog>
     <dialog ref="setupPopEl" class="run-pop">
       <pre>{{ setupText }}</pre>
-      <form method="dialog"><button value="setup" :autofocus="!setupStarted">{{ setupStarted ? "Set up again" : "Set up" }}</button> <button value="check" :autofocus="setupStarted">Check</button> <button value="none">Not needed</button> <button value="continue">Continue</button> <button value="">Cancel</button></form>
+      <form method="dialog"><button value="setup">{{ setupStarted ? "Set up again" : "Set up" }}</button> <button value="check" :autofocus="setupStarted">Check</button> <button value="none">Not needed</button> <button value="continue">Continue</button> <button value="" :autofocus="!setupStarted">Cancel</button></form>
     </dialog>
     <dialog ref="commitPopEl" class="run-pop">
       <pre>{{ commitText }}</pre>
