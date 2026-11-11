@@ -2,14 +2,15 @@
 // claude CLI for the tabs whose host is this one, keeps their sessions, and streams them to the page.
 //   GET  /events               -> server-sent events (StreamEvent) for all this host's projects: the list, then each one's full state
 //   POST /api/<action>         body: { tab, sessionId?, ... } -> JSON (tab is the project's id; the actions about the host ignore it)
-//        folders { path } -> { path, entries: [{ name, path }] } (the folders in a folder; path is "" when it isn't one)
+//        folders { path, files? } -> { path, file?, entries: [{ name, path, file? }] } (the folders in a folder, and with files its files; path is "" when it isn't one, or with files the file's own path)
+//        attachFile { path } -> { name, path, size, mtime, kind, dataUri } (a file for a prompt: "image", "pdf" or "text"; anything else is refused)
 //        listFiles { paths } -> { listings: { [folder]: entries | null } } | findFile { root, text, after, backward, nodeModules } -> { path } | readFile { path, known? } -> { mtime, text? }
 //        saveFile { path, text, mtime } -> { mtime } | { conflict } | newFile { folder } | renamePath { path, name } -> { path } | deletePath { path }
 //        freePath { folder, name } -> { path } | clipCopy { host, path } | clipPaste { host, folder } | fileInfo { path } -> { kind, size, times, ... } (the Files pane, server/files.ts)
 //        setRoots { roots, rootIdx } -> {} (the Files tree's list of roots and the one on show)
 //        createProject { label, path } -> {} | renameProject { label } -> {} | openProject { open } -> {}
 //        deleteProject -> {} (the project, its sessions and what they keep on disk; never its folder)
-//        prompt  { prompt, images? } -> { sessionId } (an empty sessionId starts a session; images are PNG data URIs)
+//        prompt  { prompt, images?, files? } -> { sessionId } (an empty sessionId starts a session; images are PNG data URIs, files AttachedFiles with a dataUri)
 //        capture { hideWindow } -> { dataUri } (a shot of the desktop; laptop backends only)
 //        image { turnId, index } -> { dataUri } (a sent picture)
 //        stop | rename { name } | trash { trashed } | ctx -> { table }
@@ -49,7 +50,7 @@ import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { FIRST_TABS, HOSTS, ORIGINS, STATS_URL, type HostName, type Tab } from "../shared/config.ts";
-import { ANSWER_MARK, AUTH_FAILED, DEFAULT_CONTEXT_WINDOW, imageNote, modelChoice, typedPrompt, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
+import { ANSWER_MARK, AUTH_FAILED, CLI_MISSING, DEFAULT_CONTEXT_WINDOW, fileNote, imageNote, modelChoice, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
 import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, copySessionTranscript, swapSessionTranscripts, truncateSessionTranscript, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
@@ -142,16 +143,22 @@ async function realFolder(wanted: string): Promise<string> {
   }
 }
 
-// What the Tabs dialog's picker lists: "..", then the folders inside, no files.
+// What a picker lists: "..", then the folders inside, then for the file picker (File) the files.
 // ponytail: no list of drives on Windows; typing D:\ gets there.
-async function folders(wanted: string): Promise<{ path: string; entries: { name: string; path: string }[] }> {
+async function folders(wanted: string, files: boolean): Promise<{ path: string; file?: boolean; entries: { name: string; path: string; file?: boolean }[] }> {
   const real = await realFolder(wanted);
   if (!real) {
-    return { path: "", entries: [] };
+    // The file picker takes a typed file's path as it is.
+    const file = files && path.isAbsolute(wanted) && (await fs.promises.stat(wanted).then((stat) => stat.isFile(), () => false));
+    return file ? { path: wanted, file, entries: [] } : { path: "", entries: [] };
   }
   const found = await fs.promises.readdir(real, { withFileTypes: true }).catch(() => []);
-  const kept = await Promise.all(found.map(async (entry) => (entry.isDirectory() || (entry.isSymbolicLink() && (await realFolder(path.join(real, entry.name)))) ? entry.name : "")));
-  const entries = kept.filter(Boolean).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })).map((name) => ({ name, path: path.join(real, name) }));
+  const listed = await Promise.all(found.map(async (entry) => {
+    const full = path.join(real, entry.name);
+    const target = entry.isSymbolicLink() ? await fs.promises.stat(full).catch(() => null) : entry;
+    return target?.isDirectory() ? { name: entry.name, path: full } : files && target?.isFile() ? { name: entry.name, path: full, file: true } : null;
+  }));
+  const entries = listed.filter((entry) => entry !== null).sort((a, b) => Number(!!a.file) - Number(!!b.file) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
   const parent = path.dirname(real);
   return { path: real, entries: parent === real ? entries : [{ name: "..", path: parent }, ...entries] };
 }
@@ -183,6 +190,7 @@ function removeSessionFiles(ids: string[]): Promise<unknown> {
   return Promise.all(ids.flatMap((id) => [
     fs.promises.rm(path.join(DATA_DIR, "debug", `${id}.jsonl`), { force: true }),
     fs.promises.rm(path.join(DATA_DIR, "images", id), { recursive: true, force: true }),
+    fs.promises.rm(path.join(DATA_DIR, "files", id), { recursive: true, force: true }),
   ]));
 }
 
@@ -291,7 +299,8 @@ function returnImages(files: string[]): string[] {
 async function submitPrompt(project: Project, body: Record<string, unknown>): Promise<{ sessionId: string }> {
   const prompt = String(body.prompt ?? "");
   const images = Array.isArray(body.images) ? body.images.map(String) : [];
-  if (!prompt.trim() && !images.length) {
+  const attached = Array.isArray(body.files) ? (body.files as Record<string, unknown>[]) : [];
+  if (!prompt.trim() && !images.length && !attached.length) {
     throw new Error("Empty prompt.");
   }
   if (!images.every((image) => image.startsWith(PNG_DATA_URI))) {
@@ -318,7 +327,9 @@ async function submitPrompt(project: Project, body: Record<string, unknown>): Pr
     await runs.get(id);
   }
   const files = keepImages(id, images);
-  const run = runTurn(project, session, files.length ? `${prompt}\n\n${files.map(imageNote).join("\n\n")}` : prompt, files).catch((error) => log(`Turn failed: ${errorText(error)}`));
+  const kept = keepFiles(id, attached);
+  const notes = [...files.map(imageNote), ...kept.map(fileNote)];
+  const run = runTurn(project, session, notes.length ? `${prompt}\n\n${notes.join("\n\n")}` : prompt, files, kept).catch((error) => log(`Turn failed: ${errorText(error)}`));
   runs.set(id, run);
   void run.finally(() => {
     if (runs.get(id) === run) {
@@ -337,6 +348,27 @@ function keepImages(sessionId: string, images: string[]): string[] {
     const file = path.join(directory, `${randomUUID()}.png`);
     fs.writeFileSync(file, Buffer.from(image.slice(PNG_DATA_URI.length), "base64"));
     return file;
+  });
+}
+
+// A prompt's files, copied where the CLI reads them, each in a folder of its own so its name stays,
+// and kept with the session as its pictures are.
+function keepFiles(sessionId: string, files: Record<string, unknown>[]): AttachedFile[] {
+  return files.map((file) => {
+    const name = String(file.name ?? "").replace(/[\\/]/g, "_") || "file";
+    const stored = path.join(DATA_DIR, "files", sessionId, randomUUID(), name);
+    fs.mkdirSync(path.dirname(stored), { recursive: true });
+    fs.writeFileSync(stored, Buffer.from(String(file.dataUri ?? "").replace(/^[^,]*,/, ""), "base64"));
+    return { name, host: String(file.host) as AttachedFile["host"], path: String(file.path ?? ""), size: Number(file.size) || 0, mtime: Number(file.mtime) || 0, kind: file.kind === "pdf" ? "pdf" : "text", stored };
+  });
+}
+
+// A returned prompt's files, as the page holds them, gone from the session's folder.
+function returnFiles(files: AttachedFile[]): (AttachedFile & { dataUri: string })[] {
+  return files.map(({ stored, ...file }) => {
+    const dataUri = `data:${file.kind === "pdf" ? "application/pdf" : "text/plain"};base64,${fs.readFileSync(stored!).toString("base64")}`;
+    fs.rmSync(path.dirname(stored!), { recursive: true, force: true });
+    return { ...file, dataUri };
   });
 }
 
@@ -360,7 +392,7 @@ async function sendCeilings(project: Project): Promise<void> {
 }
 
 // Ported from claude2's runTurn, without files, stats, quota or notifications.
-async function runTurn(project: Project, session: ClaudeSession, prompt: string, images: string[]): Promise<void> {
+async function runTurn(project: Project, session: ClaudeSession, prompt: string, images: string[], files: AttachedFile[] = []): Promise<void> {
   const workspacePath = project.tab.path;
   const { model, effort, advisor } = modelChoice(session.bestModel);
   const wasFirstPrompt = session.turns.length === 0;
@@ -371,7 +403,7 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
     id: randomUUID(), prompt, response: "", createdAt: Date.now(), completedAt: null, model, modelId: "", effort, advisor,
     tokensIn: 0, tokensOut: 0, contextWindow: windows[model] ?? DEFAULT_CONTEXT_WINDOW, contextUsed: priorContext, cleared: false,
     finished: false, stopped: false, error: null, costUsd: null, cliCostTotal: null, stopReason: null, turns: 0,
-    maxTurns: LIMITS.maxTurns, durationMs: 0, ponySkips: [], ...(images.length ? { images } : {}),
+    maxTurns: LIMITS.maxTurns, durationMs: 0, ponySkips: [], ...(images.length ? { images } : {}), ...(files.length ? { files } : {}),
   };
   session.updatedAt = Date.now();
   session.turns.push(turn);
@@ -461,6 +493,12 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
     });
   } catch (error) {
     const text = errorText(error);
+    // Nothing ran, so like an expired login the prompt goes back in the box, with a dialog saying why.
+    if (text.includes(CLI_MISSING)) {
+      session.turns = session.turns.filter((entry) => entry !== turn);
+      send(project, { type: "returned", sessionId: session.id, prompt: typedPrompt(prompt), images: returnImages(images), files: returnFiles(files), notice: `${hostName} backend: ${text}` });
+      return;
+    }
     if (AUTH_FAILED.test(text)) {
       setAuthNeeded(true);
       // claude2's rule: an auth-failed turn is noise, so the conversation reads as if it was never
@@ -469,7 +507,7 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
       if (!last.status?.modelId) {
         session.turns = session.turns.filter((entry) => entry !== turn);
         if (prompt !== "/compact") {
-          send(project, { type: "returned", sessionId: session.id, prompt: typedPrompt(prompt), images: returnImages(images) });
+          send(project, { type: "returned", sessionId: session.id, prompt: typedPrompt(prompt), images: returnImages(images), files: returnFiles(files) });
         }
         return;
       }
@@ -561,14 +599,16 @@ function forkSession(project: Project, session: ClaudeSession, turnId: string): 
   while (project.sessions.some((entry) => entry.name === `${base} (${version})`)) {
     version += 1;
   }
-  // Every mention of the old id is swapped, the pictures' folder in each prompt too, and the
-  // pictures copied, so deleting either session for good leaves the other's pictures in place.
+  // Every mention of the old id is swapped, the pictures' and files' folders in each prompt too, and
+  // they are copied, so deleting either session for good leaves the other's in place.
   // The trash can show a session, and a fork of one is a live session of its own.
   const id = randomUUID();
   const copy = { ...JSON.parse(JSON.stringify(session).split(session.id).join(id)), name: `${base} (${version})`, trashed: false, updatedAt: Date.now() } as ClaudeSession;
-  const images = path.join(DATA_DIR, "images", session.id);
-  if (fs.existsSync(images)) {
-    fs.cpSync(images, path.join(DATA_DIR, "images", id), { recursive: true });
+  for (const kept of ["images", "files"]) {
+    const folder = path.join(DATA_DIR, kept, session.id);
+    if (fs.existsSync(folder)) {
+      fs.cpSync(folder, path.join(DATA_DIR, kept, id), { recursive: true });
+    }
   }
   project.sessions.unshift(copy);
   sendSession(project, copy);
@@ -605,7 +645,7 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     return await fileActions[name](body);
   }
   if (name === "folders") {
-    return await folders(String(body.path ?? ""));
+    return await folders(String(body.path ?? ""), body.files === true);
   }
   if (name === "createProject") {
     return await createProject(String(body.label ?? "").trim(), String(body.path ?? ""));

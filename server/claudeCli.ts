@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { TOOL_DETAIL_MARK, TOOL_LINE_MARK, type ClaudePhase, type ClaudeRunResult, type ModelMap, type PonySkip, type RunningStatus } from "../shared/types.ts";
+import { CLI_MISSING, TOOL_DETAIL_MARK, TOOL_LINE_MARK, type ClaudePhase, type ClaudeRunResult, type ModelMap, type PonySkip, type RunningStatus } from "../shared/types.ts";
 
 // Ported from claude2's src/claudeCli.ts, which has the history behind most of what is here.
 // Dropped for now with the features that used them: Cap's --add-dir, the git changes check,
@@ -417,7 +417,11 @@ export class ClaudeCliRunner {
       });
 
       child.on("error", (error) => {
-        settle(() => rejectBlock(new Error(`Could not start Claude CLI: ${error.message}`)));
+        settle(() => rejectBlock(new Error((error as NodeJS.ErrnoException).code === "ENOENT"
+          ? `${CLI_MISSING} The "claude" command isn't on this backend's PATH (${env.PATH ?? process.env.PATH}). `
+            + `Usually a Claude Code update was cut off partway (a Windows or WSL restart during it). `
+            + `Reinstall it on this host: npm install -g @anthropic-ai/claude-code`
+          : `Could not start Claude CLI: ${error.message}`)));
       });
 
       const blockResult = (): ClaudeRunResult => {

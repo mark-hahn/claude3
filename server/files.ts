@@ -105,12 +105,36 @@ async function readText(file: string, known: number): Promise<{ mtime: number; t
   if (size >= MAX_EDITABLE) {
     return { mtime, text: null };
   }
-  const bytes = await fs.promises.readFile(file);
+  return { mtime, text: asText(await fs.promises.readFile(file)) };
+}
+
+// Null for a binary file or one not in UTF-8.
+function asText(bytes: Buffer): string | null {
   try {
-    return { mtime, text: bytes.includes(0) ? null : new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes) };
+    return bytes.includes(0) ? null : new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
   } catch {
-    return { mtime, text: null };
+    return null;
   }
+}
+
+// A file for a prompt (the footer's File), whole as a data URI: what the CLI's Read can view, a
+// picture (which the page sends as a screenshot), a PDF or text. Anything else is refused.
+const PICTURES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp" };
+const MAX_ATTACHED = 20_000_000;
+async function attachFile(file: string): Promise<object> {
+  const { size, mtimeMs: mtime } = await fs.promises.stat(file);
+  const name = path.basename(file);
+  if (size > MAX_ATTACHED) {
+    throw new Error(`${name} is ${size.toLocaleString()} bytes, over the ${MAX_ATTACHED.toLocaleString()} a prompt can take.`);
+  }
+  const bytes = await fs.promises.readFile(file);
+  const ext = path.extname(name).toLowerCase();
+  const kind = PICTURES[ext] ? "image" : bytes.subarray(0, 5).toString() === "%PDF-" ? "pdf" : asText(bytes) !== null ? "text" : "";
+  if (!kind) {
+    throw new Error(`${name} can't be added to a prompt: only text, PDF and picture files can.`);
+  }
+  const mime = PICTURES[ext] ?? (kind === "pdf" ? "application/pdf" : "text/plain");
+  return { name, path: file, size, mtime, kind, dataUri: `data:${mime};base64,${bytes.toString("base64")}` };
 }
 
 // The editor's tail mode: answers once the file differs from the version known, or after 2s, so
@@ -349,6 +373,7 @@ export const fileActions: Record<string, (body: Record<string, unknown>) => Prom
   },
   findFile: (body) => findStep(absolute(body.root), String(body.text ?? ""), String(body.after ?? ""), body.backward === true, body.nodeModules === true),
   readFile: (body) => readText(absolute(body.path), Number(body.known)),
+  attachFile: (body) => attachFile(absolute(body.path)),
   waitFile: (body) => waitForChange(absolute(body.path), Number(body.known)),
   saveFile: (body) => saveText(absolute(body.path), String(body.text ?? ""), Number(body.mtime)),
   newFile: async (body) => {

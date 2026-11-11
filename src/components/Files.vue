@@ -8,7 +8,7 @@ let cut: { tab: Tab; path: string; clip: string } | null = null;
 // one file in FileEditor. Click a folder to open it, double-click to make it the root; double-click
 // a file to edit it, or ctrl-double-click a .md to read it rendered; alt-click copies the path; a long press shows all about it. Rows can be selected, remembered per root:
 // a click on a file selects just it, ctrl-click toggles any row, shift-click adds the run of files from the last one
-// (src/pick.ts); a click on a folder only opens or closes it, so only ctrl-click selects a folder. The keys act on them (keyDown); all but Delete need exactly one.
+// (src/pick.ts); a click on a folder only opens or closes it, so only ctrl-click selects a folder. The keys act on them (keyDown); all but Delete need exactly one. Ctrl+Enter on a file adds it to the prompt, as the footer's File does.
 // Files dragged from Explorer land on the folder under them. The header's path row stands for the
 // root folder, which has no row of its own, for drop.
 // The tree holds only what the backend last said: each open folder is asked for again every 2s.
@@ -28,7 +28,8 @@ import FolderPicker from "./FolderPicker.vue";
 // fileMode: App's column is showing the file. openFile asks for that; App's Files button leaves it.
 // active: this is the tab on show; a tab out of sight stops asking the backend.
 const props = defineProps<{ tab: Tab; active: boolean; fileMode: boolean }>();
-const emit = defineEmits<{ openFile: [] }>();
+// attach: Ctrl+Enter on the one selected file, for the pane to add to its prompt.
+const emit = defineEmits<{ openFile: []; attach: [path: string] }>();
 const newProjectAt = inject("newProjectAt") as (host: HostName, folder: string) => void;
 // Sizes the tree and rendered markdown; FileEditor's editor keeps a size of its own.
 const zoom = wheelZoom("files-font-size");
@@ -405,6 +406,7 @@ function keyDown(event: KeyboardEvent): void {
   else if (key === "f2") startRename(row);
   else if (key === "ctrl+c") copyRow(row, false);
   else if (key === "ctrl+x") copyRow(row, true);
+  else if (key === "ctrl+enter" && !row.dir) emit("attach", row.path);
   else return;
   event.preventDefault();
 }

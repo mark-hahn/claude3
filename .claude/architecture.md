@@ -36,6 +36,7 @@ on the laptop, and talks to each backend directly.
   two are re-read for every project, on show or not, closed ones too (their git status every 30s, not 2s), for the Tabs button: light red, with the same dot on each flagged name in its dialog, while any project is highlighted; light green instead (and a green dot) while any project has a session running (`busy`). Centered between the last tab and Files is the name of the selected session of the tab on show (`sessionName` up through Project).
 - `src/components/FolderPicker.vue`: the VS Code-style folder picker `<dialog>` on any host, fed by
   the backend's `folders`; used by the Tabs dialog and the Files pane. Its styles are Tabs.vue's, unscoped for that.
+  With `files` (the footer's File) it lists files after the folders (folders bold) and picks a file; `open` can take another host than the prop's.
 - `src/components/Files.vue`: the Files column: header rows and a tree of the tab's host, with
   `FileEditor.vue` in its place in file mode. Holds only what the backend last listed. Stays mounted while its tab is hidden; both stop polling then (`active`).
 - `src/components/Tabs.vue`: the row's Tabs button (ctrl-click opens every closed project with a red or green dot, no dialog) and its `<dialog>`: host, Path (the folder picker), name
@@ -104,7 +105,7 @@ on the laptop, and talks to each backend directly.
 - `server/capture.ts`: claude2's PowerShell screen shot, returned as a PNG data URI.
 - `src/copy.ts`: every alt-click's copy, with its light-red flash.
 - `src/tooltip.ts` (`#tip` in `style.css`): every `title` on the page drawn as the page's own bubble, since a native one can't be sized. One delegated `mouseover`, nothing to add per element. A host's title sits in `data-tip` only while the mouse is on it. A manual popover, so it shows above modal `<dialog>`s.
-- `src/waitingImages.ts`: unsent pictures per tab in IndexedDB. `src/cropRect.ts`: the crop's
+- `src/waitingImages.ts`: unsent pictures per tab in IndexedDB, and unsent files under `files:<tab>`. `src/cropRect.ts`: the crop's
   arithmetic, checked by `npm test`.
 - `src/monaco.ts` (+ `monaco.css`): claude2's Monaco setup (its webviews.ts `monacoScript` /
   `monacoStyle`), shared by the prompt box and the Snips: markdown only, the worker through Vite's
@@ -210,6 +211,19 @@ on the laptop, and talks to each backend directly.
   A bar's icon asks `image` for the file, read-only. Ctrl-click on an icon in the prompt box
   removes that waiting picture. A sent one is permanent in its session: no way to remove it
   short of deleting the session for good, which removes the folder.
+- **File.** The footer's File (right of Cap) opens FolderPicker in file mode on the tab's host at
+  the project folder; ctrl-click opens it on win at `C:\Users\mark`. Ctrl+Enter in the Files tree
+  with exactly one row selected, a file, adds that one with no picker (Files' `attach` event,
+  Project, Pane's exposed `attach`), and either way the focus ends in the prompt box. The pick goes to that host's
+  `attachFile` (`server/files.ts`): over 20MB, or not a picture, PDF or UTF-8 text, is refused and the
+  reason alerted. A picture (png/jpg/gif/webp/bmp, made a PNG by `asPng`) joins the prompt as a
+  screenshot does; anything else waits per session as an `AttachedFile` with its bytes as a data URI,
+  shown as a `<file>` mark after the image icons (the same decoration's `after`, which Monaco draws
+  after its `before`). A click on a mark shows its details in a dialog, never the file; ctrl-click in
+  the box removes it. On send the files ride with `POST /api/prompt`, whatever host they came from;
+  the tab's backend copies each to `~/.claude3/files/<session id>/<uuid>/<name>`, appends a `fileNote`
+  (stripped by `typedPrompt`) and records them in `turn.files`, so a bar draws the same marks. Kept,
+  forked, returned on an expired login and deleted for good as pictures are.
 - **Re-Auth.** A turn whose error matches `AUTH_FAILED` sets its host's flag (`~/.claude3/auth-needed`,
   sent as an `auth` stream event, held in `authNeeded` in `src/api.ts`). If the API never started
   answering, the turn is dropped and its prompt and pictures go back to the page (`returned`,
@@ -218,6 +232,9 @@ on the laptop, and talks to each backend directly.
   and code: `login` gives the URL, `loginCode` sends the code, and `loginResult` is polled once a
   second (Firefox gives up on a response after 5 minutes). The poll also ends when the CLI's own
   browser tab finished the sign-in with no code. A sign-in or an answered turn clears that host's flag.
+- **CLI missing.** A `spawn claude` ENOENT (often an interrupted npm update leaving no `claude` link)
+  rejects with a message starting `CLI_MISSING`; `runTurn` drops the turn and sends `returned` with a
+  `notice`, which `Project.vue` shows in an alert.
   Each sign-in's CLI runs with `DEBUG=1` (its own log lands in `~/.claude/debug/`), everything it prints
   goes to the backend's log as `login ...` lines, and a pasted code gets 2 minutes before the CLI is stopped.
   A flag coming up opens every tab's hidden sidebar, where the button and its message are. To test it
@@ -380,7 +397,7 @@ on the laptop, and talks to each backend directly.
 - Errors nothing caught (Vue's `app.config.errorHandler`, window `error` and `unhandledrejection`)
   get a `window.alert` from `src/main.ts`, each message once per page load (a broken render repeats
   on every update). Window errors without an error object, like ResizeObserver's loop notice, are skipped.
-- Not ported yet from claude2: pasted images, File, export, presets (M),
+- Not ported yet from claude2: pasted images, export, presets (M),
   Stats/Models/Instructions/Settings tabs, the git changes check, prompt
   suggestions, arrow-key navigation.
 - claude2's per-host auth flag (`authNeeded.<remote>` in VS Code's globalState) can't be shared: it

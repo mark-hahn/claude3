@@ -1,19 +1,20 @@
 <script setup lang="ts">
 // The conversation pane, ported from claude2's conversationHtml. The history (bars and boxes) is
 // built imperatively, as claude2 builds it, so streaming refills one box rather than re-rendering
-// the pane; the dock is an ordinary template. Left out for now: search, pasted images, File,
+// the pane; the dock is an ordinary template. Left out for now: search, pasted images,
 // export, presets (M), arrow-key navigation and the frozen pane.
 // The prompt box is a Monaco editor with claude2's editing (src/monaco.ts), and has claude2's big
 // prompt editor.
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import type { Tab } from "../../shared/config.ts";
-import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, modelChoice, typedPrompt, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
-import { post } from "../api.ts";
+import type { HostName, Tab } from "../../shared/config.ts";
+import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, modelChoice, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
+import { post, postHost } from "../api.ts";
 import { cropRect } from "../cropRect.ts";
 import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
 import { answerText, fillBox, occurrences, renderMarkdown, shownText, textHits, withoutDetails } from "../render.ts";
 import { loadWaiting, saveWaiting, type Waiting } from "../waitingImages.ts";
+import FolderPicker from "./FolderPicker.vue";
 
 // active: this pane's tab is the one on show, so the page-wide keys are its. search: the sidebar's
 // search text; while non-empty, every bar holding it gets a light-blue wash.
@@ -175,12 +176,22 @@ function render(): void {
       icon.textContent = IMG;
       bar.appendChild(icon);
     });
-    bar.appendChild(document.createTextNode(typed || (turn.images?.length ? "" : "(empty prompt)")));
+    // Then one mark per file sent with it.
+    (turn.files ?? []).forEach((_, at) => {
+      const mark = document.createElement("span");
+      mark.className = "file-char";
+      mark.dataset.file = String(at);
+      mark.textContent = FILE;
+      bar.appendChild(mark);
+    });
+    bar.appendChild(document.createTextNode(typed || (turn.images?.length || turn.files?.length ? "" : "(empty prompt)")));
     bar.addEventListener("click", (event) => {
       if ((event.target as HTMLElement).closest(".bar-icon")) return void fork(turns().length - index - 1, turn.id);
       if (event.altKey) return copy(typed, bar);
       const icon = (event.target as HTMLElement).closest<HTMLElement>(".img-char");
       if (icon) return void showSentImage(turn, Number(icon.dataset.image));
+      const mark = (event.target as HTMLElement).closest<HTMLElement>(".file-char");
+      if (mark) return showFile(turn.files![Number(mark.dataset.file)]!);
       if (event.ctrlKey) {
         if (!expandedPrompts.delete(turn.id)) expandedPrompts.add(turn.id);
         if (index === anchorIndex) render();
@@ -395,10 +406,10 @@ function applyDelta(turnId: string, next: RunningStatus | null): void {
   if (Number(node.dataset.index) === anchorIndex) requestAnimationFrame(() => syncSelectedBlock(pinned ? "bottom" : top));
 }
 // Sessions holding unsent text: the sidebar's sweep of empty sessions spares them.
-const drafted = (): string[] => [...drafts].filter(([, text]) => text.trim()).map(([id]) => id).concat(draft.value.trim() && props.session ? [props.session.id] : [], Object.keys(waiting));
+const drafted = (): string[] => [...drafts].filter(([, text]) => text.trim()).map(([id]) => id).concat(draft.value.trim() && props.session ? [props.session.id] : [], Object.keys(waiting), Object.keys(waitingFiles));
 // Text picked in the Snips joins the end of the prompt, on a line of its own, with the cursor after it.
 // An edit through Monaco, so ctrl-z takes it back. False when the box couldn't take it.
-// Into an empty box (no text, no pictures) it is sent at once; a send that is cancelled or fails leaves it in the box.
+// Into an empty box (no text, pictures or files) it is sent at once; a send that is cancelled or fails leaves it in the box.
 function appendPrompt(text: string): boolean {
   const box = promptBox;
   if (!box || box.getOption(monaco.editor.EditorOption.readOnly)) return false;
@@ -406,7 +417,7 @@ function appendPrompt(text: string): boolean {
   const model = box.getModel()!;
   const end = model.getPositionAt(model.getValueLength());
   const value = model.getValue();
-  const empty = !value.trim() && !images().length;
+  const empty = !value.trim() && !images().length && !attached().length;
   box.pushUndoStop();
   box.executeEdits("claude3", [{ range: monaco.Range.fromPositions(end), text: (value && !value.endsWith("\n") ? "\n" : "") + untab(text) }]);
   box.pushUndoStop();
@@ -419,10 +430,14 @@ function appendPrompt(text: string): boolean {
 const focusPrompt =(): void => (promptMarkdown.value ? promptMdEl.value : promptBox)?.focus();
 // claude2's promptReturned: the prompt never ran, so the box the send emptied takes it back. Anything
 // typed since outranks it and stays. A session not on show holds it as its draft.
-function returnPrompt(sessionId: string, text: string, pictures: string[]): void {
+function returnPrompt(sessionId: string, text: string, pictures: string[], files: WaitingFile[] = []): void {
   if (pictures.length) {
     waiting[sessionId] = [...pictures.map((picture) => [picture]), ...(waiting[sessionId] ?? [])];
     storeImages();
+  }
+  if (files.length) {
+    waitingFiles[sessionId] = [...files, ...(waitingFiles[sessionId] ?? [])];
+    storeFiles();
   }
   if (sessionId === sessionKey()) {
     if (!draft.value) draft.value = text;
@@ -497,7 +512,7 @@ function paintSearchHit(): void {
   host.scrollTop += range.getBoundingClientRect().top - host.getBoundingClientRect().top - host.clientHeight / 2;
 }
 
-defineExpose({ applyDelta, drafted, appendPrompt, focusPrompt, returnPrompt, stepSearch, runScript });
+defineExpose({ applyDelta, drafted, appendPrompt, attach, focusPrompt, returnPrompt, stepSearch, runScript });
 
 // ---- the dock ----
 
@@ -805,8 +820,8 @@ async function submit(text = draft.value, keepDraft = false): Promise<void> {
     draft.value = "";
     return runScript(text.trim() === "v");
   }
-  // Pictures alone are a prompt, not an empty box.
-  if ((!text.trim() && (keepDraft || !images().length)) || (props.session?.trashed ?? false)) return;
+  // Pictures or files alone are a prompt, not an empty box.
+  if ((!text.trim() && (keepDraft || (!images().length && !attached().length))) || (props.session?.trashed ?? false)) return;
   // The checks before a send take a few round trips and the box keeps its text until they pass, so
   // a second Ctrl+Enter meanwhile would send the same prompt again.
   if (sending) return;
@@ -829,16 +844,21 @@ async function send(text: string, keepDraft: boolean): Promise<void> {
   // background task takes it as a follow-up.
   if (!fresh && props.status?.active && props.status.phase !== "background" && !window.confirm("Stop the running response and send this prompt instead?")) return;
   if (!keepDraft) draft.value = "";
-  // Every waiting picture rides with this prompt; a failed send puts them back.
+  // Every waiting picture and file rides with this prompt; a failed send puts them back.
   const key = sessionKey();
   const sending = keepDraft ? [] : images();
+  const sendingFiles = keepDraft ? [] : attached();
   if (sending.length) {
     delete waiting[key];
     storeImages();
   }
+  if (sendingFiles.length) {
+    delete waitingFiles[key];
+    storeFiles();
+  }
   pendingTurnCount = fresh ? 1 : turns().length + 1;
   try {
-    const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: fresh ? "" : props.session!.id, prompt: text, images: sending.map((stack) => stack.at(-1)) });
+    const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: fresh ? "" : props.session!.id, prompt: text, images: sending.map((stack) => stack.at(-1)), files: sendingFiles });
     if (fresh) {
       storeBig(sessionId, bigPrompt.value);
       emit("started", sessionId);
@@ -850,17 +870,21 @@ async function send(text: string, keepDraft: boolean): Promise<void> {
       waiting[key] = [...sending, ...(waiting[key] ?? [])];
       storeImages();
     }
+    if (sendingFiles.length) {
+      waitingFiles[key] = [...sendingFiles, ...(waitingFiles[key] ?? [])];
+      storeFiles();
+    }
     report(new Error(`Prompt not sent: ${error instanceof Error ? error.message : String(error)}`));
   }
 }
 
-// Ctrl+Enter in the prompt box. An empty one (no text, no pictures) takes the last bar's prompt as
+// Ctrl+Enter in the prompt box. An empty one (no text, pictures or files) takes the last bar's prompt as
 // ordinary text to edit and send; left as it came, it isn't sent again: Ctrl+Enter only clears it.
 function sendKey(): void {
   if (props.session?.trashed) return;
   const last = turns().at(-1);
   const lastText = last ? untab(typedText(last)) : "";
-  if (!images().length) {
+  if (!images().length && !attached().length) {
     if (!draft.value.trim()) return void (draft.value = lastText);
     if (lastText.trim() && draft.value.trim() === lastText.trim()) return void (draft.value = "");
   }
@@ -940,16 +964,19 @@ function onPageKey(event: KeyboardEvent): void {
 // cursor). Monaco listens for pointer events; the mouse ones are only blocked, so a browser that
 // still fires them can't toggle twice.
 function onPromptPointer(event: PointerEvent): void {
-  const index = event.ctrlKey && event.altKey ? -1 : imageCharAt(event);
-  if (index < 0 && (!event.ctrlKey || !event.altKey)) return;
+  const both = event.ctrlKey && event.altKey;
+  const index = both ? -1 : imageCharAt(event);
+  const fileIndex = both ? -1 : fileCharAt(event);
+  if (index < 0 && fileIndex < 0 && !both) return;
   event.preventDefault();
   event.stopPropagation();
+  if (fileIndex >= 0) return event.ctrlKey ? deleteWaitingFile(fileIndex) : showFile(attached()[fileIndex]!);
   if (index >= 0) return event.ctrlKey ? deleteWaitingImage(index) : showWaitingImage(index);
   setBigPrompt(!bigPrompt.value);
   promptBox?.focus();
 }
 function onPromptMouse(event: MouseEvent): void {
-  if ((!event.ctrlKey || !event.altKey) && imageCharAt(event) < 0) return;
+  if ((!event.ctrlKey || !event.altKey) && imageCharAt(event) < 0 && fileCharAt(event) < 0) return;
   event.preventDefault();
   event.stopPropagation();
 }
@@ -970,27 +997,49 @@ function storeImages(): void {
   showImageChars();
   saveWaiting(props.tab.id, waiting).catch(report);
 }
+// The files (the File button) waiting on each session's next prompt, kept as the pictures are,
+// their bytes as data URIs. A <file> mark in the box stands for each.
+type WaitingFile = AttachedFile & { dataUri: string };
+const FILE = "<file>";
+const filesKey = (): string => `files:${props.tab.id}`;
+let waitingFiles: Record<string, WaitingFile[]> = {};
+void loadWaiting<Record<string, WaitingFile[]>>(filesKey()).then((stored) => {
+  waitingFiles = stored;
+  showImageChars();
+}, report);
+const attached = (): WaitingFile[] => waitingFiles[sessionKey()] ?? [];
+function storeFiles(): void {
+  showImageChars();
+  saveWaiting(filesKey(), waitingFiles).catch(report);
+}
 
-// The icons lead the box's first line as injected text: drawn there but not part of the text, so
-// typing, the caret and the draft never touch them. Set again on every edit, or one at the very
-// start would carry them along with the text it moved.
+// The icons, then the <file> marks, lead the box's first line as injected text: drawn there but not
+// part of the text, so typing, the caret and the draft never touch them. Set again on every edit, or
+// one at the very start would carry them along with the text it moved.
 let imageChars: monaco.editor.IEditorDecorationsCollection | null = null;
 // The pictures waiting on the next prompt.
 const boxImageCount = (): number => images().length;
 function showImageChars(): void {
   const count = boxImageCount();
-  // An empty range: without showIfCollapsed Monaco keeps the decoration but never draws it.
-  imageChars?.set(count ? [{ range: new monaco.Range(1, 1, 1, 1), options: { showIfCollapsed: true, before: { content: IMG.repeat(count), inlineClassName: "img-char", cursorStops: monaco.editor.InjectedTextCursorStops.Right } } }] : []);
+  const fileCount = attached().length;
+  const cursorStops = monaco.editor.InjectedTextCursorStops.Right;
+  // An empty range: without showIfCollapsed Monaco keeps the decoration but never draws it. The marks
+  // are its after, which Monaco draws after its before at the same column.
+  imageChars?.set(count || fileCount ? [{ range: new monaco.Range(1, 1, 1, 1), options: { showIfCollapsed: true,
+    ...(count ? { before: { content: IMG.repeat(count), inlineClassName: "img-char", cursorStops } } : {}),
+    ...(fileCount ? { after: { content: FILE.repeat(fileCount), inlineClassName: "file-char", cursorStops } } : {}) } }] : []);
 }
-// Which icon an event in the prompt box is on, or -1. They are one injected span, all one width.
-function imageCharAt(event: MouseEvent): number {
-  const span = (event.target as HTMLElement).closest?.(".img-char");
-  const count = boxImageCount();
+// Which icon or mark an event in the prompt box is on, or -1. Each kind is one injected span, its
+// marks all one width.
+function markAt(event: MouseEvent, selector: string, count: number): number {
+  const span = (event.target as HTMLElement).closest?.(selector);
   if (!span || !count || event.button) return -1;
   const box = span.getBoundingClientRect();
   const index = Math.floor((event.clientX - box.left) / (box.width / count));
   return index >= 0 && index < count ? index : -1;
 }
+const imageCharAt = (event: MouseEvent): number => markAt(event, ".img-char", boxImageCount());
+const fileCharAt = (event: MouseEvent): number => markAt(event, ".file-char", attached().length);
 
 // The screen is the laptop's, so a tab on the server asks a laptop backend for the shot.
 const captureTab = (): Tab => (props.tab.host === "srv" ? { ...props.tab, host: "wsl" } : props.tab);
@@ -1023,6 +1072,70 @@ function deleteWaitingImage(index: number): void {
   waiting[key]!.splice(index, 1);
   if (!waiting[key]!.length) delete waiting[key];
   storeImages();
+}
+
+// ---- files: the File button, its picker, and a mark's details ----
+
+const filePicker = ref<InstanceType<typeof FolderPicker>>();
+let fileHost: HostName = "wsl";
+// The picker opens on the project's host at its folder; a ctrl-click opens it on the Windows PC.
+function pickFile(event: MouseEvent): void {
+  fileHost = event.ctrlKey ? "win" : props.tab.host;
+  filePicker.value!.open(event.ctrlKey ? "C:\\Users\\mark" : props.tab.path, fileHost);
+}
+// A picture joins the prompt as a screenshot does (a PNG, shown for cropping); text or a PDF as a
+// <file> mark. The backend refuses anything else, and its reason shows in a dialog. The host is the
+// picker's, or the one given: the Files tree's Ctrl+Enter adds its selected file. Once added the
+// focus is in the prompt box, set before the picture's dialog opens, which hands it back there.
+async function attach(file: string, host: HostName = fileHost): Promise<void> {
+  if (props.session?.trashed) return;
+  const key = sessionKey();
+  try {
+    const { kind, dataUri, ...details } = await postHost<{ name: string; path: string; size: number; mtime: number; kind: AttachedFile["kind"] | "image"; dataUri: string }>(host, "attachFile", { path: file });
+    if (kind === "image") {
+      (waiting[key] ??= []).push([await asPng(dataUri)]);
+      storeImages();
+      await nextTick();
+      focusPrompt();
+      if (key === sessionKey()) showWaitingImage(images().length - 1);
+    } else {
+      (waitingFiles[key] ??= []).push({ ...details, kind, host, dataUri });
+      storeFiles();
+      focusPrompt();
+    }
+  } catch (error) {
+    report(new Error(`File not added: ${error instanceof Error ? error.message : String(error)}`));
+  }
+}
+// Every picture goes to the CLI as a PNG.
+async function asPng(dataUri: string): Promise<string> {
+  if (dataUri.startsWith("data:image/png;")) return dataUri;
+  const image = new Image();
+  image.src = dataUri;
+  await image.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = image.naturalHeight;
+  canvas.getContext("2d")!.drawImage(image, 0, 0);
+  return canvas.toDataURL("image/png");
+}
+function deleteWaitingFile(index: number): void {
+  const key = sessionKey();
+  waitingFiles[key]!.splice(index, 1);
+  if (!waitingFiles[key]!.length) delete waitingFiles[key];
+  storeFiles();
+}
+const filePopEl = ref<HTMLDialogElement>();
+const fileText = ref("");
+// A mark's file: where it came from, never its text.
+function showFile(file: AttachedFile): void {
+  fileText.value = [
+    file.name,
+    `${file.kind === "pdf" ? "PDF" : "Text"}, ${file.size.toLocaleString()} bytes, modified ${new Date(file.mtime).toLocaleString()}`,
+    `On ${file.host}: ${file.path}`,
+    file.stored ? `Sent with this prompt. Claude was given the copy at ${file.stored}` : `Waiting on the next prompt. Ctrl-click its ${FILE} to remove it.`,
+  ].join("\n");
+  if (props.active) filePopEl.value!.showModal();
 }
 
 const imagePopEl = ref<HTMLDialogElement>();
@@ -1316,6 +1429,11 @@ onBeforeUnmount(() => {
       <pre>{{ commitText }}</pre>
       <form method="dialog"><button value="new">New session</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
     </dialog>
+    <dialog ref="filePopEl" class="run-pop">
+      <pre>{{ fileText }}</pre>
+      <form method="dialog"><button autofocus>OK</button></form>
+    </dialog>
+    <FolderPicker ref="filePicker" :host="tab.host" files @pick="attach" />
     <dialog ref="imagePopEl" class="img-pop" @close="popSrc = ''">
       <div class="img-title">
         <strong>{{ popLabel }}</strong>
@@ -1338,6 +1456,7 @@ onBeforeUnmount(() => {
           <div class="group">
             <button class="stop" :class="{ stopping: stopping && active }" title="Stop" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
             <button title="Capture the screen for this prompt, hiding this window for the shot. Ctrl-click: this window stays up. Alt-click: the previous tab is shown for the shot" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
+            <button title="Add a file to this prompt, picked on this project's host. Ctrl-click: picked on the Windows PC" :disabled="session?.trashed" @mousedown.prevent @click="pickFile">File</button>
             <input type="checkbox" aria-label="bestModel" :title="modelChoice(session?.bestModel).title" :checked="!!session?.bestModel" :disabled="!session || session.trashed" @mousedown.prevent @change="setBestModel" />
           </div>
         </div>
@@ -1456,6 +1575,8 @@ onBeforeUnmount(() => {
 .pane .run-error { margin-top: 20vh; border: 3px solid #c00; }
 /* The icons leading a prompt, one per picture, in the prompt box and on a bar. */
 .pane .img-char { cursor: pointer; }
+/* The marks after them, one per file. */
+.pane .file-char { cursor: pointer; background: #dbe9ff; border-radius: 3px; }
 /* The image popup, claude2's Image pane as a dialog. Flex only while open, or it would show closed. */
 .pane .img-pop { width: 96vw; height: 94vh; max-width: none; max-height: none; padding: 12px 16px; border: 1px solid #000; border-radius: 8px; color: #000; font-size: 14px; }
 .pane .img-pop[open] { display: flex; flex-direction: column; }

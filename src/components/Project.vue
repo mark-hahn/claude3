@@ -124,7 +124,8 @@ function onEvent(event: ServerEvent): void {
   } else if (event.type === "ceilings") {
     ceilings.value = event.count;
   } else if (event.type === "returned") {
-    pane.value?.returnPrompt(event.sessionId, event.prompt, event.images);
+    pane.value?.returnPrompt(event.sessionId, event.prompt, event.images, event.files ?? []);
+    if (event.notice) window.alert(`${event.notice}\n\nYour prompt is back in the box.`);
   }
   if (event.type === "state" || event.type === "removed") void ensureOpen();
 }
@@ -521,7 +522,7 @@ onBeforeUnmount(() => {
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
     <GitGraph v-if="side === 'git'" :tab="tab" :active="active" />
-    <Files v-if="side.startsWith('file')" ref="filesPane" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" />
+    <Files v-if="side.startsWith('file')" ref="filesPane" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" @attach="(path) => pane?.attach(path, tab.host)" />
   </div>
 </template>
 

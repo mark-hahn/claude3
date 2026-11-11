@@ -207,4 +207,6 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
 .tabs-name.open { font-weight: 700; }
 .tabs-folders { flex: 1; min-height: 0; overflow: auto; }
 .tabs-folder { display: block; width: 100%; min-height: 0; padding: 2px 6px; border: none; border-radius: 4px; background: transparent; text-align: left; }
+/* The file picker's folders, apart from its files. */
+.tabs-dir { font-weight: 700; }
 </style>

@@ -1,6 +1,6 @@
 // Ported from claude2's src/types.ts: the session and turn records, and the marks the runner
 // writes into a response for the pane to find.
-import type { Tab } from "./config.ts";
+import type { HostName, Tab } from "./config.ts";
 
 export const DEFAULT_CONTEXT_WINDOW = 1000000;
 
@@ -24,11 +24,26 @@ export const ANSWER_MARK = "⁤";
 
 // The sentence each attached picture adds to the prompt, which is what gets the CLI to read it.
 export const imageNote = (file: string): string => `[A screenshot of the user's desktop is attached. Read the image file ${file} to view it.]`;
+// A file attached to a prompt by the footer's File (a picked image goes as a picture instead): where
+// it was picked, and once sent, the copy the CLI reads, under ~/.claude3/files on the session's host.
+export interface AttachedFile {
+  name: string;
+  host: HostName;
+  path: string;
+  size: number;
+  mtime: number;
+  kind: "text" | "pdf";
+  stored?: string;
+}
+// The sentence each attached file adds to the prompt.
+export const fileNote = (file: AttachedFile): string => `[A file is attached: ${file.path} on the ${file.host} host, copied to ${file.stored} when attached. Read that copy to view it.]`;
 // A stored prompt as it was typed, without those sentences: a prompt bar draws icons for them.
-export const typedPrompt = (prompt: string): string => prompt.replace(/\n\n\[A screenshot of the user's desktop is attached\. Read the image file [^\]]* to view it\.\]/g, "");
+export const typedPrompt = (prompt: string): string => prompt.replace(/\n\n\[A screenshot of the user's desktop is attached\. Read the image file [^\]]* to view it\.\]/g, "").replace(/\n\n\[A file is attached: .*? Read that copy to view it\.\]/g, "");
 
 // What the CLI says when this host's Claude login is gone: claude2's test, plus its words for no login at all.
 export const AUTH_FAILED = /failed to authenticate|oauth session expired|not logged in/i;
+// Starts the error a backend gives when the claude command isn't there (spawn ENOENT).
+export const CLI_MISSING = "Claude Code is not installed where this backend can find it.";
 
 // One ponytail skip line out of a response: "skipped: <x>, add when <y>".
 export interface PonySkip {
@@ -73,6 +88,8 @@ export interface ClaudeTurn {
   ponySkips: PonySkip[];
   // The pictures sent with this prompt: PNG files on the session's host, under ~/.claude3/images.
   images?: string[];
+  // The files sent with this prompt.
+  files?: AttachedFile[];
 }
 
 export interface ClaudeSession {
@@ -150,8 +167,9 @@ export type ServerEvent =
   | { type: "removed"; ids: string[] }
   // How many "ponytail:" comments the project holds; on connect and when a turn ends.
   | { type: "ceilings"; count: number }
-  // A prompt that never ran because the login had expired, for its session's box. Pictures as PNG data URIs.
-  | { type: "returned"; sessionId: string; prompt: string; images: string[] };
+  // A prompt that never ran because the login had expired or the CLI couldn't start, for its session's box. Pictures as PNG data URIs, files with theirs.
+  // notice: why, for a dialog (the CLI-missing case; an expired login has its own banner).
+  | { type: "returned"; sessionId: string; prompt: string; images: string[]; files: (AttachedFile & { dataUri: string })[]; notice?: string };
 
 // A backend's one event stream: its list of projects and whether its Claude login needs renewing,
 // on connect and at every change, and each project's events marked with its id.
