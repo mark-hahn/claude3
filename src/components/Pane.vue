@@ -545,10 +545,12 @@ const latest = computed(() => {
 const runKey = (): string => `runPop:${props.tab.id}`;
 // The dialog follows the end of its text unless it has been scrolled up. It opens only on the tab
 // on show: a modal dialog in a hidden tab would block the whole page with nothing to see.
+// Terminal colour codes (pm2 and others print them even into a file) would show as [1m[36m...
+const plain = (text: string): string => text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 function putRun(text: string): void {
   const dialog = runPopEl.value!;
   const following = !dialog.open || dialog.scrollHeight - dialog.scrollTop - dialog.clientHeight < 40;
-  runText.value = text;
+  runText.value = plain(text);
   if (!props.active) return;
   if (!dialog.open) dialog.showModal();
   if (following) void nextTick(() => (dialog.scrollTop = dialog.scrollHeight));
@@ -566,7 +568,7 @@ function runErrorClosed(): void {
   sessionStorage.removeItem(runFailKey());
 }
 function runFailure(head: string, output = ""): string {
-  return [head, ...output.split("\n").filter((line) => line.startsWith("!!"))].join("\n");
+  return [head, ...plain(output).split("\n").filter((line) => line.startsWith("!!"))].join("\n");
 }
 // While a ./run goes on, the dialog shows its output so far. OK hides that (the run carries on)
 // and the result opens the dialog again.
