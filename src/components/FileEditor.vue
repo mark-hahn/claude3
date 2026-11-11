@@ -1,17 +1,17 @@
 <script setup lang="ts">
 // The Files pane's file mode: one file on the tab's host in a stock Monaco editor, of the prompt
-// box's and Snips' custom keys only Ctrl-D, coloured by the language its name or #! line implies, wrapped, their line dots in place of line numbers, no minimap. Live as Snips are: saved half a second after the
+// box's and Snips' custom keys only Ctrl-D, coloured by the language its name or #! line implies, wrapped, their line dots in place of line numbers (but numbers, and that line centered, for a file opened at a line from the Git popup's diff), no minimap. Live as Snips are: saved half a second after the
 // typing stops and at once on close, and read again when the file changes on disk. A save is
 // refused if the file changed since it was read, and then nothing more is saved until Reload.
 // With the file's last line in view it is in tail mode, shown by the header's path going yellow:
 // changes arrive as they happen and the view stays at the bottom.
 // ponytail: out of tail mode asks every 2s, not a file watch; change it if that lag ever matters.
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
 import { addLineDots, addWheelZoom, monaco } from "../monaco.ts";
 
-const props = defineProps<{ tab: Tab; active: boolean; file: { path: string; text: string; mtime: number } }>();
+const props = defineProps<{ tab: Tab; active: boolean; file: { path: string; text: string; mtime: number; line?: number } }>();
 
 const note = ref("");
 const refused = ref(false);
@@ -131,8 +131,17 @@ onMounted(() => {
   // Monaco picks the language from the model's name and first line. The query keeps two editors
   // of one file from sharing a model name, which Monaco refuses.
   const model = monaco.editor.createModel(props.file.text, undefined, monaco.Uri.file(props.file.path).with({ query: String(Math.random()) }));
-  editor = monaco.editor.create(host.value!, { model, theme: "claude2", automaticLayout: true, fontSize: 14, minimap: { enabled: false }, lineNumbers: "off", wordWrap: "on", scrollBeyondLastLine: false, lineDecorationsWidth: 14, glyphMargin: false, folding: false, editContext: false });
-  addLineDots(editor);
+  editor = monaco.editor.create(host.value!, { model, theme: "claude2", automaticLayout: true, fontSize: 14, minimap: { enabled: false }, lineNumbers: props.file.line ? "on" : "off", renderFinalNewline: "on", wordWrap: "on", scrollBeyondLastLine: false, lineDecorationsWidth: 14, glyphMargin: false, folding: false, editContext: false });
+  if (props.file.line) {
+    const line = Math.min(props.file.line, model.getLineCount());
+    editor.setPosition({ lineNumber: line, column: 1 });
+    // Once this render is over: until then the tree is still on show under the editor, which is
+    // only part of its height, and the middle of that isn't the middle it ends up with.
+    void nextTick(() => {
+      editor?.layout();
+      editor?.revealLineInCenter(line);
+    });
+  } else addLineDots(editor);
   addWheelZoom(editor, "claude3.fileFontSize");
   editor.createContextKey("stockEditor", true);
   // A read's setValue is an edit too, but not typing.

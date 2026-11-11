@@ -1,6 +1,7 @@
 // The Git pane's lines, from `git log --graph`: one per commit, with no star and no hash on show,
 // though each knows its commit's full hash and message, for copying. A commit with branch or tag names has its message on a
 // second line, in the column where the messages on the other lines start.
+import { MAX_EDITABLE } from "./files.ts";
 
 // After the graph's own characters, which git puts first, the fields are split by NULs.
 // ponytail: the newest 1000 commits; page it if older history is ever wanted.
@@ -28,6 +29,17 @@ export const MESSAGE_ARGS = ["log", "-n", "100", "--format=%H%x00%s%x00%B%x00"];
 export function parseMessages(out: string): { hash: string; subject: string; messages: string[] } {
   const fields = out.split("\0").map((field) => field.trim());
   return { hash: fields[0] ?? "", subject: fields[1] ?? "", messages: fields.filter((field, at) => field && at % 3 === 2) };
+}
+
+// A file's text in the last commit, for the Git popup's diff. file is from the repo's top, as status
+// paths are. "" when that commit has no such file (untracked, added), null when it isn't text or
+// is too big to show.
+export async function headText(git: (...args: string[]) => Promise<string>, file: string): Promise<string | null> {
+  // A repo with no commits yet fails this, which only means there is no such file.
+  const listed = await git("ls-tree", "--full-tree", "--name-only", "HEAD", "--", file).catch(() => "");
+  if (!listed.trim()) return "";
+  const text = await git("show", `HEAD:${file}`);
+  return text.includes("\0") || text.length > MAX_EDITABLE ? null : text;
 }
 
 // A new subject for the checked-out branch's newest commit, pushed. The body stays, and --only keeps

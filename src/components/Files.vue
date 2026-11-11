@@ -57,8 +57,10 @@ function select(...paths: string[]): void {
 
 const note = ref("");
 const listProblem = ref("");
-// rendered: shown as markdown, read-only, instead of in the editor.
-const file = ref<{ path: string; text: string; mtime: number; rendered: boolean } | null>(null);
+// rendered: shown as markdown, read-only, instead of in the editor. line: the line the editor opens
+// centered on, with line numbers in place of its line dots (a file opened from the Git popup's diff,
+// which has them); 0 for a file opened in the tree.
+const file = ref<{ path: string; text: string; mtime: number; rendered: boolean; line: number } | null>(null);
 // The row a clipboard or drop job is running on, and the folder a drag is over.
 const working = ref("");
 const dragTarget = ref("");
@@ -407,17 +409,26 @@ function keyDown(event: KeyboardEvent): void {
   event.preventDefault();
 }
 
-async function openRow(row: Row, rendered: boolean): Promise<void> {
+async function openRow(path: string, rendered: boolean, line = 0): Promise<void> {
   note.value = "";
   try {
-    const reply = await post<{ mtime: number; text: string | null }>(props.tab, "readFile", { path: row.path });
+    const reply = await post<{ mtime: number; text: string | null }>(props.tab, "readFile", { path });
     if (reply.text === null) return;
-    file.value = { path: row.path, text: reply.text, mtime: reply.mtime, rendered };
+    file.value = { path, text: reply.text, mtime: reply.mtime, rendered, line };
     emit("openFile");
   } catch (problem) {
     note.value = messageOf(problem);
   }
 }
+
+// A file asked for from outside the pane (a click on a line number in the Git popup's diff), with
+// the tree on show: selected and scrolled to when it is under the root, then in the editor at that
+// line. One that can't be opened leaves the tree up, with the reason.
+async function openPath(path: string, line: number): Promise<void> {
+  if (foldersBetween(root.value, path)) await selectAndReveal(path);
+  await openRow(path, false, line);
+}
+defineExpose({ openPath });
 
 // The rendered view follows the file, as the editor does. An unchanged file answers with no text.
 // One request at a time, or a backend that stopped answering would use up the browser's connections to it.
@@ -441,7 +452,7 @@ function doubleClickRow(row: Row, event: MouseEvent): void {
   if ((event.ctrlKey && !rendered) || event.altKey || event.shiftKey) return;
   if (!row.dir) {
     select(row.path);
-    return void openRow(row, rendered);
+    return void openRow(row.path, rendered);
   }
   // A new root starts with nothing selected, here or there.
   select();

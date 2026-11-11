@@ -23,7 +23,8 @@
 //        deploySetup { state } -> {} (the project's deploySetup: "started" or "none")
 //        deployCheck -> { problems } (./run and ./deploy against the deployable skill; none sets deploySetup "done")
 //        lastCommit -> { at, subject } (HEAD's commit time in ms, 0 with no commits, and its subject)
-//        clean -> {} (every session to the trash) | git { log? } -> { files: [{ x, y, path }], log?: { hash, subject, messages } } (git status; log: the branch's newest commit and its last 100 messages)
+//        clean -> {} (every session to the trash) | git { log? } -> { files: [{ x, y, path, full? }], log?: { hash, subject, messages } } (git status; log, sent while the popup is open: the branch's newest commit and its last 100 messages, and each file's full path)
+//        gitHead { path } -> { text } (a file's text in the last commit, path from the repo's top: "" when not in it, null when not text or too big)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
 //        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
 //        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
@@ -53,7 +54,7 @@ import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, copySessionTranscript, swapSessionTranscripts, truncateSessionTranscript, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
 import { fileActions, upload } from "./files.ts";
-import { GRAPH_ARGS, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "./gitGraph.ts";
+import { GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "./gitGraph.ts";
 import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
 import { checkCosts, QuotaService, speechmaticsCost } from "./quota.ts";
 
@@ -684,8 +685,13 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (name === "git") {
     const files = parseStatus(await git(project, "status", "--porcelain", "-z", "--untracked-files=all"));
     if (body.log !== true) return { files };
+    // Status paths are from the repo's top, which the project may be below: the Files pane needs them whole.
+    const top = (await git(project, "rev-parse", "--show-toplevel")).trim();
     // A repo with no commits yet fails the log, which only means there's nothing to show.
-    return { files, log: parseMessages(await git(project, ...MESSAGE_ARGS).catch(() => "")) };
+    return { files: files.map((file) => ({ ...file, full: path.join(top, file.path) })), log: parseMessages(await git(project, ...MESSAGE_ARGS).catch(() => "")) };
+  }
+  if (name === "gitHead") {
+    return { text: await headText((...args) => git(project, ...args), String(body.path ?? "")) };
   }
   if (name === "gitGraph") {
     return { lines: layoutGraph(await git(project, ...GRAPH_ARGS)) };

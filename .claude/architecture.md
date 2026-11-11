@@ -57,7 +57,19 @@ on the laptop, and talks to each backend directly.
   push on the backend). File rows are picked with `src/pick.ts` (keys are the list's letter plus the path, since a file
   can be in both lists); Delete or Ctrl-Z in the list asks, then `revert` (`git clean -f` the untracked ones, `git restore
   --source=HEAD --staged --worktree` the rest plus a rename's old path, all as `:(top,literal)` pathspecs since status paths
-  are from the repo's top), and the dialog stays open. "Describe changes" in its header (`describeChanges` action) sends the
+  are from the repo's top), and the dialog stays open. With exactly one row picked the dialog widens to the window's right
+  and bottom edges (`.wide`; the lists keep their place and width, so nothing moves under the mouse) and shows that file's
+  diff in a read-only Monaco diff editor that lives only while its place does: left, the file in the last commit (`gitHead`
+  action, `headText` in `server/gitGraph.ts`, a rename's under its old path); right, the file on disk (`readFile`), so it is
+  what Commit would take whichever list the row is in. It follows both: the left is asked again when the newest commit
+  changes, the right after every status read, with the mtime it knows. Up and Down in the list walk the rows. A
+  click on a line number in the diff, in the old file's column or the new one's (in the one-column view the old column is
+  still the old file's editor, narrowed to its margin), emits `openFile` with the file's full path (status sends `full` per
+  file while the dialog is open, the project maybe being below the repo's top) and the line, an old line's being its place in
+  the new file (`modifiedLine` in `src/diffLine.ts`, from Monaco's line changes; checked by `npm test`), and closes the
+  dialog: Project's `openInFiles` puts the column on the Files tree (`showFiles` up to App) and calls Files' exposed
+  `openPath`, which selects, reveals and opens it, the editor showing line numbers in place of its line dots with that line
+  centered (`file.line`; centered a tick after mounting, the tree still sharing the column's height until then). "Describe changes" in its header (`describeChanges` action) sends the
   uncommitted diff and untracked files' text to `claude -p` on Opus 5.5 and puts its reply (at most
   2 short sentences) in the message box. Up and Down in the box walk old messages as VS Code's does (`src/messageHistory.ts`, a port of its SCMInput, checked by `npm test`), but the list is the branch's last 100 messages from `git log`, not a store of its own. Above the box is the newest commit's subject, from the same log (`git` action with `log`, sent only while the dialog is open, so on its 2s poll); a click edits it in place and Enter amends and pushes (`reword` action, `rewordHead` in `server/gitGraph.ts`: fetch, refuse if the upstream has commits the branch lacks, `commit --amend --only` keeping the body and leaving staged files out, `push --force-with-lease`, and back to the old commit if the push fails). Status is re-read for every project, on show or not (a closed one's poll only every 30s): on showing, session events (a turn starting or ending),
   and every 2s while the page is visible. Every backend git call sets `GIT_OPTIONAL_LOCKS=0`, so the polling never holds the index lock against a real `git add`.

@@ -24,7 +24,7 @@ import Snips from "./Snips.vue";
 // focusAsked: a change puts the cursor in the prompt box of the tab on show. sidebarAsked: a change
 // toggles the sidebar of the tab on show.
 const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number; sidebarAsked: number }>();
-const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; highlighted: [on: boolean]; noRepo: [none: boolean]; sessionName: [name: string] }>();
+const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; showFiles: []; highlighted: [on: boolean]; noRepo: [none: boolean]; sessionName: [name: string] }>();
 
 // Plain objects mutated in place as text streams in; `version` tells Vue when the shape changed.
 let sessions: ClaudeSession[] = [];
@@ -403,6 +403,15 @@ watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => stat
 const gitDirty = ref(false);
 const deployDue = ref(false);
 watch(() => gitDirty.value || deployDue.value, (on) => emit("highlighted", on));
+// A click on a line number in the Git popup's diff: that file in the Files pane's editor, at that
+// line. By way of the tree, so an editor already open saves and closes first; Files is there to ask
+// once the column has changed.
+const filesPane = ref<InstanceType<typeof Files>>();
+async function openInFiles(path: string, line: number): Promise<void> {
+  emit("showFiles");
+  await nextTick();
+  void filesPane.value?.openPath(path, line);
+}
 // The selected session's name, as its card shows it, for App's tab strip.
 watch(() => (selected.value ? selected.value.name || "New session" : ""), (name) => emit("sessionName", name));
 // Mounted the first time they are opened, not with every project at page load, and only hidden after that.
@@ -443,7 +452,7 @@ onBeforeUnmount(() => {
         <button class="tab new" title="New session" @click="newSession">
           <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
         </button>
-        <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" @no-repo="(none) => emit('noRepo', none)" />
+        <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" @no-repo="(none) => emit('noRepo', none)" @open-file="openInFiles" />
       </span>
     </Teleport>
     <aside class="sidebar">
@@ -511,7 +520,7 @@ onBeforeUnmount(() => {
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
     <GitGraph v-if="side === 'git'" :tab="tab" :active="active" />
-    <Files v-if="side.startsWith('file')" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" />
+    <Files v-if="side.startsWith('file')" ref="filesPane" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" />
   </div>
 </template>
 

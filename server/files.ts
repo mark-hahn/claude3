@@ -11,7 +11,7 @@ import { HOSTS } from "../shared/config.ts";
 import type { FileEntry } from "../shared/types.ts";
 import { POWERSHELL } from "./capture.ts";
 
-const MAX_EDITABLE = 5_000_000;
+export const MAX_EDITABLE = 5_000_000;
 const exists = (item: string): Promise<boolean> => fs.promises.lstat(item).then(() => true, () => false);
 
 // A relative path would land in the backend's own folder.

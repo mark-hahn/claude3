@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { AUTH_FAILED, imageNote, typedPrompt } from "../shared/types.ts";
 import { extraBlankLines, headingEnter } from "./blankLines.ts";
 import { cropRect } from "./cropRect.ts";
+import { modifiedLine } from "./diffLine.ts";
 import { keepOpen } from "./keepOpen.ts";
 import { MessageHistory } from "./messageHistory.ts";
 import { pick } from "./pick.ts";
@@ -11,7 +12,7 @@ import { answerText, matchCount, occurrences, renderMarkdown } from "./render.ts
 import { byName, folderName, foldersBetween, nextTab, sameName } from "./tabList.ts";
 import { wheelZoom } from "./wheelZoom.ts";
 import { fileActions, numberedName } from "../server/files.ts";
-import { layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "../server/gitGraph.ts";
+import { headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "../server/gitGraph.ts";
 import { modelScopedWindow } from "../server/quota.ts";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -305,6 +306,44 @@ assert.deepEqual(layoutGraph(`${commit("* ", "aaa", " (x)", "")}\n${commit("* ",
   sh(work, "switch", "-qc", "local");
   await rewordHead(git, pushed, "no upstream");
   assert.equal(sh(work, "log", "-1", "--format=%s"), "no upstream");
+  fs.rmSync(root, { recursive: true });
+}
+// A click on an old line number in the Git popup's diff: that line's place in the new file. Lines
+// before a change keep their number, lines after it move by what it added or took out, a rewritten
+// line lands in what replaced it, and a removed line on the line it was removed after.
+{
+  const change = (originalStartLineNumber, originalEndLineNumber, modifiedStartLineNumber, modifiedEndLineNumber) => ({ originalStartLineNumber, originalEndLineNumber, modifiedStartLineNumber, modifiedEndLineNumber });
+  const at = (changes, lines) => lines.map((line) => modifiedLine(changes, line));
+  assert.deepEqual(at([], [1, 7]), [1, 7]);
+  // Line 5 and line 100 rewritten, one line added after 150.
+  assert.deepEqual(at([change(5, 5, 5, 5), change(100, 100, 100, 100), change(150, 0, 151, 151)], [3, 5, 120, 150, 151, 153]), [3, 5, 120, 150, 152, 154]);
+  // Lines 10-12 removed, after line 9; then at the very top.
+  assert.deepEqual(at([change(10, 12, 9, 0)], [9, 10, 12, 13]), [9, 9, 9, 10]);
+  assert.deepEqual(at([change(1, 2, 0, 0)], [1, 2, 3]), [1, 1, 1]);
+  // Two lines become four, and four become two.
+  assert.deepEqual(at([change(20, 21, 20, 23)], [20, 21, 22]), [20, 21, 24]);
+  assert.deepEqual(at([change(20, 23, 20, 21)], [21, 22, 23, 24]), [21, 21, 21, 22]);
+}
+// The Git popup's diff, left side: a file's text in the last commit, asked from a folder below the
+// repo's top by its path from the top. Nothing before the first commit or for a file not in it, the
+// committed text whatever is on disk now, and no text for a binary file.
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claude3-head-"));
+  const below = path.join(root, "below");
+  fs.mkdirSync(below);
+  const git = async (...args) => execFileSync("git", ["-c", "user.name=a", "-c", "user.email=a@b", ...args], { cwd: below, encoding: "utf8", stdio: "pipe" });
+  await git("init", "-q", root);
+  fs.writeFileSync(path.join(below, "a [1].txt"), "old\n");
+  fs.writeFileSync(path.join(below, "binary"), Buffer.from([1, 0, 2]));
+  assert.equal(await headText(git, "below/a [1].txt"), "");
+  await git("add", "-A");
+  await git("commit", "-qm", "one");
+  fs.writeFileSync(path.join(below, "a [1].txt"), "new\n");
+  fs.rmSync(path.join(below, "binary"));
+  assert.equal(await headText(git, "below/a [1].txt"), "old\n");
+  assert.equal(await headText(git, "below/a"), "");
+  assert.equal(await headText(git, "a [1].txt"), "");
+  assert.equal(await headText(git, "below/binary"), null);
   fs.rmSync(root, { recursive: true });
 }
 

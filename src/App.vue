@@ -111,7 +111,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
       <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" :disabled="!currentTab" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
       <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" :disabled="!currentTab" title="Open or close the Settings: quotas" aria-label="Settings" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
-    <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" @no-repo="(none) => (noRepo[tab.id] = none)" @session-name="(name) => (sessionNames[tab.id] = name)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" :sidebar-asked="sidebarAsked" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" />
+    <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" @no-repo="(none) => (noRepo[tab.id] = none)" @session-name="(name) => (sessionNames[tab.id] = name)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" :sidebar-asked="sidebarAsked" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" @show-files="sides[tab.id] = 'files'" />
   </div>
 </template>
 

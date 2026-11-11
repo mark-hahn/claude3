@@ -4,7 +4,7 @@
 .line-dot::after { content: ''; position: absolute; left: 2px; top: 50%; width: 4px; height: 4px; margin-top: -2px; border-radius: 50%; background: #000; }
 /* Monaco draws its widgets' text at 11-13px; these are the ones the editor can show. */
 .monaco-editor .find-widget > .find-part, .monaco-editor .find-widget > .replace-part, .monaco-editor .find-widget .monaco-findInput .input, .monaco-findInput .monaco-inputbox,
-.quick-input-widget, .context-view.fixed, .monaco-hover, .hover-row.status-bar, .monaco-keybinding > .monaco-keybinding-key, .monaco-editor-overlaymessage .message { font-size: 14px !important; }
+.quick-input-widget, .context-view.fixed, .monaco-hover, .hover-row.status-bar, .monaco-keybinding > .monaco-keybinding-key, .monaco-editor-overlaymessage .message, .monaco-editor .diff-hidden-lines { font-size: 14px !important; }
 /* Monaco's button labels ("Close (Escape)" on the find box's X) would take the click meant for
    whatever is under them. Sized to the text: Monaco places a label above its button by the height
    it measured, and one squeezed against the editor's right edge wrapped after that and grew down
