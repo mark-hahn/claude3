@@ -90,6 +90,11 @@ const visible = computed(() => {
   // Newest first by the time each card shows; in a search the trashed ones after the rest (at the user's asking).
   return sessions.filter(listed).sort((a, b) => (searchText.value ? Number(a.trashed) - Number(b.trashed) : 0) || b.updatedAt - a.updatedAt);
 });
+// For the Git popup's arrows: the active sessions' names, newest first, the unnamed skipped.
+const sessionNames = computed(() => {
+  void version.value;
+  return sessions.filter((session) => !session.trashed).sort((a, b) => b.updatedAt - a.updatedAt).map((session) => session.name).filter((name) => name && name.toLowerCase() !== "new session");
+});
 const counts = computed(() => {
   void version.value;
   const trashed = sessions.filter((session) => session.trashed).length;
@@ -475,7 +480,7 @@ onBeforeUnmount(() => {
         <button class="tab new" title="New session" @click="newSession">
           <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
         </button>
-        <Git :tab="tab" :active="active" :version="version" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" @no-repo="(none) => emit('noRepo', none)" @open-file="openInFiles" />
+        <Git :tab="tab" :active="active" :version="version" :session-names="sessionNames" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" @no-repo="(none) => emit('noRepo', none)" @open-file="openInFiles" />
         <button class="tab" :class="{ 'deploy-due': deployDue }" title="Run the project's ./run, the same as the prompt r. Ctrl-click: the same as the prompt v" @mousedown.prevent @click="pane?.runScript($event.ctrlKey)">R</button>
       </span>
     </Teleport>

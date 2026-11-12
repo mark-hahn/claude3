@@ -15,7 +15,7 @@ import { modifiedLine } from "../diffLine.ts";
 import { MessageHistory } from "../messageHistory.ts";
 import { monaco } from "../monaco.ts";
 
-const props = defineProps<{ tab: Tab; active: boolean; version: number }>();
+const props = defineProps<{ tab: Tab; active: boolean; version: number; sessionNames: string[] }>();
 const emit = defineEmits<{ closed: []; dirty: [dirty: boolean]; noRepo: [none: boolean]; openFile: [path: string, line: number] }>();
 
 // One `git status --porcelain` entry: x is the index's letter, y the work tree's, from a rename's old path.
@@ -272,6 +272,7 @@ onBeforeUnmount(() => {
 function open(): void {
   error.value = "";
   editing.value = "";
+  named.value = -1;
   // Upper left, just under the button, and no taller than the room below it so Commit stays on screen.
   const { left, bottom } = button.value!.getBoundingClientRect();
   dialog.value!.style.margin = `${bottom + 4}px 0 0 ${left}px`;
@@ -321,6 +322,19 @@ async function describe(): Promise<void> {
     error.value = messageOf(problem);
   }
   describing.value = false;
+}
+
+// ↓ puts the newest session's name in the box, each click after it an older one, and ↑ goes back
+// up the list. Clr and opening the popup start it over.
+const named = ref(-1);
+function walkNames(by: number): void {
+  named.value = Math.min(Math.max(named.value + by, 0), props.sessionNames.length - 1);
+  if (named.value >= 0) setMessage(props.sessionNames[named.value]!);
+}
+function clearMessage(): void {
+  named.value = -1;
+  setMessage("");
+  messageBox.value?.focus();
 }
 
 // A click on the last commit's message edits its subject, as a long press does in the Log pane. Enter
@@ -397,7 +411,10 @@ function onMessageKey(event: KeyboardEvent): void {
     <div class="git-main">
       <div class="git-head">
         <div class="git-title">Source Control: {{ tab.path }}</div>
-        <button class="git-describe" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "Describing…" : "Describe changes" }}</button>
+        <button title="Back up to a newer session's name" :disabled="describing || committing || named <= 0" @click="walkNames(-1)">↑</button>
+        <button title="The newest session's name, then each click an older one" :disabled="describing || committing || named >= sessionNames.length - 1" @click="walkNames(1)">↓</button>
+        <button title="Clear the message" :disabled="describing || committing" @click="clearMessage">Clr</button>
+        <button title="Describe changes: Opus 5.5 writes the message" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "AI…" : "AI" }}</button>
       </div>
       <input v-if="editing" v-model="draft" v-focus class="git-last-edit" spellcheck="false" :readonly="committing" @keydown.enter.prevent="saveLast" @keydown.esc.prevent="stopEditing" />
       <div v-else-if="last?.hash" class="git-last" title="The last commit's message. Click to edit it: Enter amends and pushes, Esc cancels." @click="editLast">{{ last.subject }}</div>
@@ -450,7 +467,6 @@ function onMessageKey(event: KeyboardEvent): void {
 .git-pop::backdrop { background: rgba(0, 0, 0, 0.15); }
 .git-head { display: flex; align-items: center; gap: 8px; }
 .git-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
-.git-describe { flex: none; }
 .git-last, .git-last-edit { padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; color: var(--ink); font: inherit; }
 .git-last { cursor: text; overflow-wrap: anywhere; }
 .git-last:hover { background: var(--wash); }
