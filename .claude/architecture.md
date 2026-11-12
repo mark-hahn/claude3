@@ -38,7 +38,7 @@ on the laptop, and talks to each backend directly.
   the backend's `folders`; used by the Tabs dialog, the Files pane and the Term pane's Path. Its styles are Tabs.vue's, unscoped for that.
   With `files` (the footer's File) it lists files after the folders (folders bold) and picks a file; `open` can take another host than the prop's. Its slot is left of the box (the Term pane's host selector, which calls `open` again to move the open dialog to another host).
 - `src/components/Files.vue`: the Files column: header rows and a tree of the tab's host, with
-  `FileEditor.vue` in its place in file mode. Holds only what the backend last listed. Stays mounted while its tab is hidden; both stop polling then (`active`).
+  `FileEditor.vue` in its place in file mode. A click on the root's path row edits it in place; Enter checks the text with the host's `folders` and goes there as Path's pick does (`goTo`). Holds only what the backend last listed. Stays mounted while its tab is hidden; both stop polling then (`active`).
 - `src/components/Tabs.vue`: the row's Tabs button (ctrl-click opens every closed project with a red or green dot, no dialog) and its `<dialog>`: host, Path (the folder picker), name
   and Create above the list of every project, where a click opens or closes one, a hold renames and
   ctrl-click deletes. It keeps no copy of the list: changes go to the backend and come back as a
@@ -279,7 +279,7 @@ on the laptop, and talks to each backend directly.
   redirect in it or `./deploy`, at any path; a bare `touch .deployed` is the old kind and fails, as does an `echo`: `stampProblem`). Passing sets
   "done" and the prompt goes on with no dialog; otherwise a `<dialog>` lists the problems, with Cancel as its Enter button (Set up starts a session that writes scripts, so it takes a click). Set up
   sends `SETUP_PROMPT` (use the deployable skill) to a new session and opens it (so the footer shows its
-  status; the typed prompt stays as its own session's draft; once "started" the button reads "Set up again"), and sets
+  status; the typed prompt's text moves into its box, unsent, and its own session's draft is emptied; once "started" the button reads "Set up again"), and sets
   "started"; Check runs `deployCheck` again and an alert gives the result; Not needed sets "none"
   and sends; Continue sends and leaves the flag. Set up, Check and Cancel leave the prompt in the
   box. With "started" the dialog comes with no check first, Check focused, except for a prompt to the setup session itself (its first prompt is `SETUP_PROMPT`), which just goes. The flag comes back to the page in a `projects` event.

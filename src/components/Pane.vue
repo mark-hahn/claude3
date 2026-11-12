@@ -702,7 +702,7 @@ async function awaitRun(id: string): Promise<void> {
 // the flag is the project's deploySetup, kept by its backend). With no flag yet the backend's
 // check runs first, and a project that passes it is marked set up and its prompt goes on with no
 // dialog. Otherwise a dialog asks: Set up sends the skill to a new session and opens it (this
-// prompt stays unsent, the draft of the session it was typed in; once "started" the button reads
+// prompt goes along into its box, unsent; once "started" the button reads
 // "Set up again", so a second setup is meant); Check checks again and sets the flag when ./run passes. Not
 // needed sets "none" and sends the prompt, as Continue does without touching the flag; Set up,
 // Check and Cancel don't send it. Once Set up has run ("started"), the dialog comes with no check first,
@@ -718,7 +718,7 @@ async function deploySetupOk(what: "prompt" | "run" = "prompt"): Promise<boolean
   if (state === "none" || (state === "done" && what === "prompt")) return true;
   if (state === "started" && what === "prompt" && turns()[0]?.prompt === SETUP_PROMPT) return true;
   setupStarted.value = state === "started";
-  const held = what === "prompt" ? "Your prompt stays unsent, in its session's box," : "./run doesn't start";
+  const held = what === "prompt" ? "Your prompt stays unsent, in the prompt box," : "./run doesn't start";
   let problems: string[] = [];
   if (!setupStarted.value) {
     try {
@@ -743,7 +743,15 @@ async function deploySetupOk(what: "prompt" | "run" = "prompt"): Promise<boolean
     if (choice === "setup") {
       const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: "", prompt: SETUP_PROMPT, images: [] });
       await post(props.tab, "deploySetup", { state: "started" });
-      // Opened, so the footer's status is the setup's; the prompt typed stays in its own session's draft.
+      // Opened, so the footer's status is the setup's. The prompt typed goes along, unsent, so the box
+      // on show still holds it: emptied first in its own session (and that session's storage), then
+      // the setup session's draft, which the switch puts in the box. Pictures and files stay behind.
+      if (what === "prompt") {
+        const text = draft.value;
+        draft.value = "";
+        await nextTick();
+        drafts.set(sessionId, text);
+      }
       emit("started", sessionId);
     } else if (choice === "check") {
       const { problems } = await post<{ problems: string[] }>(props.tab, "deployCheck", {});

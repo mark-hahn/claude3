@@ -10,7 +10,7 @@ let cut: { tab: Tab; path: string; clip: string } | null = null;
 // a click on a file selects just it, ctrl-click toggles any row, shift-click adds the run of files from the last one
 // (src/pick.ts); a click on a folder only opens or closes it, so only ctrl-click selects a folder. The keys act on them (keyDown); all but Delete need exactly one. Ctrl+Enter on a file adds it to the prompt, as the footer's File does.
 // Files dragged from Explorer land on the folder under them. The header's path row stands for the
-// root folder, which has no row of its own, for drop.
+// root folder, which has no row of its own, for drop; a click on it types a path to go to (editRoot).
 // The tree holds only what the backend last said: each open folder is asked for again every 2s.
 // ponytail: polling, not file watches; change it if the 2s lag or the traffic ever matters.
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
@@ -204,6 +204,32 @@ async function goTo(folder: string): Promise<void> {
   if (!chain) return addRoot(folder);
   select(folder);
   await reveal(folder, chain);
+}
+
+// A click on the path row edits it in place (not a drag that picked text in it, for Ctrl-C); Enter
+// goes to the folder typed as Path's pick does, Esc or leaving the box drops it.
+const rootText = ref<string | null>(null);
+const rootInput = ref<HTMLInputElement>();
+function editRoot(): void {
+  if (rootText.value !== null || !window.getSelection()?.isCollapsed) return;
+  rootText.value = root.value;
+  void nextTick(() => {
+    rootInput.value?.focus();
+    rootInput.value?.select();
+  });
+}
+async function goToTyped(): Promise<void> {
+  const typed = rootText.value?.trim() ?? "";
+  rootText.value = null;
+  focusTree();
+  note.value = "";
+  try {
+    const { path } = await postHost<{ path: string }>(props.tab.host, "folders", { path: typed });
+    if (path) await goTo(path);
+    else note.value = `${typed || "An empty path"} is not a folder on ${props.tab.host}.`;
+  } catch (problem) {
+    note.value = messageOf(problem);
+  }
 }
 
 // Each Enter in the search box goes on to the next name below the last one found, in the tree's
@@ -557,7 +583,11 @@ onBeforeUnmount(() => window.clearInterval(poller));
         <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="focusTree()" />
         <label class="files-nm" title="Search inside node_modules too"><input v-model="searchNodeModules" type="checkbox" />NM</label>
       </div>
-      <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root">{{ tab.host }}: {{ withSeparator(root) }}<span class="files-relative">{{ selectedBelowRoot }}</span></div>
+      <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root" title="Click to type a path" @click="editRoot">
+        {{ tab.host }}:
+        <input v-if="rootText !== null" ref="rootInput" v-model="rootText" class="files-rename" spellcheck="false" aria-label="Folder path" @keydown.enter.prevent="goToTyped" @keydown.esc.prevent="rootText = null; focusTree()" @blur="rootText = null" />
+        <template v-else>{{ withSeparator(root) }}<span class="files-relative">{{ selectedBelowRoot }}</span></template>
+      </div>
       <div v-if="note || listProblem" class="files-note">{{ note || listProblem }}</div>
       <div ref="tree" class="files-tree">
         <div
@@ -609,6 +639,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
 .files-bar .tabs-input { padding: 3px 8px; }
 .files-nm { flex: none; display: flex; align-items: center; gap: 3px; margin-right: 15px; cursor: pointer; user-select: none; }
 .files-root { flex: none; padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
+.files-root:has(.files-rename) { display: flex; align-items: center; gap: 4px; }
 .files-relative { background: #fffbdf; }
 .files-note { flex: none; background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 4px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
 /* A grid so every row is as wide as the widest, and a selection's colour reaches the far edge when scrolled. */
