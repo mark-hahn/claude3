@@ -31,15 +31,34 @@ export function parseMessages(out: string): { hash: string; subject: string; mes
   return { hash: fields[0] ?? "", subject: fields[1] ?? "", messages: fields.filter((field, at) => field && at % 3 === 2) };
 }
 
-// A file's text in the last commit, for the Git popup's diff. file is from the repo's top, as status
+// A file's text in the last commit (or rev, a reviewed commit or its parent), for the Git popup's diff. file is from the repo's top, as status
 // paths are. "" when that commit has no such file (untracked, added), null when it isn't text or
 // is too big to show.
-export async function headText(git: (...args: string[]) => Promise<string>, file: string): Promise<string | null> {
-  // A repo with no commits yet fails this, which only means there is no such file.
-  const listed = await git("ls-tree", "--full-tree", "--name-only", "HEAD", "--", file).catch(() => "");
+export async function headText(git: (...args: string[]) => Promise<string>, file: string, rev = "HEAD"): Promise<string | null> {
+  // From the page, so never anything git could read as an option.
+  if (!/^(HEAD|[0-9a-f]{7,64}\^?)$/.test(rev)) throw new Error(`Not a commit: ${rev}`);
+  // A repo with no commits yet fails this, as does a first commit's parent, which only means there is no such file.
+  const listed = await git("ls-tree", "--full-tree", "--name-only", rev, "--", file).catch(() => "");
   if (!listed.trim()) return "";
-  const text = await git("show", `HEAD:${file}`);
+  const text = await git("show", `${rev}:${file}`);
   return text.includes("\0") || text.length > MAX_EDITABLE ? null : text;
+}
+
+// The files one commit changed, against its first parent (a first commit: against nothing), for the
+// Git popup's review of it from the Log pane. As status entries, the change being the work tree's
+// letter, so they all land in its Changes list. `-z --name-status`: a letter (a rename's with a
+// score), NUL, the path, a rename's or copy's old path first.
+export async function commitFiles(git: (...args: string[]) => Promise<string>, hash: string): Promise<{ x: string; y: string; path: string; from?: string }[]> {
+  if (!/^[0-9a-f]{7,64}$/.test(hash)) throw new Error(`Not a commit: ${hash}`);
+  const args = ["diff-tree", "-r", "-z", "--name-status", "-M", "--no-commit-id"];
+  const parts = (await git(...args, `${hash}^`, hash).catch(() => git(...args, "--root", hash))).split("\0");
+  const files: { x: string; y: string; path: string; from?: string }[] = [];
+  for (let at = 0; at + 1 < parts.length; ) {
+    const letter = parts[at++]!.charAt(0);
+    const from = "RC".includes(letter) ? parts[at++] : undefined;
+    files.push({ x: " ", y: letter, path: parts[at++] ?? "", ...(from ? { from } : {}) });
+  }
+  return files;
 }
 
 // A new subject for the checked-out branch's newest commit, pushed. The body stays, and --only keeps

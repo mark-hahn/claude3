@@ -6,7 +6,8 @@
 // diff is on show to their right, Up and Down in the list walking the files; a click on one of the diff's line numbers opens the file there in the Files pane. The label counts the files waiting
 // for a commit. It's re-read while the project is open, on show or not, for the dot on its tab:
 // when it comes up, when a session changes (a turn starting or ending), and every 2s for changes
-// no event tells of.
+// no event tells of. The Log pane's ctrl-alt-click opens it on one commit instead (`openCommit`): that
+// commit's files and their diffs against its parent, with no buttons but Close, no message boxes, no revert.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
@@ -44,9 +45,13 @@ interface GitLog {
   messages: string[];
 }
 const last = ref<GitLog>();
+// The commit under review, from the Log pane; undefined in the usual popup. Its files come as
+// status entries with the change in y, so they all fall in the Changes list.
+const review = ref<{ hash: string; subject: string; files: GitFile[] }>();
 
-const staged = computed(() => files.value.filter((file) => !" ?".includes(file.x)).map((file) => ({ ...file, letter: file.x, key: `s${file.path}` })));
-const changed = computed(() => files.value.filter((file) => file.y !== " ").map((file) => ({ ...file, letter: file.y === "?" ? "U" : file.y, key: `c${file.path}` })));
+const listed = computed(() => review.value?.files ?? files.value);
+const staged = computed(() => listed.value.filter((file) => !" ?".includes(file.x)).map((file) => ({ ...file, letter: file.x, key: `s${file.path}` })));
+const changed = computed(() => listed.value.filter((file) => file.y !== " ").map((file) => ({ ...file, letter: file.y === "?" ? "U" : file.y, key: `c${file.path}` })));
 const shown = computed(() => [...staged.value, ...changed.value]);
 // The picked rows' keys: a file both staged and changed has a row, and so a key, in each list.
 const picked = ref(new Set<string>());
@@ -61,7 +66,7 @@ function clickFile(key: string, event: MouseEvent): void {
 async function revert(): Promise<void> {
   const chosen = shown.value.filter((file) => picked.value.has(file.key));
   const paths = [...new Set(chosen.map((file) => file.path))];
-  if (!paths.length || committing.value) return;
+  if (!paths.length || committing.value || review.value) return;
   const list = paths.map((path) => (chosen.some((file) => file.path === path && file.x === "?") ? `${path}  (untracked: deleted)` : path)).join("\n");
   if (!window.confirm(`Revert ${paths.length === 1 ? "this file" : `these ${paths.length} files`} to the last commit?\n\n${list}\n\nThis cannot be undone.`)) return;
   const untracked = chosen.filter((file) => file.x === "?");
@@ -138,7 +143,10 @@ const diffRow = computed(() => {
   return rows.length === 1 ? rows[0] : undefined;
 });
 // Whether the diff's file is there to open: not before its full path has come, not a deleted one.
-const canOpen = computed(() => !!diffRow.value?.full && diffRow.value.x !== "D" && diffRow.value.y !== "D");
+// A reviewed commit's file opens only while it is still as that commit left it (`fresh`, asked once
+// per row), and without that its line numbers aren't shown at all: they wouldn't be the file's now.
+const fresh = ref(false);
+const canOpen = computed(() => (!review.value || fresh.value) && !!diffRow.value?.full && diffRow.value.x !== "D" && diffRow.value.y !== "D");
 const diffHost = ref<HTMLElement>();
 // Why there is no diff to see: the file isn't text, or reading it failed.
 const diffNote = ref("");
@@ -153,20 +161,30 @@ async function loadDiff(): Promise<void> {
   if (!row?.full || !diffEditor) return;
   const { key, full } = row;
   const old = row.from ?? row.path;
-  const leftOf = `${last.value?.hash} ${old}`;
+  // A reviewed commit: its parent's file against its own, both fixed, so each is read once.
+  const rev = review.value?.hash;
+  const leftOf = rev ? `${rev}^ ${old}` : `${last.value?.hash} ${old}`;
+  const rightOf = rev ? `${rev} ${row.path}` : full;
   // A deleted file has nothing on disk to read.
   const gone = row.x === "D" || row.y === "D";
   try {
     const [head, disk] = await Promise.all([
-      leftOf === sides.leftOf ? null : post<{ text: string | null }>(props.tab, "gitHead", { path: old }),
-      gone ? { mtime: 0, text: "" } : post<{ mtime: number; text?: string | null }>(props.tab, "readFile", { path: full, known: sides.rightOf === full ? sides.mtime : undefined }),
+      leftOf === sides.leftOf ? null : post<{ text: string | null }>(props.tab, "gitHead", { path: old, rev: rev && `${rev}^` }),
+      gone
+        ? { mtime: 0, text: "" }
+        : !rev
+          ? post<{ mtime: number; text?: string | null }>(props.tab, "readFile", { path: full, known: sides.rightOf === full ? sides.mtime : undefined })
+          : rightOf === sides.rightOf
+            ? { mtime: 0, text: undefined }
+            : post<{ text: string | null; same: boolean }>(props.tab, "gitHead", { path: row.path, rev, same: true }).then(({ text, same }) => ({ mtime: 0, text, same })),
     ]);
     // Another row was picked, or the popup closed, while this was on its way.
     if (diffRow.value?.key !== key || !diffEditor) return;
+    if ("same" in disk) fresh.value = disk.same === true;
     const before = head ? head.text : sides.before;
     const after = disk.text === undefined ? sides.after : disk.text;
     const same = shownKey === key && before === sides.before && after === sides.after;
-    Object.assign(sides, { leftOf, before, rightOf: full, mtime: disk.mtime, after });
+    Object.assign(sides, { leftOf, before, rightOf, mtime: disk.mtime, after });
     diffError.value = "";
     if (same) return;
     // The same file read again keeps its place.
@@ -197,7 +215,7 @@ function closeDiff(): void {
 watch(diffHost, (host) => {
   if (!host) return closeDiff();
   // ponytail: the text size is fixed; add the Files editor's ctrl-wheel zoom (both sides) if it is ever wanted.
-  diffEditor = monaco.editor.createDiffEditor(host, { theme: "claude2", automaticLayout: true, readOnly: true, fontSize: 14, minimap: { enabled: false }, wordWrap: "on", scrollBeyondLastLine: false, glyphMargin: false, folding: false, editContext: false, renderFinalNewline: "on", ignoreTrimWhitespace: false, hideUnchangedRegions: { enabled: true } });
+  diffEditor = monaco.editor.createDiffEditor(host, { lineNumbers: numbered.value ? "on" : "off", theme: "claude2", automaticLayout: true, readOnly: true, fontSize: 14, minimap: { enabled: false }, wordWrap: "on", scrollBeyondLastLine: false, glyphMargin: false, folding: false, editContext: false, renderFinalNewline: "on", ignoreTrimWhitespace: false, hideUnchangedRegions: { enabled: true } });
   // A click on a line number, in the old file's column or the new one's, opens the file in the Files
   // pane's editor with that line (an old line's place in the new file) centered, for a fix
   // mid-review. Down and up on the same number: a drag over the numbers only selects lines. In the
@@ -222,7 +240,13 @@ function openAt(line: number): void {
   emit("openFile", diffRow.value!.full!, line);
   dialog.value?.close();
 }
-watch(() => diffRow.value?.key, () => void loadDiff());
+watch(() => diffRow.value?.key, () => {
+  fresh.value = false;
+  void loadDiff();
+});
+// The usual popup always numbers its lines; a review only where a click on one opens the file.
+const numbered = computed(() => !review.value || canOpen.value);
+watch(numbered, (on) => diffEditor?.updateOptions({ lineNumbers: on ? "on" : "off" }));
 
 // Session events come in bursts (a Clean sends one per session), so they're gathered first.
 let timer = 0;
@@ -284,8 +308,26 @@ function open(): void {
   void refresh();
 }
 
+// The Log pane's ctrl-alt-click on a commit: the popup on that commit's changes. Shown at once, the
+// list filling in when it comes.
+async function openCommit(hash: string, subject: string): Promise<void> {
+  open();
+  picked.value = new Set();
+  review.value = { hash, subject, files: [] };
+  try {
+    const { files: changes } = await post<{ files: GitFile[] }>(props.tab, "gitCommit", { hash });
+    if (review.value?.hash === hash) review.value = { hash, subject, files: changes };
+  } catch (problem) {
+    error.value = messageOf(problem);
+  }
+}
+defineExpose({ openCommit });
+
 function onClose(): void {
   isOpen.value = false;
+  // A row picked in the review isn't the usual popup's.
+  if (review.value) picked.value = new Set();
+  review.value = undefined;
   emit("closed");
 }
 
@@ -402,17 +444,21 @@ function onMessageKey(event: KeyboardEvent): void {
   <dialog ref="dialog" class="git-pop" :class="{ wide: diffRow }" @cancel="committing && $event.preventDefault()" @close="onClose" closedby="any">
     <div class="git-main">
       <div class="git-head">
-        <div class="git-title">Source Control: {{ tab.path }}</div>
+        <div class="git-title">{{ review ? `Commit ${review.hash.slice(0, 7)}: ${review.subject}` : `Source Control: ${tab.path}` }}</div>
+        <template v-if="!review">
         <button title="Back up to a newer session's name" :disabled="describing || committing || named <= 0" @click="walkNames(-1)">↑</button>
         <button title="The newest session's name, then each click an older one" :disabled="describing || committing || named >= sessionNames.length - 1" @click="walkNames(1)">↓</button>
         <button title="Clear the message" :disabled="describing || committing" @click="clearMessage">Clr</button>
         <button title="Describe changes: Opus 5.5 writes the message" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "AI…" : "AI" }}</button>
         <button class="git-commit" :disabled="!canCommit" @click="commit">{{ committing ? "Committing…" : "Commit" }}</button>
+        </template>
         <button :disabled="committing" @click="dialog?.close()">Close</button>
       </div>
+      <template v-if="!review">
       <input v-if="editing" v-model="draft" v-focus class="git-last-edit" spellcheck="false" :readonly="committing" @keydown.enter.prevent="saveLast" @keydown.esc.prevent="stopEditing" />
       <div v-else-if="last?.hash" class="git-last" title="The last commit's message. Click to edit it: Enter amends and pushes, Esc cancels." @click="editLast">{{ last.subject }}</div>
       <textarea ref="messageBox" v-model="message" class="git-message" rows="3" spellcheck="false" autofocus :readonly="describing" @keydown="onMessageKey"></textarea>
+      </template>
       <div v-if="failure" class="git-error">{{ failure }}</div>
       <div v-if="error" class="git-error">{{ error }}</div>
       <div class="git-files" tabindex="-1" @keydown="onFilesKey">
@@ -424,7 +470,7 @@ function onMessageKey(event: KeyboardEvent): void {
             <span class="git-letter">{{ file.letter }}</span>
           </div>
         </template>
-        <div v-if="!files.length && !failure" class="git-none">No changes.</div>
+        <div v-if="!shown.length && !failure" class="git-none">No changes.</div>
       </div>
     </div>
     <div v-if="diffRow" class="git-diff">

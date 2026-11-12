@@ -435,6 +435,8 @@ watch(() => gitDirty.value || deployDue.value, (on) => emit("highlighted", on));
 // line. By way of the tree, so an editor already open saves and closes first; Files is there to ask
 // once the column has changed.
 const filesPane = ref<InstanceType<typeof Files>>();
+// The Log pane's ctrl-alt-click opens it on a commit.
+const gitPopup = ref<InstanceType<typeof Git>>();
 async function openInFiles(path: string, line: number): Promise<void> {
   emit("showFiles");
   await nextTick();
@@ -480,7 +482,7 @@ onBeforeUnmount(() => {
         <button class="tab new" title="New session" @click="newSession">
           <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
         </button>
-        <Git :tab="tab" :active="active" :version="version" :session-names="sessionNames" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" @no-repo="(none) => emit('noRepo', none)" @open-file="openInFiles" />
+        <Git ref="gitPopup" :tab="tab" :active="active" :version="version" :session-names="sessionNames" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" @no-repo="(none) => emit('noRepo', none)" @open-file="openInFiles" />
         <button class="tab" :class="{ 'deploy-due': deployDue }" title="Run the project's ./run, the same as the prompt r. Ctrl-click: the same as the prompt v" @mousedown.prevent @click="pane?.runScript($event.ctrlKey)">R</button>
       </span>
     </Teleport>
@@ -548,7 +550,7 @@ onBeforeUnmount(() => {
     <div v-if="side" class="divider side-divider" title="Drag to change the widths of the pane and this column" @pointerdown="dragSideDivider"></div>
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
-    <GitGraph v-if="side === 'git'" :tab="tab" :active="active" />
+    <GitGraph v-if="side === 'git'" :tab="tab" :active="active" @review="(hash, subject) => gitPopup?.openCommit(hash, subject)" />
     <div v-if="side === 'term'" class="terms"><Term v-for="one in terms" :key="one.slot" ref="termPanes" :tab="tab" :active="active" :index="one.slot" :host="one.host" :start="one.cwd" :count="terms.length" @add="(host, cwd) => addTerm(one.slot, host, cwd)" @close="closeTerm(one.slot)" /></div>
     <Files v-if="side.startsWith('file')" ref="filesPane" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" @attach="(path, host) => pane?.attach(path, host)" />
   </div>

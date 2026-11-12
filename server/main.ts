@@ -25,7 +25,8 @@
 //        deployCheck -> { problems } (./run and ./deploy against the deployable skill; none sets deploySetup "done")
 //        lastCommit -> { at, subject } (HEAD's commit time in ms, 0 with no commits, and its subject)
 //        clean -> {} (every session to the trash) | git { log? } -> { files: [{ x, y, path, full? }], log?: { hash, subject, messages } } (git status; log, sent while the popup is open: the branch's newest commit and its last 100 messages, and each file's full path)
-//        gitHead { path } -> { text } (a file's text in the last commit, path from the repo's top: "" when not in it, null when not text or too big)
+//        gitHead { path, rev?, same? } -> { text, same? } (a file's text in the last commit, or in rev, a commit hash maybe with ^; path from the repo's top: "" when not in it, null when not text or too big; same, when asked: the file on disk is as rev has it)
+//        gitCommit { hash } -> { files: [{ x, y, path, from?, full }] } (the files that commit changed, against its first parent, as status entries)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
 //        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
 //        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
@@ -57,7 +58,7 @@ import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, copySessionTranscript, swapSessionTranscripts, truncateSessionTranscript, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
 import { fileActions, upload } from "./files.ts";
-import { GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "./gitGraph.ts";
+import { commitFiles, GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "./gitGraph.ts";
 import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
 import { checkCosts, QuotaService, speechmaticsCost, type QuotaState } from "./quota.ts";
 import { stampProblem, stampTime } from "./stamp.ts";
@@ -761,7 +762,15 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     return { files: files.map((file) => ({ ...file, full: path.join(top, file.path) })), log: parseMessages(await git(project, ...MESSAGE_ARGS).catch(() => "")) };
   }
   if (name === "gitHead") {
-    return { text: await headText((...args) => git(project, ...args), String(body.path ?? "")) };
+    const [file, rev] = [String(body.path ?? ""), String(body.rev ?? "HEAD")];
+    const text = await headText((...args) => git(project, ...args), file, rev);
+    if (body.same !== true) return { text };
+    // Whether the file on disk is still as rev has it (git's own compare, so line-ending conversion counts as the same).
+    return { text, same: await git(project, "diff", "--quiet", rev, "--", `:(top,literal)${file}`).then(() => true, () => false) };
+  }
+  if (name === "gitCommit") {
+    const top = (await git(project, "rev-parse", "--show-toplevel")).trim();
+    return { files: (await commitFiles((...args) => git(project, ...args), String(body.hash ?? ""))).map((file) => ({ ...file, full: path.join(top, file.path) })) };
   }
   if (name === "gitGraph") {
     return { lines: layoutGraph(await git(project, ...GRAPH_ARGS)) };
