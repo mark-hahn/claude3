@@ -56,7 +56,9 @@ function append(shell: Shell, data: string): void {
 
 // Each prompt sends the shell's folder as OSC 7 with a bare path, for the pane's header. Added after
 // the user's own startup (bash's ~/.bashrc unsets PROMPT_COMMAND), and last, so $? is still theirs.
+// Readline (bash 5.1+) shows pasted text as an inverse-video "active region"; that's turned off.
 const BASH_RC = `[ -f ~/.bashrc ] && . ~/.bashrc
+bind 'set enable-active-region off' 2>/dev/null
 PROMPT_COMMAND="\${PROMPT_COMMAND}
 printf '\\e]7;%s\\a' \\"\\$PWD\\""
 `;
