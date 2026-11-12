@@ -21,7 +21,7 @@ import { post, postHost, upload } from "../api.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
 import { pick } from "../pick.ts";
 import { renderMarkdown } from "../render.ts";
-import { closeOnBackdrop, foldersBetween, sameName, withSeparator } from "../tabList.ts";
+import { foldersBetween, sameName, withSeparator } from "../tabList.ts";
 import { wheelZoom } from "../wheelZoom.ts";
 import FileEditor from "./FileEditor.vue";
 import FolderPicker from "./FolderPicker.vue";
@@ -639,7 +639,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
       <FolderPicker ref="picker" :host="treeHost" @pick="goTo($event, pickHost)">
         <select :value="pickHost" aria-label="Host" title="The host whose folders these are. Ok on another host's folder shows it in the tree" @change="showHost(($event.target as HTMLSelectElement).value as HostName)"><option v-for="(_, name) in HOSTS" :key="name">{{ name }}</option></select>
       </FolderPicker>
-      <dialog ref="infoDialog" class="files-info" @pointerdown="closeOnBackdrop" @wheel.stop @close="treeArea?.focus()">
+      <dialog ref="infoDialog" class="files-info" closedby="any" @wheel.stop @close="treeArea?.focus()">
         <table>
           <tr v-for="[label, value] in infoRows" :key="label"><th>{{ label }}</th><td>{{ value }}</td></tr>
         </table>

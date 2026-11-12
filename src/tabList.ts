@@ -24,14 +24,6 @@ export function foldersBetween(root: string, folder: string): string[] | null {
   return parts.map((_, index) => base + parts.slice(0, index + 1).join(separator));
 }
 
-// A dialog's pointerdown handler. Pointerdown, not click: a text selection dragged out of a box
-// must not close the dialog. The target test leaves the dialog's contents out, the box test its padding.
-export function closeOnBackdrop(event: PointerEvent): void {
-  const shown = event.currentTarget as HTMLDialogElement;
-  const box = shown.getBoundingClientRect();
-  if (event.target === shown && (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom)) shown.close();
-}
-
 // The id of the tab to show when the one on show (gone, if known) closed or was deleted: the next
 // open one by name, or the last when it was the last. "" with none open.
 export function nextTab(sorted: Tab[], gone: Tab | undefined): string {

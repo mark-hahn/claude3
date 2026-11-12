@@ -6,7 +6,7 @@
 import { computed, ref, watch } from "vue";
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { post, postHost } from "../api.ts";
-import { closeOnBackdrop, folderName, sameName } from "../tabList.ts";
+import { folderName, sameName } from "../tabList.ts";
 import FolderPicker from "./FolderPicker.vue";
 
 // Every project, in name order, which have their Git or Run button highlighted, open or closed, and how many sessions each has running.
@@ -136,7 +136,7 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
   <button ref="button" class="tab tabs-toggle" :class="{ due: due && !running, running }" :title="`Add, open, close, rename or delete projects${running ? '. A project has a session running' : due ? '. A project has its Git or Run button highlighted' : ''}. Ctrl-click opens every project with a red or green dot`" aria-label="Tabs" @click="open">
     <svg viewBox="0 0 20 16" width="20" height="16" aria-hidden="true"><path d="M1 14.5V6h18v8.5zM2 6V2.5h4.5V6M7.75 6V2.5h4.5V6M13.5 6V2.5H18V6" /></svg>
   </button>
-  <dialog ref="dialog" class="tabs-pop" @pointerdown="closeOnBackdrop" @close="emit('closed')">
+  <dialog ref="dialog" class="tabs-pop" closedby="any" @close="emit('closed')">
     <section class="tabs-row">
       <select v-model="host" aria-label="Host"><option v-for="entry in HOST_NAMES" :key="entry">{{ entry }}</option></select>
       <button @click="picker?.open(HOSTS[host].appsFolder)">Path</button>

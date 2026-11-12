@@ -1501,32 +1501,32 @@ onBeforeUnmount(() => {
 <template>
   <div class="pane" :class="{ 'big-prompt-editor': bigPrompt }" @click.capture="copyCodeBlock" @dragenter.capture="dragFiles" @dragover.capture="dragFiles" @drop.capture="dragFiles">
     <div ref="historyEl" class="history" tabindex="-1" @wheel="zoom"></div>
-    <dialog ref="runPopEl" class="run-pop" @close="runClosed">
+    <dialog ref="runPopEl" closedby="any" class="run-pop" @close="runClosed">
       <pre>{{ runText }}</pre>
       <form method="dialog"><button autofocus>OK</button></form>
     </dialog>
-    <dialog ref="runErrorEl" class="run-pop run-error" @close="runErrorClosed">
+    <dialog ref="runErrorEl" closedby="any" class="run-pop run-error" @close="runErrorClosed">
       <pre>{{ runErrorText }}</pre>
       <form method="dialog"><button autofocus>OK</button></form>
     </dialog>
-    <dialog ref="deployPopEl" class="run-pop">
+    <dialog ref="deployPopEl" closedby="any" class="run-pop">
       <pre>{{ deployText }}</pre>
       <form method="dialog"><button value="deploy">Deploy</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
     </dialog>
-    <dialog ref="setupPopEl" class="run-pop">
+    <dialog ref="setupPopEl" closedby="any" class="run-pop">
       <pre>{{ setupText }}</pre>
       <form method="dialog"><button value="setup">{{ setupStarted ? "Set up again" : "Set up" }}</button> <button value="check" :autofocus="setupStarted">Check</button> <button value="none">Not needed</button> <button value="continue">Continue</button> <button value="" :autofocus="!setupStarted">Cancel</button></form>
     </dialog>
-    <dialog ref="commitPopEl" class="run-pop">
+    <dialog ref="commitPopEl" closedby="any" class="run-pop">
       <pre>{{ commitText }}</pre>
       <form method="dialog"><button value="new">New session</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
     </dialog>
-    <dialog ref="filePopEl" class="run-pop">
+    <dialog ref="filePopEl" closedby="any" class="run-pop">
       <pre>{{ fileText }}</pre>
       <form method="dialog"><button autofocus>OK</button></form>
     </dialog>
     <FolderPicker ref="filePicker" :host="tab.host" files @pick="attach" />
-    <dialog ref="imagePopEl" class="img-pop" @close="popSrc = ''">
+    <dialog ref="imagePopEl" closedby="any" class="img-pop" @close="popSrc = ''">
       <div class="img-title">
         <strong>{{ popLabel }}</strong>
         <span>{{ !popEditable ? "already sent, shown only" : popDepth ? "drag to crop, click to undo a crop" : "drag to crop" }}</span>

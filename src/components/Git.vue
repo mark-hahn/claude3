@@ -273,7 +273,7 @@ function open(): void {
   error.value = "";
   editing.value = "";
   named.value = -1;
-  // Upper left, just under the button, and no taller than the room below it so Commit stays on screen.
+  // Upper left, just under the button, and no taller than the room below it so the file list stays on screen.
   const { left, bottom } = button.value!.getBoundingClientRect();
   dialog.value!.style.margin = `${bottom + 4}px 0 0 ${left}px`;
   dialog.value!.style.maxHeight = `calc(100vh - ${bottom + 16}px)`;
@@ -287,14 +287,6 @@ function open(): void {
 function onClose(): void {
   isOpen.value = false;
   emit("closed");
-}
-
-// The modal's backdrop covers the Git button, so a click on the button lands on the dialog
-// instead; when it falls inside the button's box, close, so the button toggles the popup.
-function onDialogClick(event: MouseEvent): void {
-  if (event.target !== dialog.value || committing.value) return;
-  const box = button.value?.getBoundingClientRect();
-  if (box && event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom) dialog.value?.close();
 }
 
 async function commit(): Promise<void> {
@@ -407,7 +399,7 @@ function onMessageKey(event: KeyboardEvent): void {
   <button ref="button" class="tab git" :class="{ dirty: files.length }" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" :disabled="noRepo" @click="open">
     G<span v-if="files.length">&nbsp;{{ files.length }}</span>
   </button>
-  <dialog ref="dialog" class="git-pop" :class="{ wide: diffRow }" @cancel="committing && $event.preventDefault()" @close="onClose" @click="onDialogClick">
+  <dialog ref="dialog" class="git-pop" :class="{ wide: diffRow }" @cancel="committing && $event.preventDefault()" @close="onClose" closedby="any">
     <div class="git-main">
       <div class="git-head">
         <div class="git-title">Source Control: {{ tab.path }}</div>
@@ -415,6 +407,8 @@ function onMessageKey(event: KeyboardEvent): void {
         <button title="The newest session's name, then each click an older one" :disabled="describing || committing || named >= sessionNames.length - 1" @click="walkNames(1)">↓</button>
         <button title="Clear the message" :disabled="describing || committing" @click="clearMessage">Clr</button>
         <button title="Describe changes: Opus 5.5 writes the message" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "AI…" : "AI" }}</button>
+        <button class="git-commit" :disabled="!canCommit" @click="commit">{{ committing ? "Committing…" : "Commit" }}</button>
+        <button :disabled="committing" @click="dialog?.close()">Close</button>
       </div>
       <input v-if="editing" v-model="draft" v-focus class="git-last-edit" spellcheck="false" :readonly="committing" @keydown.enter.prevent="saveLast" @keydown.esc.prevent="stopEditing" />
       <div v-else-if="last?.hash" class="git-last" title="The last commit's message. Click to edit it: Enter amends and pushes, Esc cancels." @click="editLast">{{ last.subject }}</div>
@@ -431,10 +425,6 @@ function onMessageKey(event: KeyboardEvent): void {
           </div>
         </template>
         <div v-if="!files.length && !failure" class="git-none">No changes.</div>
-      </div>
-      <div class="git-buttons">
-        <button class="git-commit" :disabled="!canCommit" @click="commit">{{ committing ? "Committing…" : "Commit" }}</button>
-        <button :disabled="committing" @click="dialog?.close()">Close</button>
       </div>
     </div>
     <div v-if="diffRow" class="git-diff">
@@ -484,7 +474,6 @@ function onMessageKey(event: KeyboardEvent): void {
 .git-letter { flex: none; width: 1.2em; text-align: center; font-weight: 600; }
 .git-D .git-name { text-decoration: line-through; }
 .git-none { padding: 4px 0; }
-.git-buttons { display: flex; gap: 8px; }
-.git-commit { flex: 1; background: #cfe8ff; border-color: #8fb8e0; }
+.git-commit { background: #cfe8ff; border-color: #8fb8e0; }
 .git-commit:hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), #cfe8ff; }
 </style>

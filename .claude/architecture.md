@@ -408,6 +408,9 @@ on the laptop, and talks to each backend directly.
 - Enter in any modal `<dialog>` presses its `autofocus` button, or its only button (`src/main.ts`,
   window capture, ahead of Pane's Enter), unless focus is on a button, input, textarea, select or link.
   A click on a dialog's text leaves focus on the body, where Pane's Enter would act behind the dialog.
+- Every modal `<dialog>` carries `closedby="any"`: a click on its gray backdrop closes it as Esc does
+  (a `cancel` handler can refuse, as Git's does while committing; a press that starts inside and is let
+  go outside doesn't count). Give a new dialog the attribute too.
 - Errors nothing caught (Vue's `app.config.errorHandler`, window `error` and `unhandledrejection`)
   get a `window.alert` from `src/main.ts`, each message once per page load (a broken render repeats
   on every update). Window errors without an error object, like ResizeObserver's loop notice, are skipped.

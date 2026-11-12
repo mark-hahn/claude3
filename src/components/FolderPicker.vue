@@ -6,7 +6,6 @@
 import { computed, ref } from "vue";
 import type { HostName } from "../../shared/config.ts";
 import { postHost } from "../api.ts";
-import { closeOnBackdrop } from "../tabList.ts";
 
 const props = defineProps<{ host: HostName; files?: boolean }>();
 const emit = defineEmits<{ pick: [folder: string] }>();
@@ -58,7 +57,7 @@ defineExpose({ open });
 </script>
 
 <template>
-  <dialog ref="dialog" class="tabs-pop tabs-picker" @pointerdown="closeOnBackdrop">
+  <dialog ref="dialog" class="tabs-pop tabs-picker" closedby="any">
     <div class="tabs-row">
       <slot />
       <input class="tabs-input" :value="typed" autofocus spellcheck="false" aria-label="Folder path" @input="list(($event.target as HTMLInputElement).value)" @keydown.enter.prevent="pick" />
