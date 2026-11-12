@@ -831,11 +831,10 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     return {};
   }
   if (name === "delete") {
-    // claude2's delete for good. Trashed sessions only, so a stale list from the page can't reach a live one.
+    // claude2's delete for good. Trashed, idle sessions only, so a stale list from the page can't reach a live
+    // or running one.
     const asked = Array.isArray(body.sessionIds) ? body.sessionIds.map(String) : [];
-    const ids = project.sessions.filter((session) => session.trashed && asked.includes(session.id)).map((session) => session.id);
-    // A run still going would post its session back as it settled.
-    await Promise.all(ids.map((id) => (runner.stop(id), runs.get(id))));
+    const ids = project.sessions.filter((session) => session.trashed && asked.includes(session.id) && !runs.has(session.id) && !runner.status(session.id)?.active).map((session) => session.id);
     removeSessions(project, ids);
     await removeSessionFiles(ids);
     return {};

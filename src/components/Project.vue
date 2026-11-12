@@ -101,8 +101,10 @@ const busy = (session: ClaudeSession): string => {
   const status = statuses.value[session.id];
   return status?.active ? (status.phase === "background" ? "background" : "running") : "";
 };
+// The cards the trash list's delete can take: a running card shows there too but is never picked.
+const pickable = (session: ClaudeSession): boolean => session.trashed && !busy(session);
 // A session running or waiting on a background task. Its card stays on show (only Ctrl-B hides
-// it): Clean, Trash and its own 🗑 are off, one starting leaves the trash list, and a search shows it.
+// it): Clean and its own 🗑 are off, it can't be deleted from the trash list, and a search shows it.
 const running = computed(() => Object.values(statuses.value).some((status) => status.active));
 
 function setStatus(id: string, status: RunningStatus | null): void {
@@ -385,7 +387,7 @@ function clickCard(session: ClaudeSession, event: MouseEvent): void {
   }
   sweep(session.id);
   if (renamed) return;
-  if (showTrash.value && !event.altKey) pickAnchor = pick(picked.value, visible.value.map((entry) => entry.id), session.id, pickAnchor, event);
+  if (showTrash.value && !event.altKey && pickable(session)) pickAnchor = pick(picked.value, visible.value.filter(pickable).map((entry) => entry.id), session.id, pickAnchor, event);
   selectedId.value = session.id;
   void focusPrompt();
 }
@@ -416,10 +418,9 @@ watch(() => !showTrash.value && !searchText.value && selected.value?.trashed, (s
   selectedId.value = visible.value[0]?.id ?? "";
   void ensureOpen();
 });
-// Picks outlive leaving the trash list; only a card restored or deleted drops out. The delete button
-// exists only on that list, where every trashed card is on show, so it never reaches one out of sight.
-watch(running, (on) => on && (showTrash.value = false));
-watch(visible, () => (picked.value = new Set(sessions.filter((session) => session.trashed && picked.value.has(session.id)).map((session) => session.id))));
+// Picks outlive leaving the trash list; only a card restored, deleted or started running drops out. The
+// delete button exists only on that list, where every trashed card is on show, so it never reaches one out of sight.
+watch(visible, () => (picked.value = new Set(sessions.filter((session) => pickable(session) && picked.value.has(session.id)).map((session) => session.id))));
 watch(statuses, (all) => emit("busy", Object.values(all).filter((status) => status.active).length));
 // The Git and Run buttons' highlights, for the dot on this project's tab in App's tab strip.
 const gitDirty = ref(false);
@@ -483,7 +484,7 @@ onBeforeUnmount(() => {
         <div class="head">
           <button v-if="showTrash" class="delete" title="Permanently delete the selected trashed sessions. Ctrl-click or shift-click a card to select more" :disabled="!picked.size" @click="deletePicked">&#x1F5D1;{{ picked.size ? ` ${picked.size}` : "" }}</button>
           <button v-else class="clean" title="Move every session to the trash. Off while a session is running" :disabled="running || !visible.some((session) => session.turns.length)" @click="clean">Clean</button>
-          <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions. Off while a session is running'" :disabled="running" @click="toggleTrash">Trash</button>
+          <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="toggleTrash">Trash</button>
           <div class="row">
             <span class="counts" title="Active sessions / trashed sessions. Ctrl-click: fake an expired login on this tab's host, to test Re-Auth" @click.ctrl="fakeExpiry">{{ counts.active }}/{{ counts.trashed }}</span>
             <ReAuth :needed="!!expired" @closed="focusPrompt" />
