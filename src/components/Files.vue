@@ -1,20 +1,21 @@
 <script lang="ts">
 // Ctrl-X's item, here because the Ctrl-V can come in any tab's tree. clip is the clipboard's name for it.
-let cut: { tab: Tab; path: string; clip: string } | null = null;
+let cut: { host: HostName; path: string; clip: string } | null = null;
 </script>
 
 <script setup lang="ts">
-// The Files column, in the Snips' place: a VS Code-style tree on the tab's host or, in file mode,
+// The Files column, in the Snips' place: a VS Code-style tree on any host (the tab's to start) or, in file mode,
 // one file in FileEditor. Click a folder to open it, double-click to make it the root; double-click
 // a file to edit it, or ctrl-double-click a .md to read it rendered; alt-click copies the path; a long press shows all about it. Rows can be selected, remembered per root:
 // a click on a file selects just it, ctrl-click toggles any row, shift-click adds the run of files from the last one
 // (src/pick.ts); a click on a folder only opens or closes it, so only ctrl-click selects a folder. The keys act on them (keyDown); all but Delete need exactly one. Ctrl+Enter on a file adds it to the prompt, as the footer's File does.
 // Files dragged from Explorer land on the folder under them. The header's path row stands for the
 // root folder, which has no row of its own, for drop; a click on it types a path to go to (editRoot).
+// Path's host selector makes a root on another host: everything the tree does then goes to that host.
 // The tree holds only what the backend last said: each open folder is asked for again every 2s.
 // ponytail: polling, not file watches; change it if the 2s lag or the traffic ever matters.
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import type { HostName, Tab } from "../../shared/config.ts";
+import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import type { FileEntry } from "../../shared/types.ts";
 import { post, postHost, upload } from "../api.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
@@ -29,14 +30,24 @@ import FolderPicker from "./FolderPicker.vue";
 // active: this is the tab on show; a tab out of sight stops asking the backend.
 const props = defineProps<{ tab: Tab; active: boolean; fileMode: boolean }>();
 // attach: Ctrl+Enter on the one selected file, for the pane to add to its prompt.
-const emit = defineEmits<{ openFile: []; attach: [path: string] }>();
+const emit = defineEmits<{ openFile: []; attach: [path: string, host: HostName] }>();
 const newProjectAt = inject("newProjectAt") as (host: HostName, folder: string) => void;
 // Sizes the tree and rendered markdown; FileEditor's editor keeps a size of its own.
 const zoom = wheelZoom("files-font-size");
 
 const roots = computed(() => props.tab.roots ?? []);
 const rootIdx = computed(() => props.tab.rootIdx ?? roots.value.length - 1);
-const root = computed(() => roots.value[rootIdx.value] ?? props.tab.path);
+// A root on another host than the tab's is kept as "<host>:<path>": no path starts so, a drive letter being one letter.
+const onHost = (path: string, host: HostName): string => (host === props.tab.host ? path : `${host}:${path}`);
+const rootParts = computed((): [HostName, string] => {
+  const entry = roots.value[rootIdx.value] ?? props.tab.path;
+  const host = entry.split(":", 1)[0]!;
+  return Object.hasOwn(HOSTS, host) ? [host as HostName, entry.slice(host.length + 1)] : [props.tab.host, entry];
+});
+const treeHost = computed(() => rootParts.value[0]);
+const root = computed(() => rootParts.value[1]);
+// What the root's selection is kept under.
+const rootKey = computed(() => onHost(root.value, treeHost.value));
 const listings = reactive(new Map<string, FileEntry[]>());
 const openKey = `filesOpen:${props.tab.id}`;
 const selectKey = `filesSelected:${props.tab.id}`;
@@ -47,21 +58,21 @@ const stored = JSON.parse(localStorage.getItem(selectKey) ?? "{}") as Record<str
 const selections = reactive<Record<string, string[]>>(Object.fromEntries(Object.entries(stored).map(([folder, paths]) => [folder, [paths].flat()])));
 watch(() => [...opened], (folders) => localStorage.setItem(openKey, JSON.stringify(folders)));
 watch(selections, (all) => localStorage.setItem(selectKey, JSON.stringify(all)), { deep: true });
-const selected = computed(() => new Set(selections[root.value] ?? []));
+const selected = computed(() => new Set(selections[rootKey.value] ?? []));
 // Where shift-click's run starts: the last row selected.
 let anchor = "";
 function select(...paths: string[]): void {
   anchor = paths.at(-1) ?? "";
-  if (paths.length) selections[root.value] = paths;
-  else delete selections[root.value];
+  if (paths.length) selections[rootKey.value] = paths;
+  else delete selections[rootKey.value];
 }
 
 const note = ref("");
 const listProblem = ref("");
-// rendered: shown as markdown, read-only, instead of in the editor. line: the line the editor opens
+// host: the one it is on. rendered: shown as markdown, read-only, instead of in the editor. line: the line the editor opens
 // centered on, with line numbers in place of its line dots (a file opened from the Git popup's diff,
 // which has them); 0 for a file opened in the tree.
-const file = ref<{ path: string; text: string; mtime: number; rendered: boolean; line: number } | null>(null);
+const file = ref<{ host: HostName; path: string; text: string; mtime: number; rendered: boolean; line: number } | null>(null);
 // The row a clipboard or drop job is running on, and the folder a drag is over.
 const working = ref("");
 const dragTarget = ref("");
@@ -109,7 +120,7 @@ async function listAll(): Promise<void> {
     do {
       again = false;
       const shown = root.value;
-      const reply = await post<{ listings: Record<string, FileEntry[] | null> }>(props.tab, "listFiles", { paths: [shown, ...openRows()] });
+      const reply = await postHost<{ listings: Record<string, FileEntry[] | null> }>(treeHost.value, "listFiles", { paths: [shown, ...openRows()] });
       listProblem.value = reply.listings[shown] ? "" : `${shown} no longer exists or can't be read.`;
       for (const [folder, entries] of Object.entries(reply.listings)) {
         if (entries) {
@@ -143,7 +154,7 @@ function attempt(work: Promise<unknown>): Promise<void> {
 // The backend's list comes back as a projects event, and with it the new root.
 const setRoots = (next: string[], idx: number): Promise<void> => attempt(post(props.tab, "setRoots", { roots: next, rootIdx: idx }));
 // Anything Fwd could still have reached is dropped, as in a browser's history.
-const addRoot = (folder: string): Promise<void> => setRoots([...roots.value.slice(0, rootIdx.value + 1), folder], rootIdx.value + 1);
+const addRoot = (folder: string, host = treeHost.value): Promise<void> => setRoots([...roots.value.slice(0, rootIdx.value + 1), onHost(folder, host)], rootIdx.value + 1);
 
 // -1 is Back, 1 is Fwd.
 function stepRoot(by: number): void {
@@ -195,15 +206,24 @@ function collapse(): void {
 }
 
 // Ctrl-click makes a folder instead.
-const newFile = (dir: boolean): Promise<void> => attempt(post<{ path: string }>(props.tab, "newFile", { folder: landing.value, dir }).then((reply) => selectAndReveal(reply.path)));
+const newFile = (dir: boolean): Promise<void> => attempt(postHost<{ path: string }>(treeHost.value, "newFile", { folder: landing.value, dir }).then((reply) => selectAndReveal(reply.path)));
 
-// A picked folder under the root is opened down to and shown; any other becomes a new root.
-async function goTo(folder: string): Promise<void> {
+// A picked folder under the root is opened down to and shown; any other, or one on another host, becomes a new root.
+async function goTo(folder: string, host = treeHost.value): Promise<void> {
+  if (host !== treeHost.value) return addRoot(folder, host);
   if (folder === root.value) return;
   const chain = foldersBetween(root.value, folder);
   if (!chain) return addRoot(folder);
   select(folder);
   await reveal(folder, chain);
+}
+
+// Path's picker, with a host selector left of its box, opens on the tree's host at the root. Another host
+// chosen there moves it to that host's home folder; nothing changes until Ok.
+const pickHost = ref<HostName>(props.tab.host);
+function showHost(host: HostName): void {
+  pickHost.value = host;
+  picker.value?.open(host === treeHost.value ? root.value : HOSTS[host].home, host);
 }
 
 // A click on the path row edits it in place (not a drag that picked text in it, for Ctrl-C); Enter
@@ -224,9 +244,10 @@ async function goToTyped(): Promise<void> {
   focusTree();
   note.value = "";
   try {
-    const { path } = await postHost<{ path: string }>(props.tab.host, "folders", { path: typed });
-    if (path) await goTo(path);
-    else note.value = `${typed || "An empty path"} is not a folder on ${props.tab.host}.`;
+    const host = treeHost.value;
+    const { path } = await postHost<{ path: string }>(host, "folders", { path: typed });
+    if (path) await goTo(path, host);
+    else note.value = `${typed || "An empty path"} is not a folder on ${host}.`;
   } catch (problem) {
     note.value = messageOf(problem);
   }
@@ -243,7 +264,7 @@ let searches: Promise<void> = Promise.resolve();
 async function findStep(text: string, backward: boolean): Promise<void> {
   note.value = "";
   try {
-    const reply = await post<{ path: string | null }>(props.tab, "findFile", { root: root.value, text, after: foundAt, backward, nodeModules: searchNodeModules.value });
+    const reply = await postHost<{ path: string | null }>(treeHost.value, "findFile", { root: root.value, text, after: foundAt, backward, nodeModules: searchNodeModules.value });
     if (!reply.path) {
       note.value = `No name here contains "${text}".`;
       return;
@@ -260,8 +281,8 @@ function search(backward: boolean): void {
   if (text) searches = searches.then(() => findStep(text, backward));
 }
 
-// A srv tab's clipboard work is done by WSL's backend: the clipboard is on the laptop.
-const clipHost = computed<HostName>(() => (props.tab.host === "srv" ? "wsl" : props.tab.host));
+// A srv tree's clipboard work is done by WSL's backend: the clipboard is on the laptop.
+const clipHost = computed<HostName>(() => (treeHost.value === "srv" ? "wsl" : treeHost.value));
 // One at a time and in order, or a Ctrl-V right after a Ctrl-C would paste what was there before it.
 let clipboardJobs: Promise<unknown> = Promise.resolve();
 function clipboardJob(target: string, work: () => Promise<unknown>): void {
@@ -273,8 +294,8 @@ function clipboardJob(target: string, work: () => Promise<unknown>): void {
 
 function copyRow(row: Row, cutting: boolean): void {
   clipboardJob(row.path, async () => {
-    const { clip } = await postHost<{ clip: string }>(clipHost.value, "clipCopy", { host: props.tab.host, path: row.path });
-    cut = cutting ? { tab: props.tab, path: row.path, clip } : null;
+    const { clip } = await postHost<{ clip: string }>(clipHost.value, "clipCopy", { host: treeHost.value, path: row.path });
+    cut = cutting ? { host: treeHost.value, path: row.path, clip } : null;
   });
 }
 
@@ -285,15 +306,15 @@ async function paste(folder: string): Promise<void> {
     const { files } = await postHost<{ files: string[] }>(clipHost.value, "clipFiles", {});
     if (files.length !== 1 || !sameName(files[0]!, item.clip)) item = cut = null;
   }
-  if (item?.tab.host === props.tab.host) {
-    const reply = await post<{ path: string }>(props.tab, "movePath", { path: item.path, folder });
+  if (item?.host === treeHost.value) {
+    const reply = await postHost<{ path: string }>(item.host, "movePath", { path: item.path, folder });
     moved(item.path, reply.path);
     cut = null;
     return selectAndReveal(reply.path);
   }
-  const reply = await postHost<{ path: string }>(clipHost.value, "clipPaste", { host: props.tab.host, folder });
+  const reply = await postHost<{ path: string }>(clipHost.value, "clipPaste", { host: treeHost.value, folder });
   if (item) {
-    await post(item.tab, "deletePath", { path: item.path });
+    await postHost(item.host, "deletePath", { path: item.path });
     cut = null;
   }
   await selectAndReveal(reply.path);
@@ -311,8 +332,9 @@ function remove(): void {
   const doomed = shown.filter((row) => !shown.some((folder) => folder.dir && foldersBetween(folder.path, row.path)));
   const list = doomed.map((row) => (row.dir ? `${below(row.path)}  (folder, and everything in it)` : below(row.path))).join("\n");
   if (!window.confirm(`Permanently delete ${doomed.length === 1 ? "this" : `these ${doomed.length}`}?\n\n${list}\n\nThis cannot be undone.`)) return;
+  const host = treeHost.value;
   void attempt((async () => {
-    for (const row of doomed) await post(props.tab, "deletePath", { path: row.path });
+    for (const row of doomed) await postHost(host, "deletePath", { path: row.path });
   })().finally(() => select()));
 }
 
@@ -349,7 +371,7 @@ async function showInfo(row: Row): Promise<void> {
   infoProblem.value = "";
   infoDialog.value?.showModal();
   try {
-    const reply = await post<Info>(props.tab, "fileInfo", { path: row.path });
+    const reply = await postHost<Info>(treeHost.value, "fileInfo", { path: row.path });
     if (infoRow.value?.path === row.path) info.value = reply;
   } catch (problem) {
     if (infoRow.value?.path === row.path) infoProblem.value = messageOf(problem);
@@ -373,7 +395,7 @@ const infoRows = computed((): [string, string][] => {
   const row = infoRow.value;
   const found = info.value;
   if (!row) return [];
-  const out: [string, string][] = [["Name", row.name], ["Host", props.tab.host], ["Path", row.path]];
+  const out: [string, string][] = [["Name", row.name], ["Host", treeHost.value], ["Path", row.path]];
   if (!found) return infoProblem.value ? out : [...out, ["", "Reading…"]];
   out.push(["Type", found.link ? `${found.kind}, by a symbolic link to ${found.link}` : found.kind]);
   if (found.realPath && found.realPath !== row.path) out.push(["Real path", found.realPath]);
@@ -433,17 +455,17 @@ function keyDown(event: KeyboardEvent): void {
   else if (key === "f2") startRename(row);
   else if (key === "ctrl+c") copyRow(row, false);
   else if (key === "ctrl+x") copyRow(row, true);
-  else if (key === "ctrl+enter" && !row.dir) emit("attach", row.path);
+  else if (key === "ctrl+enter" && !row.dir) emit("attach", row.path, treeHost.value);
   else return;
   event.preventDefault();
 }
 
-async function openRow(path: string, rendered: boolean, line = 0): Promise<void> {
+async function openRow(path: string, rendered: boolean, line = 0, host = treeHost.value): Promise<void> {
   note.value = "";
   try {
-    const reply = await post<{ mtime: number; text: string | null }>(props.tab, "readFile", { path });
+    const reply = await postHost<{ mtime: number; text: string | null }>(host, "readFile", { path });
     if (reply.text === null) return;
-    file.value = { path, text: reply.text, mtime: reply.mtime, rendered, line };
+    file.value = { host, path, text: reply.text, mtime: reply.mtime, rendered, line };
     emit("openFile");
   } catch (problem) {
     note.value = messageOf(problem);
@@ -451,11 +473,11 @@ async function openRow(path: string, rendered: boolean, line = 0): Promise<void>
 }
 
 // A file asked for from outside the pane (a click on a line number in the Git popup's diff), with
-// the tree on show: selected and scrolled to when it is under the root, then in the editor at that
+// the tree on show: selected and scrolled to when it is under the root (on the tab's host, as the repo is), then in the editor at that
 // line. One that can't be opened leaves the tree up, with the reason.
 async function openPath(path: string, line: number): Promise<void> {
-  if (foldersBetween(root.value, path)) await selectAndReveal(path);
-  await openRow(path, false, line);
+  if (treeHost.value === props.tab.host && foldersBetween(root.value, path)) await selectAndReveal(path);
+  await openRow(path, false, line, props.tab.host);
 }
 defineExpose({ openPath });
 
@@ -467,7 +489,7 @@ async function rereadRendered(): Promise<void> {
   rereading = true;
   const shown = file.value!;
   try {
-    const reply = await post<{ mtime: number; text?: string | null }>(props.tab, "readFile", { path: shown.path, known: shown.mtime });
+    const reply = await postHost<{ mtime: number; text?: string | null }>(shown.host, "readFile", { path: shown.path, known: shown.mtime });
     listProblem.value = "";
     if (typeof reply.text === "string" && file.value === shown) file.value = { ...shown, text: reply.text, mtime: reply.mtime };
   } catch (problem) {
@@ -485,7 +507,7 @@ function doubleClickRow(row: Row, event: MouseEvent): void {
   }
   // A new root starts with nothing selected, here or there.
   select();
-  delete selections[row.path];
+  delete selections[onHost(row.path, treeHost.value)];
   void addRoot(row.path);
 }
 
@@ -507,7 +529,7 @@ function finishRename(row: Row, commit: boolean): void {
   if (renaming.value !== row.path) return;
   renaming.value = "";
   const name = newName.value.trim();
-  if (commit && name && name !== row.name) void attempt(post<{ path: string }>(props.tab, "renamePath", { path: row.path, name }).then((reply) => moved(row.path, reply.path)));
+  if (commit && name && name !== row.name) void attempt(postHost<{ path: string }>(treeHost.value, "renamePath", { path: row.path, name }).then((reply) => moved(row.path, reply.path)));
 }
 // The name without its extension is selected, as VS Code does.
 const vFocus = {
@@ -533,8 +555,9 @@ function drop(event: DragEvent): void {
   if (!folder) return;
   const dropped = [...event.dataTransfer!.files];
   working.value = folder;
+  const host = treeHost.value;
   void attempt((async () => {
-    for (const item of dropped) await upload(props.tab, folder, item);
+    for (const item of dropped) await upload(host, folder, item);
   })()).finally(() => (working.value = ""));
 }
 
@@ -559,13 +582,13 @@ onBeforeUnmount(() => window.clearInterval(poller));
 
 <template>
   <div class="files" @wheel="(!fileMode || file?.rendered) && zoom($event)" @dragover.prevent="dragOver" @dragleave="dragLeave" @drop.prevent="drop">
-    <div v-if="fileMode && file?.rendered" class="files-root">{{ tab.host }}: {{ file.path }}</div>
+    <div v-if="fileMode && file?.rendered" class="files-root">{{ file.host }}: {{ file.path }}</div>
     <div v-if="fileMode && file?.rendered && listProblem" class="files-note">{{ listProblem }}</div>
     <!-- Inside a .pane for Pane.vue's global markdown styles. -->
     <div v-if="fileMode && file?.rendered" class="pane files-rendered" @click.capture="copyCodeBlock">
       <div class="response markdown files-rendered-text" v-html="renderMarkdown(file.text)"></div>
     </div>
-    <FileEditor v-else-if="fileMode && file" :tab="tab" :active="active" :file="file" />
+    <FileEditor v-else-if="fileMode && file" :active="active" :file="file" />
     <div v-show="!fileMode" ref="treeArea" class="files-mode" tabindex="-1" @keydown="keyDown">
       <div class="files-bar">
         <button title="Back to the previous root" aria-label="Back" :disabled="rootIdx < 0" @click="stepRoot(-1)">
@@ -578,13 +601,13 @@ onBeforeUnmount(() => window.clearInterval(poller));
           <svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="10" height="10" rx="1" /><path d="M4 9.5h5M4.5 1.5h10v10" /></svg>
         </button>
         <button title="New empty file in the selected folder, beside the selected file, or in the root; Ctrl-click for a new folder" :disabled="many" @click="newFile($event.ctrlKey)">New</button>
-        <button title="New project from the selected folder" :disabled="!selectedRow?.dir" @click="newProjectAt(tab.host, selectedRow!.path)">Prj</button>
-        <button title="Show a folder in the tree" @click="picker?.open(root)">Path</button>
+        <button title="New project from the selected folder" :disabled="!selectedRow?.dir" @click="newProjectAt(treeHost, selectedRow!.path)">Prj</button>
+        <button title="Show a folder in the tree, on any host" @click="showHost(treeHost)">Path</button>
         <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="focusTree()" />
         <label class="files-nm" title="Search inside node_modules too"><input v-model="searchNodeModules" type="checkbox" />NM</label>
       </div>
       <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root" title="Click to type a path" @click="editRoot">
-        {{ tab.host }}:
+        {{ treeHost }}:
         <input v-if="rootText !== null" ref="rootInput" v-model="rootText" class="files-rename" spellcheck="false" aria-label="Folder path" @keydown.enter.prevent="goToTyped" @keydown.esc.prevent="rootText = null; focusTree()" @blur="rootText = null" />
         <template v-else>{{ withSeparator(root) }}<span class="files-relative">{{ selectedBelowRoot }}</span></template>
       </div>
@@ -613,7 +636,9 @@ onBeforeUnmount(() => window.clearInterval(poller));
           <span v-else class="files-name">{{ row.name }}</span>
         </div>
       </div>
-      <FolderPicker ref="picker" :host="tab.host" @pick="goTo" />
+      <FolderPicker ref="picker" :host="treeHost" @pick="goTo($event, pickHost)">
+        <select :value="pickHost" aria-label="Host" title="The host whose folders these are. Ok on another host's folder shows it in the tree" @change="showHost(($event.target as HTMLSelectElement).value as HostName)"><option v-for="(_, name) in HOSTS" :key="name">{{ name }}</option></select>
+      </FolderPicker>
       <dialog ref="infoDialog" class="files-info" @pointerdown="closeOnBackdrop" @wheel.stop @close="treeArea?.focus()">
         <table>
           <tr v-for="[label, value] in infoRows" :key="label"><th>{{ label }}</th><td>{{ value }}</td></tr>

@@ -25,9 +25,9 @@ export async function postHost<T = Record<string, unknown>>(host: HostName, acti
 }
 
 // A file dropped on the Files tree, its bytes streamed as they are.
-export async function upload(tab: Tab, folder: string, file: File): Promise<void> {
+export async function upload(host: HostName, folder: string, file: File): Promise<void> {
   const query = new URLSearchParams({ folder, name: file.name });
-  await answer(tab.host, await fetch(`${HOSTS[tab.host].url}/upload?${query}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: file }));
+  await answer(host, await fetch(`${HOSTS[host].url}/upload?${query}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: file }));
 }
 
 export function post<T = Record<string, unknown>>(tab: Tab, action: string, body: Record<string, unknown>): Promise<T> {

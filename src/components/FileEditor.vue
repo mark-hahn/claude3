@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The Files pane's file mode: one file on the tab's host in a stock Monaco editor, of the prompt
+// The Files pane's file mode: one file on its host (the tree's) in a stock Monaco editor, of the prompt
 // box's and Snips' custom keys only Ctrl-D, coloured by the language its name or #! line implies, wrapped, their line dots in place of line numbers (but numbers, and that line centered, for a file opened at a line from the Git popup's diff), no minimap. Live as Snips are: saved half a second after the
 // typing stops and at once on close, and read again when the file changes on disk. A save is
 // refused if the file changed since it was read, and then nothing more is saved until Reload.
@@ -7,11 +7,11 @@
 // changes arrive as they happen and the view stays at the bottom.
 // ponytail: out of tail mode asks every 2s, not a file watch; change it if that lag ever matters.
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
-import type { Tab } from "../../shared/config.ts";
-import { post } from "../api.ts";
+import type { HostName } from "../../shared/config.ts";
+import { postHost } from "../api.ts";
 import { addLineDots, addWheelZoom, monaco } from "../monaco.ts";
 
-const props = defineProps<{ tab: Tab; active: boolean; file: { path: string; text: string; mtime: number; line?: number } }>();
+const props = defineProps<{ active: boolean; file: { host: HostName; path: string; text: string; mtime: number; line?: number } }>();
 
 const note = ref("");
 const refused = ref(false);
@@ -38,7 +38,7 @@ async function saveNow(text: string): Promise<void> {
   dirty = false;
   saving = true;
   try {
-    const reply = await post<{ mtime?: number; conflict?: boolean }>(props.tab, "saveFile", { path: props.file.path, text, mtime });
+    const reply = await postHost<{ mtime?: number; conflict?: boolean }>(props.file.host, "saveFile", { path: props.file.path, text, mtime });
     if (reply.conflict) {
       dirty = true;
       refused.value = true;
@@ -91,7 +91,7 @@ async function poll(action = "readFile"): Promise<boolean> {
   }
   const asked = edits;
   try {
-    const reply = await post<{ mtime: number; text?: string | null }>(props.tab, action, { path: props.file.path, known: mtime });
+    const reply = await postHost<{ mtime: number; text?: string | null }>(props.file.host, action, { path: props.file.path, known: mtime });
     if (asked === edits && !saving && !refused.value) {
       note.value = "";
       show(reply);
@@ -117,7 +117,7 @@ const atBottom =(): boolean => editor!.getScrollTop() + editor!.getLayoutInfo().
 
 async function reload(): Promise<void> {
   try {
-    const reply = await post<{ mtime: number; text?: string | null }>(props.tab, "readFile", { path: props.file.path });
+    const reply = await postHost<{ mtime: number; text?: string | null }>(props.file.host, "readFile", { path: props.file.path });
     refused.value = false;
     dirty = false;
     note.value = "";
@@ -168,7 +168,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="file-path" :class="{ tail }">{{ tab.host }}: {{ file.path }}</div>
+  <div class="file-path" :class="{ tail }">{{ file.host }}: {{ file.path }}</div>
   <div v-if="note" class="file-note">{{ note }} <button v-if="refused" @click="reload">Reload</button></div>
   <div class="file-text"><div ref="host"></div></div>
 </template>

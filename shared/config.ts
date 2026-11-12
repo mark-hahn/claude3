@@ -15,7 +15,8 @@ export interface Tab {
   path: string;
   // A closed project keeps its state and its running sessions; only its tab and UI are hidden.
   open: boolean;
-  // The Files tree's list of roots above the project folder; Back and Fwd move rootIdx along it.
+  // The Files tree's list of roots above the project folder; Back and Fwd move rootIdx along it. A root on
+  // another host than the tab's is "<host>:<path>" (Files.vue).
   roots?: string[];
   // The root on show: -1 is the project folder, absent is the last in the list.
   rootIdx?: number;
