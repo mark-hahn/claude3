@@ -5,7 +5,7 @@
 //        folders { path, files? } -> { path, file?, entries: [{ name, path, file? }] } (the folders in a folder, and with files its files; path is "" when it isn't one, or with files the file's own path)
 //        attachFile { path } -> { name, path, size, mtime, kind, dataUri } (a file for a prompt: "image", "pdf" or "text"; anything else is refused)
 //        listFiles { paths } -> { listings: { [folder]: entries | null } } | findFile { root, text, after, backward, nodeModules } -> { path } | readFile { path, known? } -> { mtime, text? }
-//        saveFile { path, text, mtime } -> { mtime } | { conflict } | newFile { folder } | renamePath { path, name } -> { path } | deletePath { path }
+//        saveFile { path, text, mtime } -> { mtime } | { conflict } | newFile { folder, dir? } | renamePath { path, name } -> { path } | deletePath { path }
 //        freePath { folder, name } -> { path } | clipCopy { host, path } | clipPaste { host, folder } | fileInfo { path } -> { kind, size, times, ... } (the Files pane, server/files.ts)
 //        setRoots { roots, rootIdx } -> {} (the Files tree's list of roots and the one on show)
 //        createProject { label, path } -> {} | renameProject { label } -> {} | openProject { open } -> {}

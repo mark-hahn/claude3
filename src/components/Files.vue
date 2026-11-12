@@ -194,7 +194,8 @@ function collapse(): void {
   }
 }
 
-const newFile = (): Promise<void> => attempt(post<{ path: string }>(props.tab, "newFile", { folder: landing.value }).then((reply) => selectAndReveal(reply.path)));
+// Ctrl-click makes a folder instead.
+const newFile = (dir: boolean): Promise<void> => attempt(post<{ path: string }>(props.tab, "newFile", { folder: landing.value, dir }).then((reply) => selectAndReveal(reply.path)));
 
 // A picked folder under the root is opened down to and shown; any other becomes a new root.
 async function goTo(folder: string): Promise<void> {
@@ -550,7 +551,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
         <button title="Close all folders but the way to the selection; pressed again, close those too and drop the selection" aria-label="Collapse" @click="collapse">
           <svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="10" height="10" rx="1" /><path d="M4 9.5h5M4.5 1.5h10v10" /></svg>
         </button>
-        <button title="New empty file in the selected folder, beside the selected file, or in the root" :disabled="many" @click="newFile">New</button>
+        <button title="New empty file in the selected folder, beside the selected file, or in the root; Ctrl-click for a new folder" :disabled="many" @click="newFile($event.ctrlKey)">New</button>
         <button title="New project from the selected folder" :disabled="!selectedRow?.dir" @click="newProjectAt(tab.host, selectedRow!.path)">Prj</button>
         <button title="Show a folder in the tree" @click="picker?.open(root)">Path</button>
         <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="focusTree()" />

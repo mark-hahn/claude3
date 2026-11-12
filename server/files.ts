@@ -377,8 +377,8 @@ export const fileActions: Record<string, (body: Record<string, unknown>) => Prom
   waitFile: (body) => waitForChange(absolute(body.path), Number(body.known)),
   saveFile: (body) => saveText(absolute(body.path), String(body.text ?? ""), Number(body.mtime)),
   newFile: async (body) => {
-    const target = await freePath(absolute(body.folder), "new-file");
-    await fs.promises.writeFile(target, "", { flag: "wx" });
+    const target = await freePath(absolute(body.folder), body.dir ? "new-dir" : "new-file");
+    await (body.dir ? fs.promises.mkdir(target) : fs.promises.writeFile(target, "", { flag: "wx" }));
     return { path: target };
   },
   renamePath: (body) => rename(absolute(body.path), plainName(body.name)),
