@@ -5,6 +5,8 @@ import { computed, provide, reactive, ref, watch, watchEffect } from "vue";
 import { FIRST_TABS, type HostName, type Tab } from "../shared/config.ts";
 import { connect, post } from "./api.ts";
 import Project from "./components/Project.vue";
+import Settings from "./components/Settings.vue";
+import Snips from "./components/Snips.vue";
 import Tabs from "./components/Tabs.vue";
 import { byName, nextTab } from "./tabList.ts";
 
@@ -63,6 +65,9 @@ const sessionNames = reactive<Record<string, string>>({});
 const sides = reactive<Record<string, string>>({});
 const side = computed(() => sides[current.value] ?? "");
 const toggle = (name: string): void => void (sides[current.value] = side.value === name ? "" : name);
+// With no project open, the Snips and Settings have the page to themselves. Both are the host's
+// actions, not a project's, so this stand-in only names the WSL backend to ask.
+const NO_TAB: Tab = { id: "", label: "", host: "wsl", path: "", open: false };
 // The sidebar width every tab shares; Project's divider drag sets it.
 document.documentElement.style.setProperty("--sidebar-width", `${Number(localStorage.getItem("claude3.sidebarWidth")) || 300}px`);
 // The right column's share of what the sidebar leaves; Project's side divider drag sets it.
@@ -109,10 +114,12 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
       <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" title="Open or close the Files: a tree of the project's folder, and an editor" @click="toggle('files')">Files</button>
       <button class="tab git-toggle" :class="{ active: side === 'git' }" :aria-pressed="side === 'git'" :disabled="!currentTab || noRepo[current]" title="Open or close the Log pane: a graph of the project's commits" @click="toggle('git')">Log</button>
       <button class="tab term-toggle" :class="{ active: side === 'term' }" :aria-pressed="side === 'term'" :disabled="!currentTab" title="Open or close the Term pane: a shell in the project's folder (bash, PowerShell on win)" @click="toggle('term')">Term</button>
-      <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" :disabled="!currentTab" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
-      <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" :disabled="!currentTab" title="Open or close the Settings: quotas" aria-label="Settings" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
+      <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" @click="toggle('snips')">Snips</button>
+      <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" title="Open or close the Settings: quotas" aria-label="Settings" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
     <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" @no-repo="(none) => (noRepo[tab.id] = none)" @session-name="(name) => (sessionNames[tab.id] = name)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" :sidebar-asked="sidebarAsked" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" @show-files="sides[tab.id] = 'files'" />
+    <Snips v-if="!currentTab && side === 'snips'" class="alone" :tab="NO_TAB" shown :add-to-prompt="() => false" @close="sides[current] = ''" />
+    <Settings v-if="!currentTab && side === 'settings'" class="alone" :tab="NO_TAB" active @close="sides[current] = ''" />
   </div>
 </template>
 
@@ -122,6 +129,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
    lose their scroll positions and have their layout code measure 0x0. */
 .app > .project { grid-area: 2 / 1; }
 .app > .project.offstage { visibility: hidden; }
+.app > .alone { grid-area: 2 / 1; }
 .tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border); }
 .tabs .tab { min-height: 0; padding: 3px 12px; }
 .tabs .tab.selected { background: #fbf3c4; border-color: #ddd08a; }

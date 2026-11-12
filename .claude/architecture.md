@@ -30,7 +30,7 @@ on the laptop, and talks to each backend directly.
   (`src/tabList.ts`, checked by `npm test`), ctrl-click on one closes its project (`openProject`), and every project's `Project` stays mounted and laid out,
   closed ones too: all in one grid cell, those not on show `visibility:hidden` (`.offstage`), never `display:none` (see Gotchas). The Files, Log, Term, Snips and
   gear (Settings) toggles are here, at the row's right end, acting on the tab on show; they share one
-  column, each tab with its own state (`sides[id]`: "", "files", "file", "git", "term", "snips" or "settings"), so it is as it was left when the tab comes back.
+  column, each tab with its own state (`sides[id]`: "", "files", "file", "git", "term", "snips" or "settings"), so it is as it was left when the tab comes back. With no project open only Snips and the gear work: App shows them itself, filling the page under the strip, with a stand-in tab (`NO_TAB`) naming the WSL backend, since both are host actions.
   Each tab's label has a dot: green with a session active, else light red when its Git or Run button
   is highlighted (`dirty` and `deployDue` come up through Project's `highlighted`), else none. Those
   two are re-read for every project, on show or not, closed ones too (their git status every 30s, not 2s), for the Tabs button: light red, with the same dot on each flagged name in its dialog, while any project is highlighted; light green instead (and a green dot) while any project has a session running (`busy`). Centered between the last tab and Files is the name of the selected session of the tab on show (`sessionName` up through Project).
