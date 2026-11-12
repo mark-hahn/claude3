@@ -87,8 +87,8 @@ const visible = computed(() => {
   void version.value;
   // A search takes in both lists. A running card is in every list (see running).
   const listed = (session: ClaudeSession): boolean => !!busy(session) || (searchText.value ? matches(session) : session.trashed === showTrash.value);
-  // Newest first by the time each card shows.
-  return sessions.filter(listed).sort((a, b) => b.updatedAt - a.updatedAt);
+  // Newest first by the time each card shows; in a search the trashed ones after the rest (at the user's asking).
+  return sessions.filter(listed).sort((a, b) => (searchText.value ? Number(a.trashed) - Number(b.trashed) : 0) || b.updatedAt - a.updatedAt);
 });
 const counts = computed(() => {
   void version.value;
@@ -503,7 +503,7 @@ onBeforeUnmount(() => {
           v-for="session in visible"
           :key="session.id"
           class="card"
-          :class="{ selected: showTrash ? picked.has(session.id) : session.id === selectedId, trashed: session.trashed }"
+          :class="{ selected: showTrash ? picked.has(session.id) : session.id === selectedId, trashed: session.trashed, 'trash-hit': searchText && session.trashed }"
           :title="firstPrompt(session)"
           role="button"
           tabindex="0"
@@ -587,6 +587,8 @@ onBeforeUnmount(() => {
 .sidebar .card:hover { background: linear-gradient(var(--wash), var(--wash)), var(--surface); }
 .sidebar .card.selected { background: #fbf3c4; border-color: #ddd08a; }
 .sidebar .card.trashed.selected { background: #fce4ec; border-color: #eab3c6; }
+/* A trashed card in a search's results; padding gives back the extra border pixel so the card doesn't grow. */
+.sidebar .card.trashed.trash-hit { border: 2px solid #d11a1a; padding: 7px 9px; }
 .sidebar .card-actions { position: absolute; right: 6px; bottom: 6px; display: flex; align-items: center; gap: 6px; }
 .sidebar .card-trash, .sidebar .card-restore { display: none; border: none; background: transparent; min-height: 0; padding: 2px 4px; font-size: 14px; line-height: 1; border-radius: 6px; }
 .sidebar .card:hover .card-trash, .sidebar .card:hover .card-restore { display: block; }
