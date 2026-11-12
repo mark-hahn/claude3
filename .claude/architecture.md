@@ -230,6 +230,13 @@ on the laptop, and talks to each backend directly.
   the tab's backend copies each to `~/.claude3/files/<session id>/<uuid>/<name>`, appends a `fileNote`
   (stripped by `typedPrompt`) and records them in `turn.files`, so a bar draws the same marks. Kept,
   forked, returned on an expired login and deleted for good as pictures are.
+- **Paste and drop.** Ctrl-V in the prompt box with files on the clipboard (a copied picture, or
+  files copied in Explorer), or files dragged from Explorer onto anywhere in the pane, are added as
+  File adds them (`addFiles`; `pasteFiles` and `dragFiles`, capture phase ahead of Monaco, which
+  never sees a file drag): pictures through `addPictures`, PDFs and UTF-8 text as `<file>` marks,
+  tested in the page by `pastedFile` with attachFile's rules. A page gets no path, so the name
+  stands for it, host win. A clipboard that also has text pastes the text instead (Excel's cells
+  carry a picture of them).
 - **Re-Auth.** A turn whose error matches `AUTH_FAILED` sets its host's flag (`~/.claude3/auth-needed`,
   sent as an `auth` stream event, held in `authNeeded` in `src/api.ts`). If the API never started
   answering, the turn is dropped and its prompt and pictures go back to the page (`returned`,
@@ -404,7 +411,7 @@ on the laptop, and talks to each backend directly.
 - Errors nothing caught (Vue's `app.config.errorHandler`, window `error` and `unhandledrejection`)
   get a `window.alert` from `src/main.ts`, each message once per page load (a broken render repeats
   on every update). Window errors without an error object, like ResizeObserver's loop notice, are skipped.
-- Not ported yet from claude2: pasted images, export, presets (M),
+- Not ported yet from claude2: export, presets (M),
   Stats/Models/Instructions/Settings tabs, the git changes check, prompt
   suggestions, arrow-key navigation.
 - claude2's per-host auth flag (`authNeeded.<remote>` in VS Code's globalState) can't be shared: it

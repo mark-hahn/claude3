@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The conversation pane, ported from claude2's conversationHtml. The history (bars and boxes) is
 // built imperatively, as claude2 builds it, so streaming refills one box rather than re-rendering
-// the pane; the dock is an ordinary template. Left out for now: search, pasted images,
+// the pane; the dock is an ordinary template. Left out for now: search,
 // export, presets (M), arrow-key navigation and the frozen pane.
 // The prompt box is a Monaco editor with claude2's editing (src/monaco.ts), and has claude2's big
 // prompt editor.
@@ -1102,13 +1102,8 @@ async function attach(file: string, host: HostName = fileHost): Promise<void> {
   const key = sessionKey();
   try {
     const { kind, dataUri, ...details } = await postHost<{ name: string; path: string; size: number; mtime: number; kind: AttachedFile["kind"] | "image"; dataUri: string }>(host, "attachFile", { path: file });
-    if (kind === "image") {
-      (waiting[key] ??= []).push([await asPng(dataUri)]);
-      storeImages();
-      await nextTick();
-      focusPrompt();
-      if (key === sessionKey()) showWaitingImage(images().length - 1);
-    } else {
+    if (kind === "image") await addPictures(key, [dataUri]);
+    else {
       (waitingFiles[key] ??= []).push({ ...details, kind, host, dataUri });
       storeFiles();
       focusPrompt();
@@ -1116,6 +1111,84 @@ async function attach(file: string, host: HostName = fileHost): Promise<void> {
   } catch (error) {
     report(new Error(`File not added: ${error instanceof Error ? error.message : String(error)}`));
   }
+}
+// Pictures join the session's prompt as PNGs, the last shown for cropping, with the focus put back
+// in the prompt box first, since the dialog hands it back to whatever had it.
+async function addPictures(key: string, dataUris: string[]): Promise<void> {
+  for (const dataUri of dataUris) (waiting[key] ??= []).push([await asPng(dataUri)]);
+  storeImages();
+  await nextTick();
+  focusPrompt();
+  if (key === sessionKey()) showWaitingImage(images().length - 1);
+}
+// Files pasted in the prompt box or dropped on the pane (from Explorer) are added as File adds
+// them: pictures for cropping, PDFs and UTF-8 text as <file> marks (no path is given a page, so
+// the name stands for it, on win, where the clipboard and Explorer are), anything else (a folder
+// too) refused in a dialog.
+async function addFiles(files: File[]): Promise<void> {
+  const key = sessionKey();
+  const pictures: string[] = [];
+  const refused: string[] = [];
+  for (const file of files) {
+    try {
+      const { kind, dataUri } = await pastedFile(file);
+      if (kind === "image") pictures.push(dataUri);
+      else (waitingFiles[key] ??= []).push({ name: file.name, path: file.name, host: "win", size: file.size, mtime: file.lastModified, kind, dataUri });
+    } catch (error) {
+      refused.push(`${file.name}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  storeFiles();
+  try {
+    if (pictures.length) await addPictures(key, pictures);
+    else focusPrompt();
+  } catch (error) {
+    refused.push(`A picture: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (refused.length) report(new Error(`Not added:\n${refused.join("\n")}`));
+}
+// Ctrl-V with files on the clipboard (a copied picture, or files copied in Explorer). A clipboard
+// with text pastes the text as before: Excel's cells come with a picture of them. Capture phase,
+// ahead of Monaco and its untab paste.
+function pasteFiles(event: ClipboardEvent): void {
+  const files = [...(event.clipboardData?.files ?? [])];
+  if (!files.length || event.clipboardData!.getData("text/plain") || props.session?.trashed) return;
+  event.preventDefault();
+  event.stopPropagation();
+  void addFiles(files);
+}
+// Files dragged anywhere over the pane are taken, so the browser never opens one in place of the
+// page, and Monaco never sees the drag, which would insert their names. Capture phase. Dropped
+// on a trashed session they are ignored.
+function dragFiles(event: DragEvent): void {
+  if (!event.dataTransfer?.types.includes("Files")) return;
+  event.preventDefault();
+  event.stopPropagation();
+  event.dataTransfer.dropEffect = props.session?.trashed ? "none" : "copy";
+  if (event.type === "drop" && !props.session?.trashed) void addFiles([...event.dataTransfer.files]);
+}
+// attachFile's test, for a pasted or dropped file: 20MB at most, and a picture, a PDF or UTF-8 text.
+async function pastedFile(file: File): Promise<{ kind: AttachedFile["kind"] | "image"; dataUri: string }> {
+  if (file.size > 20_000_000) throw new Error(`${file.size.toLocaleString()} bytes, over the 20,000,000 a prompt can take.`);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const isText = (): boolean => {
+    try {
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      return !bytes.includes(0);
+    } catch {
+      return false;
+    }
+  };
+  const kind = file.type.startsWith("image/") ? "image" : new TextDecoder().decode(bytes.subarray(0, 5)) === "%PDF-" ? "pdf" : isText() ? "text" : "";
+  if (!kind) throw new Error("only text, PDF and picture files can be added to a prompt.");
+  const type = kind === "image" ? file.type : kind === "pdf" ? "application/pdf" : "text/plain";
+  const dataUri = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(new Blob([file], { type }));
+  });
+  return { kind, dataUri };
 }
 // Every picture goes to the CLI as a PNG.
 async function asPng(dataUri: string): Promise<string> {
@@ -1418,7 +1491,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="pane" :class="{ 'big-prompt-editor': bigPrompt }" @click.capture="copyCodeBlock">
+  <div class="pane" :class="{ 'big-prompt-editor': bigPrompt }" @click.capture="copyCodeBlock" @dragenter.capture="dragFiles" @dragover.capture="dragFiles" @drop.capture="dragFiles">
     <div ref="historyEl" class="history" tabindex="-1" @wheel="zoom"></div>
     <dialog ref="runPopEl" class="run-pop" @close="runClosed">
       <pre>{{ runText }}</pre>
@@ -1457,7 +1530,7 @@ onBeforeUnmount(() => {
       </div>
     </dialog>
     <div class="dock">
-      <div ref="promptHostEl" class="prompt" @pointerdown.capture="onPromptPointer" @mousedown.capture="onPromptMouse">
+      <div ref="promptHostEl" class="prompt" @pointerdown.capture="onPromptPointer" @mousedown.capture="onPromptMouse" @paste.capture="pasteFiles">
         <div v-show="!promptMarkdown"></div>
         <div v-show="promptMarkdown" ref="promptMdEl" class="prompt-md response markdown" tabindex="-1" @keydown="onMdKey" v-html="promptHtml"></div>
       </div>
