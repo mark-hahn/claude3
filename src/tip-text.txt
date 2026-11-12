@@ -318,6 +318,9 @@ Ctrl-V: paste. Ctrl-R: reload the page.
 Ctrl-B, Ctrl-S, Ctrl-G and Ctrl-Alt keys are the page's, not the shell's.
 Ctrl-wheel: text size.
 
+@Files Up button
+Click: make the root's parent folder the root (Back returns). Disabled at / or a drive's C:\.
+
 @Files Back button
 Click: back to the previous root. Backspace in the tree does the same.
 

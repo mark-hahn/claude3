@@ -21,7 +21,7 @@ import { post, postHost, upload } from "../api.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
 import { pick } from "../pick.ts";
 import { renderMarkdown } from "../render.ts";
-import { foldersBetween, sameName, withSeparator } from "../tabList.ts";
+import { foldersBetween, parentFolder, sameName, withSeparator } from "../tabList.ts";
 import { wheelZoom } from "../wheelZoom.ts";
 import FileEditor from "./FileEditor.vue";
 import FolderPicker from "./FolderPicker.vue";
@@ -161,6 +161,13 @@ function stepRoot(by: number): void {
   const idx = rootIdx.value + by;
   if (idx >= -1 && idx < roots.value.length) void setRoots(roots.value, idx);
   // The button may have just been disabled, with the focus on it.
+  treeArea.value?.focus();
+}
+
+// Up makes the root's parent a new root, so Back returns; "" above / or a drive's C:\.
+const upFolder = computed(() => parentFolder(root.value));
+function goUp(): void {
+  if (upFolder.value) void addRoot(upFolder.value);
   treeArea.value?.focus();
 }
 
@@ -591,6 +598,19 @@ onBeforeUnmount(() => window.clearInterval(poller));
     <FileEditor v-else-if="fileMode && file" :active="active" :file="file" />
     <div v-show="!fileMode" ref="treeArea" class="files-mode" tabindex="-1" data-mode="Files tree" @keydown="keyDown">
       <div class="files-bar">
+        <button title="New empty file in the selected folder, beside the selected file, or in the root" data-help="Files New button" :disabled="many" @click="newFile($event.ctrlKey)">New</button>
+        <button title="New project from the selected folder" data-help="Files Prj button" :disabled="!selectedRow?.dir" @click="newProjectAt(treeHost, selectedRow!.path)">Prj</button>
+        <button title="Show a folder in the tree, on any host" data-help="Files Path button" @click="showHost(treeHost)">Path</button>
+        <!-- One piece, so the search box and NM wrap to the next line together. -->
+        <span class="files-find">
+          <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" data-help="Files search box" data-mode="Files search box" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="focusTree()" />
+          <label class="files-nm" title="Search inside node_modules too" data-help="Files NM box"><input v-model="searchNodeModules" type="checkbox" />NM</label>
+        </span>
+      </div>
+      <div class="files-bar">
+        <button title="Up to the root's parent folder" aria-label="Up" data-help="Files Up button" :disabled="!upFolder" @click="goUp">
+          <svg viewBox="0 0 20 16"><path d="M10 15.5V1.5M5.5 6 10 1.5 14.5 6" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" /></svg>
+        </button>
         <button title="Back to the previous root" aria-label="Back" data-help="Files Back button" :disabled="rootIdx < 0" @click="stepRoot(-1)">
           <svg viewBox="0 0 20 16"><path d="M1.5 5.5H14a4.5 4.5 0 0 1 0 9M6 10 1.5 5.5 6 1" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" /></svg>
         </button>
@@ -600,11 +620,6 @@ onBeforeUnmount(() => window.clearInterval(poller));
         <button title="Close all folders but the way to the selection; pressed again, close those too and drop the selection" aria-label="Collapse" data-help="Files Collapse button" @click="collapse">
           <svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="10" height="10" rx="1" /><path d="M4 9.5h5M4.5 1.5h10v10" /></svg>
         </button>
-        <button title="New empty file in the selected folder, beside the selected file, or in the root" data-help="Files New button" :disabled="many" @click="newFile($event.ctrlKey)">New</button>
-        <button title="New project from the selected folder" data-help="Files Prj button" :disabled="!selectedRow?.dir" @click="newProjectAt(treeHost, selectedRow!.path)">Prj</button>
-        <button title="Show a folder in the tree, on any host" data-help="Files Path button" @click="showHost(treeHost)">Path</button>
-        <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" data-help="Files search box" data-mode="Files search box" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="focusTree()" />
-        <label class="files-nm" title="Search inside node_modules too" data-help="Files NM box"><input v-model="searchNodeModules" type="checkbox" />NM</label>
       </div>
       <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root" data-help="Files root path" @click="editRoot">
         {{ treeHost }}:
@@ -658,7 +673,11 @@ onBeforeUnmount(() => window.clearInterval(poller));
 /* Pane.vue fixes its markdown at 14px; here the ctrl-wheel sizes it. */
 .files .pane .files-rendered-text, .files .pane .files-rendered-text :deep(:is(h1, h2, h3, h4, h5, h6, code, table)) { font-size: var(--files-font-size, 14px); }
 .files-mode { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; outline: none; }
-.files-bar { flex: none; display: flex; align-items: center; gap: 6px; }
+.files-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* Basis 0, so it wraps only when NM and a 5em box no longer fit (its min-content); otherwise the
+   input's ~20-character default width would decide. */
+.files-find { flex: 1 1 0; display: flex; align-items: center; gap: 6px; }
+.files-find .tabs-input { min-width: 5em; }
 .files-bar button { min-height: 0; padding: 3px 10px; }
 .files-bar svg { display: block; width: 20px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .files-bar .files-flip { transform: scaleX(-1); }

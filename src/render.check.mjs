@@ -9,7 +9,7 @@ import { keepOpen } from "./keepOpen.ts";
 import { MessageHistory } from "./messageHistory.ts";
 import { pick } from "./pick.ts";
 import { answerText, matchCount, occurrences, renderMarkdown } from "./render.ts";
-import { byName, folderName, foldersBetween, nextTab, sameName } from "./tabList.ts";
+import { byName, folderName, foldersBetween, nextTab, parentFolder, sameName } from "./tabList.ts";
 import { findBack, STAMP } from "./termFind.ts";
 import { wheelZoom } from "./wheelZoom.ts";
 import { fileActions, numberedName } from "../server/files.ts";
@@ -70,6 +70,7 @@ assert.deepEqual(foldersBetween("/", "/a"), ["/a"]);
 assert.deepEqual(foldersBetween("C:\\x", "C:\\x\\y"), ["C:\\x\\y"]);
 assert.equal(foldersBetween("/a/b", "/a/bc"), null, "a sibling with the root's name in it");
 assert.equal(foldersBetween("/a/b", "/a/b"), null);
+for (const [from, to] of [["/a/b", "/a"], ["/a/b/", "/a"], ["/a", "/"], ["/", ""], ["C:\\Users\\mark", "C:\\Users"], ["C:\\Users", "C:\\"], ["c:\\", ""], ["C:", ""]]) assert.equal(parentFolder(from), to, from);
 
 // On disk: nothing is overwritten, folders sort first, and a stale save is refused.
 const folder = fs.mkdtempSync(path.join(os.tmpdir(), "claude3-files-"));

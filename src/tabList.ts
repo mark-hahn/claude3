@@ -14,6 +14,16 @@ export function withSeparator(folder: string): string {
   return folder.endsWith(separator) ? folder : folder + separator;
 }
 
+// The folder above this one, on either OS's paths, or "" at the top (/ or a drive's C:\).
+export function parentFolder(folder: string): string {
+  const separator = folder.includes("\\") ? "\\" : "/";
+  const trimmed = folder.replace(/[\\/]+$/, "");
+  const cut = trimmed.lastIndexOf(separator);
+  if (cut < 0) return "";
+  const up = trimmed.slice(0, cut);
+  return !up || /^[a-z]:$/i.test(up) ? up + separator : up;
+}
+
 // The folders from just under root down to folder, on either OS's paths, or null when folder isn't
 // under root.
 export function foldersBetween(root: string, folder: string): string[] | null {
