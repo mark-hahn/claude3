@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The VS Code-style folder picker on any host, a modal dialog fed by the backend's `folders`. Shared
-// by the Tabs dialog and the Files pane; its styles are Tabs.vue's. With `files` it picks a file
-// instead (the footer's File): files are listed after the folders, in plain type, and a click picks one.
+// by the Tabs dialog and the Files pane; its styles are Tabs.vue's. Files are listed after the folders
+// (folders bold); they can't be clicked unless `files`, when it picks a file instead (the footer's File).
 // The slot is left of the box: the Term pane's host selector, which calls open again for another host.
 import { computed, ref } from "vue";
 import type { HostName } from "../../shared/config.ts";
@@ -67,7 +67,7 @@ defineExpose({ open });
     </div>
     <div v-if="error" class="tabs-error">{{ error }}</div>
     <div class="tabs-folders">
-      <button v-for="entry in found.entries" :key="entry.path" class="tabs-folder" :class="{ 'tabs-dir': files && !entry.file }" @click="list(entry.path).then(() => entry.file && pick())">{{ entry.name }}</button>
+      <button v-for="entry in found.entries" :key="entry.path" class="tabs-folder" :class="{ 'tabs-dir': !entry.file }" :disabled="entry.file && !files" @click="list(entry.path).then(() => entry.file && pick())">{{ entry.name }}</button>
     </div>
   </dialog>
 </template>

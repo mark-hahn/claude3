@@ -159,7 +159,7 @@ async function folders(wanted: string, files: boolean): Promise<{ path: string; 
   const listed = await Promise.all(found.map(async (entry) => {
     const full = path.join(real, entry.name);
     const target = entry.isSymbolicLink() ? await fs.promises.stat(full).catch(() => null) : entry;
-    return target?.isDirectory() ? { name: entry.name, path: full } : files && target?.isFile() ? { name: entry.name, path: full, file: true } : null;
+    return target?.isDirectory() ? { name: entry.name, path: full } : target?.isFile() ? { name: entry.name, path: full, file: true } : null;
   }));
   const entries = listed.filter((entry) => entry !== null).sort((a, b) => Number(!!a.file) - Number(!!b.file) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
   const parent = path.dirname(real);
