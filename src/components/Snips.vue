@@ -138,7 +138,7 @@ onBeforeUnmount(() => {
 <template>
   <div v-show="shown" class="snips">
     <div v-if="note" class="snips-note">{{ note }}</div>
-    <div class="snips-text"><div ref="host"></div></div>
+    <div class="snips-text" data-help="Snips" data-mode="Snips"><div ref="host"></div></div>
   </div>
 </template>
 

@@ -155,6 +155,7 @@ function render(): void {
     const ranAs = [turn.model, turn.effort, turn.advisor && `advisor ${turn.advisor}`, turn.modelId].filter(Boolean).join(" / ");
     const sent = new Date(turn.createdAt).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
     bar.title = `${ranAs}   ${sent}\n${typed}`;
+    bar.dataset.help = "bar";
     const boxShown = index === anchorIndex && boxOpen;
     // A running turn whose box is closed says so with a blinking arrow; the delay is set from the
     // clock so the rebuild on every streamed chunk doesn't restart the blink.
@@ -168,6 +169,7 @@ function render(): void {
     // claude2's fork mark leads every bar. A span, since a bar is a button and can't hold buttons.
     const forkIcon = document.createElement("span");
     forkIcon.className = "bar-icon";
+    forkIcon.dataset.help = "fork mark";
     forkIcon.title = "Fork here: copy the session, then drop every block below this one";
     forkIcon.innerHTML = '<svg viewBox="0 0 16 16"><path d="M8 1v5l-4 4v5M8 6l4 4v5M2 12.5 4 15l2-2.5M10 12.5 12 15l2-2.5"/></svg>';
     bar.appendChild(forkIcon);
@@ -175,6 +177,7 @@ function render(): void {
     (turn.images ?? []).forEach((_, at) => {
       const icon = document.createElement("span");
       icon.className = "img-char";
+      icon.dataset.help = "bar picture";
       icon.dataset.image = String(at);
       icon.textContent = IMG;
       bar.appendChild(icon);
@@ -183,6 +186,7 @@ function render(): void {
     (turn.files ?? []).forEach((_, at) => {
       const mark = document.createElement("span");
       mark.className = "file-char";
+      mark.dataset.help = "bar file mark";
       mark.dataset.file = String(at);
       mark.textContent = FILE;
       bar.appendChild(mark);
@@ -219,6 +223,7 @@ function render(): void {
       const tools = locked || toolsBox;
       const response = document.createElement("div");
       response.className = "response markdown" + (turn.error ? " error" : "");
+      response.dataset.help = "box";
       fillResponse(response, turn, tools);
       // The tool line a press landed on. The streaming box is rebuilt as text arrives, so by the
       // click that line can have been swapped for a fresh copy.
@@ -1500,61 +1505,61 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="pane" :class="{ 'big-prompt-editor': bigPrompt }" @click.capture="copyCodeBlock" @dragenter.capture="dragFiles" @dragover.capture="dragFiles" @drop.capture="dragFiles">
-    <div ref="historyEl" class="history" tabindex="-1" @wheel="zoom"></div>
+    <div ref="historyEl" class="history" tabindex="-1" data-help="history" data-mode="history" @wheel="zoom"></div>
     <dialog ref="runPopEl" closedby="any" class="run-pop" @close="runClosed">
       <pre>{{ runText }}</pre>
-      <form method="dialog"><button autofocus>OK</button></form>
+      <form method="dialog" data-help="run output"><button autofocus>OK</button></form>
     </dialog>
     <dialog ref="runErrorEl" closedby="any" class="run-pop run-error" @close="runErrorClosed">
       <pre>{{ runErrorText }}</pre>
-      <form method="dialog"><button autofocus>OK</button></form>
+      <form method="dialog" data-help="run error"><button autofocus>OK</button></form>
     </dialog>
     <dialog ref="deployPopEl" closedby="any" class="run-pop">
       <pre>{{ deployText }}</pre>
-      <form method="dialog"><button value="deploy">Deploy</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
+      <form method="dialog" data-help="deploy warning"><button value="deploy">Deploy</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
     </dialog>
     <dialog ref="setupPopEl" closedby="any" class="run-pop">
       <pre>{{ setupText }}</pre>
-      <form method="dialog"><button value="setup">{{ setupStarted ? "Set up again" : "Set up" }}</button> <button value="check" :autofocus="setupStarted">Check</button> <button value="none">Not needed</button> <button value="continue">Continue</button> <button value="" :autofocus="!setupStarted">Cancel</button></form>
+      <form method="dialog" data-help="deploy setup"><button value="setup">{{ setupStarted ? "Set up again" : "Set up" }}</button> <button value="check" :autofocus="setupStarted">Check</button> <button value="none">Not needed</button> <button value="continue">Continue</button> <button value="" :autofocus="!setupStarted">Cancel</button></form>
     </dialog>
     <dialog ref="commitPopEl" closedby="any" class="run-pop">
       <pre>{{ commitText }}</pre>
-      <form method="dialog"><button value="new">New session</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
+      <form method="dialog" data-help="commit warning"><button value="new">New session</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
     </dialog>
     <dialog ref="filePopEl" closedby="any" class="run-pop">
       <pre>{{ fileText }}</pre>
-      <form method="dialog"><button autofocus>OK</button></form>
+      <form method="dialog" data-help="file details"><button autofocus>OK</button></form>
     </dialog>
     <FolderPicker ref="filePicker" :host="tab.host" files @pick="attach" />
     <dialog ref="imagePopEl" closedby="any" class="img-pop" @close="popSrc = ''">
       <div class="img-title">
         <strong>{{ popLabel }}</strong>
         <span>{{ !popEditable ? "already sent, shown only" : popDepth ? "drag to crop, click to undo a crop" : "drag to crop" }}</span>
-        <form method="dialog"><button autofocus>Close</button></form>
+        <form method="dialog" data-help="image popup Close"><button autofocus>Close</button></form>
       </div>
-      <div ref="popFrameEl" class="img-frame" :class="{ readonly: !popEditable }" @pointerdown="cropDown" @pointermove="cropMove" @pointerup="cropUp" @pointercancel="cropCancel">
+      <div ref="popFrameEl" class="img-frame" data-help="image popup picture" :class="{ readonly: !popEditable }" @pointerdown="cropDown" @pointermove="cropMove" @pointerup="cropUp" @pointercancel="cropCancel">
         <img ref="popImageEl" :src="popSrc" alt="" draggable="false" />
         <div ref="popSelEl" class="img-sel" hidden></div>
       </div>
     </dialog>
     <div class="dock">
-      <div ref="promptHostEl" class="prompt" @pointerdown.capture="onPromptPointer" @mousedown.capture="onPromptMouse" @paste.capture="pasteFiles">
+      <div ref="promptHostEl" class="prompt" data-help="prompt box" data-mode="prompt box" @pointerdown.capture="onPromptPointer" @mousedown.capture="onPromptMouse" @paste.capture="pasteFiles">
         <div v-show="!promptMarkdown"></div>
-        <div v-show="promptMarkdown" ref="promptMdEl" class="prompt-md response markdown" tabindex="-1" @keydown="onMdKey" v-html="promptHtml"></div>
+        <div v-show="promptMarkdown" ref="promptMdEl" class="prompt-md response markdown" tabindex="-1" data-help="prompt markdown view" data-mode="prompt markdown view" @keydown="onMdKey" v-html="promptHtml"></div>
       </div>
       <div class="dock-controls">
         <div class="footer">
           <div class="indicator finish" :class="pill.cls" :title="pill.title">{{ pill.text }}</div>
           <div class="group">
-            <button class="stop" :class="{ stopping: stopping && active }" title="Stop" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
-            <button title="Capture the screen for this prompt, hiding this window for the shot. Ctrl-click: this window stays up. Alt-click: the previous tab is shown for the shot" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
-            <button title="Add a file to this prompt, picked on this project's host. Ctrl-click: picked on the Windows PC" :disabled="session?.trashed" @mousedown.prevent @click="pickFile">File</button>
-            <input type="checkbox" aria-label="bestModel" :title="modelChoice(session?.bestModel).title" :checked="!!session?.bestModel" :disabled="!session || session.trashed" @mousedown.prevent @change="setBestModel" />
+            <button class="stop" data-help="stop button" :class="{ stopping: stopping && active }" title="Stop" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
+            <button title="Capture the screen for this prompt, hiding this window for the shot" data-help="Cap button" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
+            <button title="Add a file to this prompt, picked on this project's host" data-help="footer File button" :disabled="session?.trashed" @mousedown.prevent @click="pickFile">File</button>
+            <input type="checkbox" aria-label="bestModel" data-help="bestModel box" :title="modelChoice(session?.bestModel).title" :checked="!!session?.bestModel" :disabled="!session || session.trashed" @mousedown.prevent @change="setBestModel" />
           </div>
         </div>
         <div class="stats">
           <div class="status" title="Agentic turns in the last prompt">{{ stats.turns }}</div>
-          <div class="status context" :class="{ over: contextUsed > compactAt }" title="Context used / where the CLI compacts it, in thousands of tokens. Click to compact now" @click="compactNow">
+          <div class="status context" :class="{ over: contextUsed > compactAt }" title="Context used / where the CLI compacts it, in thousands of tokens" data-help="context stat" @click="compactNow">
             {{ Math.round((contextUsed || 0) / 1000) }}/{{ inK(compactAt) }}
           </div>
           <div v-if="stats.graftSaved > 0.25" class="status" title="What graft has saved this session">${{ stats.graftSaved.toFixed(2) }}</div>

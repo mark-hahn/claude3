@@ -127,6 +127,7 @@ function appendResponse(box: HTMLElement, text: string, calls: { turnId: string;
         long.className = "tool-long";
         call.appendChild(long);
         call.classList.add("has-detail");
+        call.dataset.help = "tool line";
       }
       appendFormattedLine(long, line.slice(TOOL_LINE_MARK.length + TOOL_DETAIL_MARK.length), calls.search);
       continue;
@@ -261,7 +262,7 @@ export function renderMarkdown(text: string): string {
         index++;
       }
       index++;
-      out.push("<pre><code>" + escapeHtml(body.join("\n")) + "</code></pre>");
+      out.push('<pre data-help="code block"><code>' + escapeHtml(body.join("\n")) + "</code></pre>");
       continue;
     }
     if (!line.trim()) {

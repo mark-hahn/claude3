@@ -479,27 +479,27 @@ onBeforeUnmount(() => {
     <!-- Hidden off show, not unmounted: Git's status drives this project's tab dot. Deferred, as the tab row isn't in the document yet at first mount. -->
     <Teleport defer to=".project-buttons">
       <span v-show="active">
-        <button class="tab new" title="New session" @click="newSession">
+        <button class="tab new" title="New session" data-help="new session button" @click="newSession">
           <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
         </button>
         <Git ref="gitPopup" :tab="tab" :active="active" :version="version" :session-names="sessionNames" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" @no-repo="(none) => emit('noRepo', none)" @open-file="openInFiles" />
-        <button class="tab" :class="{ 'deploy-due': deployDue }" title="Run the project's ./run, the same as the prompt r. Ctrl-click: the same as the prompt v" @mousedown.prevent @click="pane?.runScript($event.ctrlKey)">R</button>
+        <button class="tab" :class="{ 'deploy-due': deployDue }" title="Run the project's ./run, the same as the prompt r" data-help="Run button" @mousedown.prevent @click="pane?.runScript($event.ctrlKey)">R</button>
       </span>
     </Teleport>
     <aside class="sidebar">
       <div class="top">
         <div class="head">
-          <button v-if="showTrash" class="delete" title="Permanently delete the selected trashed sessions. Ctrl-click or shift-click a card to select more" :disabled="!picked.size" @click="deletePicked">&#x1F5D1;{{ picked.size ? ` ${picked.size}` : "" }}</button>
-          <button v-else class="clean" title="Move every session to the trash. Off while a session is running" :disabled="running || !visible.some((session) => session.turns.length)" @click="clean">Clean</button>
-          <button class="trash-toggle" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="toggleTrash">Trash</button>
+          <button v-if="showTrash" class="delete" title="Permanently delete the selected trashed sessions" data-help="trash delete button" :disabled="!picked.size" @click="deletePicked">&#x1F5D1;{{ picked.size ? ` ${picked.size}` : "" }}</button>
+          <button v-else class="clean" data-help="Clean button" title="Move every session to the trash. Off while a session is running" :disabled="running || !visible.some((session) => session.turns.length)" @click="clean">Clean</button>
+          <button class="trash-toggle" data-help="Trash button" :class="{ active: showTrash }" :title="showTrash ? 'Show active sessions' : 'Show trashed sessions'" @click="toggleTrash">Trash</button>
           <div class="row">
-            <span class="counts" title="Active sessions / trashed sessions. Ctrl-click: fake an expired login on this tab's host, to test Re-Auth" @click.ctrl="fakeExpiry">{{ counts.active }}/{{ counts.trashed }}</span>
+            <span class="counts" title="Active sessions / trashed sessions" data-help="session counts" @click.ctrl="fakeExpiry">{{ counts.active }}/{{ counts.trashed }}</span>
             <ReAuth :needed="!!expired" @closed="focusPrompt" />
           </div>
         </div>
         <div class="row">
-          <input v-model="searchBox" class="tabs-input" :class="{ searching: searchText }" type="text" placeholder="Search" aria-label="Search sessions" spellcheck="false" @keydown.enter.prevent="setSearch(searchBox.trim())" />
-          <button class="search-clear" title="Clear search" aria-label="Clear search" @click="closeSearch">&#x2715;</button>
+          <input v-model="searchBox" class="tabs-input" :class="{ searching: searchText }" type="text" placeholder="Search" aria-label="Search sessions" data-help="sidebar search box" data-mode="sidebar search box" spellcheck="false" @keydown.enter.prevent="setSearch(searchBox.trim())" />
+          <button class="search-clear" data-help="search clear button" title="Clear search" aria-label="Clear search" @click="closeSearch">&#x2715;</button>
         </div>
         <div v-if="!connected" class="offline">No answer from the {{ tab.host }} backend at {{ HOSTS[tab.host].url }}. Retrying.</div>
         <div v-if="expired" class="offline">Authorization expired on {{ expired }}. Click Re-Auth to sign in again.</div>
@@ -514,6 +514,7 @@ onBeforeUnmount(() => {
           :title="firstPrompt(session)"
           role="button"
           tabindex="0"
+          data-help="session card"
           @pointerdown="press(session, $event)"
           @pointerup="unpress"
           @pointercancel="unpress"
@@ -525,6 +526,8 @@ onBeforeUnmount(() => {
             v-model="editName"
             v-focus
             class="card-rename"
+            data-help="rename box"
+            data-mode="rename box"
             @pointerdown.stop
             @click.stop
             @keydown.enter.prevent="finishRename(session, true)"
@@ -538,16 +541,16 @@ onBeforeUnmount(() => {
             <span v-if="busy(session)" class="card-clock" :class="busy(session)" :title="busy(session) === 'background' ? 'Waiting on a background task (Stop ends it)' : 'Responding'">
               <svg viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
             </span>
-            <button v-if="!session.trashed" v-show="!busy(session)" class="card-trash" title="Move this session to the trash" @pointerdown.stop @click.stop="trash(session, true)">&#x1F5D1;</button>
-            <button v-else class="card-restore" title="Move this session out of the trash" @pointerdown.stop @click.stop="trash(session, false)">R</button>
+            <button v-if="!session.trashed" v-show="!busy(session)" class="card-trash" data-help="card trash button" title="Move this session to the trash" @pointerdown.stop @click.stop="trash(session, true)">&#x1F5D1;</button>
+            <button v-else class="card-restore" data-help="card restore button" title="Move this session out of the trash" @pointerdown.stop @click.stop="trash(session, false)">R</button>
             <span class="card-turns" title="Prompt turns">{{ session.turns.length }}</span>
           </div>
         </div>
       </div>
     </aside>
-    <div class="divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
+    <div class="divider" data-help="sidebar divider" title="Drag to change the sidebar's width" @pointerdown="dragDivider"></div>
     <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" :search="searchText" @started="select" @deploy-due="(due) => (deployDue = due)" />
-    <div v-if="side" class="divider side-divider" title="Drag to change the widths of the pane and this column" @pointerdown="dragSideDivider"></div>
+    <div v-if="side" class="divider side-divider" data-help="side divider" title="Drag to change the widths of the pane and this column" @pointerdown="dragSideDivider"></div>
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
     <GitGraph v-if="side === 'git'" :tab="tab" :active="active" @review="(hash, subject) => gitPopup?.openCommit(hash, subject)" />

@@ -28,7 +28,7 @@ on the laptop, and talks to each backend directly.
   its URL, the pasted code on its stdin, then `claude auth status` for who signed in.
 - `src/App.vue`: the tab strip and the list of every project; open ones have a tab, sorted by name
   (`src/tabList.ts`, checked by `npm test`), ctrl-click on one closes its project (`openProject`), and every project's `Project` stays mounted and laid out,
-  closed ones too: all in one grid cell, those not on show `visibility:hidden` (`.offstage`), never `display:none` (see Gotchas). The Files, Log, Term, Snips and
+  closed ones too: all in one grid cell, those not on show `visibility:hidden` (`.offstage`), never `display:none` (see Gotchas). The ? button (`src/keyHelp.ts`'s keys popup) and the Files, Log, Term, Snips and
   gear (Settings) toggles are here, at the row's right end, acting on the tab on show; they share one
   column, each tab with its own state (`sides[id]`: "", "files", "file", "git", "term", "snips" or "settings"), so it is as it was left when the tab comes back. With no project open only Snips and the gear work: App shows them itself, filling the page under the strip, with a stand-in tab (`NO_TAB`) naming the WSL backend, since both are host actions.
   Each tab's label has a dot: green with a session active, else light red when its Git or Run button
@@ -110,6 +110,7 @@ on the laptop, and talks to each backend directly.
 - `server/capture.ts`: claude2's PowerShell screen shot, returned as a PNG data URI.
 - `src/copy.ts`: every alt-click's copy, with its light-red flash.
 - `src/tooltip.ts` (`#tip` in `style.css`): every `title` on the page drawn as the page's own bubble, since a native one can't be sized. One delegated `mouseover`, nothing to add per element. A host's title sits in `data-tip` only while the mouse is on it. A manual popover, so it shows above modal `<dialog>`s.
+- `src/keyHelp.ts` + `src/tip-text.txt` (`.help-pop` in `style.css`): middle-click on any item shows how it is used, in one modal `<dialog>` (`closedby="any"`, Close). Each `@name` line in the text file starts the block of the elements with that `data-help` (in templates, or `dataset.help` on what is built by script: bars, boxes, tool lines, code blocks, quota graphs); an element with none is display only and the middle-click does nothing. One window-capture listener takes every middle-button event (pointer, mouse, auxclick) ahead of Monaco's column select, xterm, Edge's autoscroll and the long presses, and shows on the release (a disabled button gets pointer events but no auxclick); only a link keeps its own. The tab strip's ? (left of the gear, `@mousedown.prevent` so focus stays put) shows the `global keys` block plus the block of the focused element's nearest `data-mode`, named on its first line. The text is a `?raw` import whose hot update swaps it in without a reload. Tooltips keep what an item is; its click and key details live only in the text. `src/tipText.check.mjs` (`npm test`) fails on a name with no block or a block on no element (bound `:data-help` names are read from their quoted strings).
 - `src/waitingImages.ts`: unsent pictures per tab in IndexedDB, and unsent files under `files:<tab>`. `src/cropRect.ts`: the crop's
   arithmetic, checked by `npm test`.
 - `src/monaco.ts` (+ `monaco.css`): claude2's Monaco setup (its webviews.ts `monacoScript` /
@@ -409,6 +410,7 @@ on the laptop, and talks to each backend directly.
 - Enter in any modal `<dialog>` presses its `autofocus` button, or its only button (`src/main.ts`,
   window capture, ahead of Pane's Enter), unless focus is on a button, input, textarea, select or link.
   A click on a dialog's text leaves focus on the body, where Pane's Enter would act behind the dialog.
+- A new clickable or focusable item needs a `data-help` name (and a `data-mode` where it has keys of its own) with a block in `src/tip-text.txt`; `npm test` catches a mismatch. Names stay literal strings so the check can find them.
 - Every modal `<dialog>` carries `closedby="any"`: a click on its gray backdrop closes it as Esc does
   (a `cancel` handler can refuse, as Git's does while committing; a press that starts inside and is let
   go outside doesn't count). Give a new dialog the attribute too.

@@ -10,3 +10,9 @@ button:disabled { position: relative; cursor: default; }
 button:disabled::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; background: rgba(255, 255, 255, 0.5); }
 /* tooltip.ts. 12px at the user's asking, under the 14px minimum. */
 #tip { inset: 0 auto auto 0; margin: 0; max-width: 60ch; padding: 4px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 2px 8px rgba(0,0,0,0.18); pointer-events: none; }
+/* The middle-click and ? help popup (src/keyHelp.ts). */
+.help-pop { margin-top: 10vh; width: min(640px, 90vw); max-height: 80vh; padding: 12px 16px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: #000; font-size: 15px; }
+.help-pop::backdrop { background: rgba(0, 0, 0, 0.15); }
+.help-pop .help-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.help-pop .help-text { white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 10px; }
+.help-pop .help-buttons { text-align: right; }

@@ -438,7 +438,7 @@ function onMessageKey(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <button ref="button" class="tab git" :class="{ dirty: files.length }" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" :disabled="noRepo" @click="open">
+  <button ref="button" class="tab git" :class="{ dirty: files.length }" data-help="Git button" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" :disabled="noRepo" @click="open">
     G<span v-if="files.length">&nbsp;{{ files.length }}</span>
   </button>
   <dialog ref="dialog" class="git-pop" :class="{ wide: diffRow }" @cancel="committing && $event.preventDefault()" @close="onClose" closedby="any">
@@ -446,25 +446,25 @@ function onMessageKey(event: KeyboardEvent): void {
       <div class="git-head">
         <div class="git-title">{{ review ? `Commit ${review.hash.slice(0, 7)}: ${review.subject}` : `Source Control: ${tab.path}` }}</div>
         <template v-if="!review">
-        <button title="Back up to a newer session's name" :disabled="describing || committing || named <= 0" @click="walkNames(-1)">↑</button>
-        <button title="The newest session's name, then each click an older one" :disabled="describing || committing || named >= sessionNames.length - 1" @click="walkNames(1)">↓</button>
-        <button title="Clear the message" :disabled="describing || committing" @click="clearMessage">Clr</button>
-        <button title="Describe changes: Opus 5.5 writes the message" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "AI…" : "AI" }}</button>
-        <button class="git-commit" :disabled="!canCommit" @click="commit">{{ committing ? "Committing…" : "Commit" }}</button>
+        <button data-help="Git ↑ button" title="Back up to a newer session's name" :disabled="describing || committing || named <= 0" @click="walkNames(-1)">↑</button>
+        <button data-help="Git ↓ button" title="The newest session's name, then each click an older one" :disabled="describing || committing || named >= sessionNames.length - 1" @click="walkNames(1)">↓</button>
+        <button data-help="Git Clr button" title="Clear the message" :disabled="describing || committing" @click="clearMessage">Clr</button>
+        <button data-help="Git AI button" title="Describe changes: Opus 5.5 writes the message" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "AI…" : "AI" }}</button>
+        <button class="git-commit" data-help="Git Commit button" :disabled="!canCommit" @click="commit">{{ committing ? "Committing…" : "Commit" }}</button>
         </template>
-        <button :disabled="committing" @click="dialog?.close()">Close</button>
+        <button :disabled="committing" data-help="Git Close button" @click="dialog?.close()">Close</button>
       </div>
       <template v-if="!review">
-      <input v-if="editing" v-model="draft" v-focus class="git-last-edit" spellcheck="false" :readonly="committing" @keydown.enter.prevent="saveLast" @keydown.esc.prevent="stopEditing" />
-      <div v-else-if="last?.hash" class="git-last" title="The last commit's message. Click to edit it: Enter amends and pushes, Esc cancels." @click="editLast">{{ last.subject }}</div>
-      <textarea ref="messageBox" v-model="message" class="git-message" rows="3" spellcheck="false" autofocus :readonly="describing" @keydown="onMessageKey"></textarea>
+      <input v-if="editing" v-model="draft" v-focus class="git-last-edit" data-help="Git last commit" spellcheck="false" :readonly="committing" @keydown.enter.prevent="saveLast" @keydown.esc.prevent="stopEditing" />
+      <div v-else-if="last?.hash" class="git-last" data-help="Git last commit" title="The last commit's message" @click="editLast">{{ last.subject }}</div>
+      <textarea ref="messageBox" v-model="message" class="git-message" data-help="Git message box" rows="3" spellcheck="false" autofocus :readonly="describing" @keydown="onMessageKey"></textarea>
       </template>
       <div v-if="failure" class="git-error">{{ failure }}</div>
       <div v-if="error" class="git-error">{{ error }}</div>
       <div class="git-files" tabindex="-1" @keydown="onFilesKey">
         <template v-for="group in [{ title: 'Staged Changes', list: staged }, { title: 'Changes', list: changed }]" :key="group.title">
           <div v-if="group.list.length" class="git-group">{{ group.title }}<span class="git-count">{{ group.list.length }}</span></div>
-          <div v-for="file in group.list" :key="file.key" class="git-file" :class="[`git-${file.letter}`, { picked: picked.has(file.key) }]" :title="file.path" @click="clickFile(file.key, $event)">
+          <div v-for="file in group.list" :key="file.key" class="git-file" data-help="Git file row" :class="[`git-${file.letter}`, { picked: picked.has(file.key) }]" :title="file.path" @click="clickFile(file.key, $event)">
             <span class="git-name">{{ nameOf(file.path) }}</span>
             <span class="git-folder">{{ folderOf(file.path) }}</span>
             <span class="git-letter">{{ file.letter }}</span>
@@ -477,7 +477,7 @@ function onMessageKey(event: KeyboardEvent): void {
       <div class="git-diff-path">{{ diffRow.from ? `${diffRow.from} → ${diffRow.path}` : diffRow.path }}</div>
       <div v-if="diffError" class="git-error">{{ diffError }}</div>
       <div v-else-if="diffNote">{{ diffNote }}</div>
-      <div v-show="!diffError && !diffNote" class="git-diff-text" :class="{ opens: canOpen }"><div ref="diffHost"></div></div>
+      <div v-show="!diffError && !diffNote" class="git-diff-text" data-help="Git diff" :class="{ opens: canOpen }"><div ref="diffHost"></div></div>
     </div>
   </dialog>
 </template>

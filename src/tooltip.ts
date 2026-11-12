@@ -18,7 +18,7 @@ let mouseX = 0;
 const tipUp = () => tip.matches(":popover-open");
 
 // The title stays moved aside: after a click or a key the bubble is gone until the mouse leaves.
-function hide() {
+export function hide() {
   clearTimeout(timer);
   if (tipUp()) tip.hidePopover();
 }

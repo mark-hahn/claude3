@@ -585,34 +585,34 @@ onBeforeUnmount(() => window.clearInterval(poller));
     <div v-if="fileMode && file?.rendered" class="files-root">{{ file.host }}: {{ file.path }}</div>
     <div v-if="fileMode && file?.rendered && listProblem" class="files-note">{{ listProblem }}</div>
     <!-- Inside a .pane for Pane.vue's global markdown styles. -->
-    <div v-if="fileMode && file?.rendered" class="pane files-rendered" @click.capture="copyCodeBlock">
+    <div v-if="fileMode && file?.rendered" class="pane files-rendered" data-help="rendered markdown" @click.capture="copyCodeBlock">
       <div class="response markdown files-rendered-text" v-html="renderMarkdown(file.text)"></div>
     </div>
     <FileEditor v-else-if="fileMode && file" :active="active" :file="file" />
-    <div v-show="!fileMode" ref="treeArea" class="files-mode" tabindex="-1" @keydown="keyDown">
+    <div v-show="!fileMode" ref="treeArea" class="files-mode" tabindex="-1" data-mode="Files tree" @keydown="keyDown">
       <div class="files-bar">
-        <button title="Back to the previous root" aria-label="Back" :disabled="rootIdx < 0" @click="stepRoot(-1)">
+        <button title="Back to the previous root" aria-label="Back" data-help="Files Back button" :disabled="rootIdx < 0" @click="stepRoot(-1)">
           <svg viewBox="0 0 20 16"><path d="M1.5 5.5H14a4.5 4.5 0 0 1 0 9M6 10 1.5 5.5 6 1" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" /></svg>
         </button>
-        <button title="Forward to the next root" aria-label="Forward" :disabled="rootIdx >= roots.length - 1" @click="stepRoot(1)">
+        <button title="Forward to the next root" aria-label="Forward" data-help="Files Forward button" :disabled="rootIdx >= roots.length - 1" @click="stepRoot(1)">
           <svg class="files-flip" viewBox="0 0 20 16"><path d="M1.5 5.5H14a4.5 4.5 0 0 1 0 9M6 10 1.5 5.5 6 1" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" /></svg>
         </button>
-        <button title="Close all folders but the way to the selection; pressed again, close those too and drop the selection" aria-label="Collapse" @click="collapse">
+        <button title="Close all folders but the way to the selection; pressed again, close those too and drop the selection" aria-label="Collapse" data-help="Files Collapse button" @click="collapse">
           <svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="10" height="10" rx="1" /><path d="M4 9.5h5M4.5 1.5h10v10" /></svg>
         </button>
-        <button title="New empty file in the selected folder, beside the selected file, or in the root; Ctrl-click for a new folder" :disabled="many" @click="newFile($event.ctrlKey)">New</button>
-        <button title="New project from the selected folder" :disabled="!selectedRow?.dir" @click="newProjectAt(treeHost, selectedRow!.path)">Prj</button>
-        <button title="Show a folder in the tree, on any host" @click="showHost(treeHost)">Path</button>
-        <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="focusTree()" />
-        <label class="files-nm" title="Search inside node_modules too"><input v-model="searchNodeModules" type="checkbox" />NM</label>
+        <button title="New empty file in the selected folder, beside the selected file, or in the root" data-help="Files New button" :disabled="many" @click="newFile($event.ctrlKey)">New</button>
+        <button title="New project from the selected folder" data-help="Files Prj button" :disabled="!selectedRow?.dir" @click="newProjectAt(treeHost, selectedRow!.path)">Prj</button>
+        <button title="Show a folder in the tree, on any host" data-help="Files Path button" @click="showHost(treeHost)">Path</button>
+        <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" data-help="Files search box" data-mode="Files search box" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="focusTree()" />
+        <label class="files-nm" title="Search inside node_modules too" data-help="Files NM box"><input v-model="searchNodeModules" type="checkbox" />NM</label>
       </div>
-      <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root" title="Click to type a path" @click="editRoot">
+      <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root" data-help="Files root path" @click="editRoot">
         {{ treeHost }}:
-        <input v-if="rootText !== null" ref="rootInput" v-model="rootText" class="files-rename" spellcheck="false" aria-label="Folder path" @keydown.enter.prevent="goToTyped" @keydown.esc.prevent="rootText = null; focusTree()" @blur="rootText = null" />
+        <input v-if="rootText !== null" ref="rootInput" v-model="rootText" class="files-rename" spellcheck="false" aria-label="Folder path" data-mode="Files root path" @keydown.enter.prevent="goToTyped" @keydown.esc.prevent="rootText = null; focusTree()" @blur="rootText = null" />
         <template v-else>{{ withSeparator(root) }}<span class="files-relative">{{ selectedBelowRoot }}</span></template>
       </div>
       <div v-if="note || listProblem" class="files-note">{{ note || listProblem }}</div>
-      <div ref="tree" class="files-tree">
+      <div ref="tree" class="files-tree" data-help="Files tree">
         <div
           v-for="row in rows"
           :key="row.path"
@@ -622,6 +622,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
           :data-drop="row.dir ? row.path : undefined"
           :title="row.path"
           role="button"
+          data-help="Files row"
           @pointerdown="press(row, $event)"
           @pointerup="unpress"
           @pointercancel="unpress"
@@ -632,19 +633,19 @@ onBeforeUnmount(() => window.clearInterval(poller));
           <span v-for="depth in row.depth" :key="depth" class="files-guide"></span>
           <svg class="files-chevron" :class="{ open: opened.has(row.path) }" viewBox="0 0 16 16"><path v-if="row.dir" d="M6 3.5 10.5 8 6 12.5" /></svg>
           <svg class="files-icon" viewBox="0 0 16 16"><path :d="row.dir ? 'M1.5 13.5v-11h4.5l1.5 2h7v9z' : 'M3.5 1.5h6l3 3v10h-9zM9.5 1.5v3h3'" /></svg>
-          <input v-if="renaming === row.path" v-model="newName" v-focus class="files-rename" spellcheck="false" @click.stop @dblclick.stop @keydown.enter.prevent="finishRename(row, true); focusTree()" @keydown.esc.prevent="finishRename(row, false); focusTree()" @blur="finishRename(row, true)" />
+          <input v-if="renaming === row.path" v-model="newName" v-focus class="files-rename" spellcheck="false" data-help="rename box" data-mode="rename box" @click.stop @dblclick.stop @keydown.enter.prevent="finishRename(row, true); focusTree()" @keydown.esc.prevent="finishRename(row, false); focusTree()" @blur="finishRename(row, true)" />
           <span v-else class="files-name">{{ row.name }}</span>
         </div>
       </div>
       <FolderPicker ref="picker" :host="treeHost" @pick="goTo($event, pickHost)">
-        <select :value="pickHost" aria-label="Host" title="The host whose folders these are. Ok on another host's folder shows it in the tree" @change="showHost(($event.target as HTMLSelectElement).value as HostName)"><option v-for="(_, name) in HOSTS" :key="name">{{ name }}</option></select>
+        <select :value="pickHost" aria-label="Host" title="The host whose folders these are" data-help="Files host" @change="showHost(($event.target as HTMLSelectElement).value as HostName)"><option v-for="(_, name) in HOSTS" :key="name">{{ name }}</option></select>
       </FolderPicker>
       <dialog ref="infoDialog" class="files-info" closedby="any" @wheel.stop @close="treeArea?.focus()">
         <table>
           <tr v-for="[label, value] in infoRows" :key="label"><th>{{ label }}</th><td>{{ value }}</td></tr>
         </table>
         <div v-if="infoProblem" class="files-note">{{ infoProblem }}</div>
-        <form method="dialog"><button autofocus>OK</button></form>
+        <form method="dialog" data-help="file info"><button autofocus>OK</button></form>
       </dialog>
     </div>
   </div>

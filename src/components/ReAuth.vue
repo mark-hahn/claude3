@@ -82,20 +82,20 @@ function onClose(): void {
 </script>
 
 <template>
-  <button v-if="needed" class="re-auth" title="Authorization expired: sign in to your Anthropic account again, on each host in turn" @click="reAuth">Re-Auth</button>
+  <button v-if="needed" class="re-auth" data-help="Re-Auth button" title="Authorization expired: sign in to your Anthropic account again, on each host in turn" @click="reAuth">Re-Auth</button>
   <dialog ref="dialog" closedby="any" class="auth-pop" @close="onClose">
     <div class="auth-title">Claude sign-in</div>
     <div v-for="line in results" :key="line" class="auth-line">{{ line }}</div>
     <form v-if="step" class="auth-step" @submit.prevent="sendCode">
       <div v-if="step.url"><strong>{{ step.host }}:</strong> <a :href="step.url" target="_blank" rel="noreferrer">open the sign-in page</a>, approve, then paste the code it shows.</div>
       <div v-else><strong>{{ step.host }}:</strong> starting…</div>
-      <input ref="codeEl" v-model="code" spellcheck="false" autocomplete="off" placeholder="authorization code" :disabled="!step.url || sending" />
-      <div class="auth-buttons">
+      <input ref="codeEl" v-model="code" data-help="Re-Auth code box" spellcheck="false" autocomplete="off" placeholder="authorization code" :disabled="!step.url || sending" />
+      <div class="auth-buttons" data-help="Re-Auth buttons">
         <button :disabled="!code.trim() || sending">{{ sending ? "Checking…" : "Send code" }}</button>
         <button type="button" @click="skip">Skip this host</button>
       </div>
     </form>
-    <div v-else class="auth-buttons"><button @click="dialog?.close()">Close</button></div>
+    <div v-else class="auth-buttons" data-help="Re-Auth buttons"><button @click="dialog?.close()">Close</button></div>
   </dialog>
 </template>
 

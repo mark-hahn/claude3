@@ -204,10 +204,12 @@ function graphElement(graph: any): HTMLElement {
   }
   const periodBar = document.createElement("div");
   periodBar.className = "period";
+  periodBar.dataset.help = "quota graph period";
   periodBar.innerHTML = '<button data-page="older" data-key="' + graph.key + '" ' + (back >= periods.length - 1 ? "disabled" : "") + ">‹</button><span>" + escapeHtml(period.label) + '</span><button data-page="newer" data-key="' + graph.key + '" ' + (back === 0 ? "disabled" : "") + ">›</button>";
   const plot = document.createElement("div") as any;
   plot.className = "plot";
   plot.dataset.expand = graph.key;
+  plot.dataset.help = "quota graph";
   plot.draw = (width: number, height: number) => drawSvg(period, width, height);
   plot.innerHTML = plot.draw(256, 140);
   plotObserver.observe(plot);
@@ -409,9 +411,9 @@ onBeforeUnmount(() => {
       <div class="title-row">
         <!-- Tabs act as radio buttons; Quotas is the only one so far, so clicking it does nothing. -->
         <div class="tab-row"><button class="tab selected">Quotas</button></div>
-        <div class="actions"><button id="q-update" @click="load(true)">Update</button><button @click="emit('close')">Close</button></div>
+        <div class="actions"><button id="q-update" data-help="Settings Update" @click="load(true)">Update</button><button data-help="Settings Close" @click="emit('close')">Close</button></div>
       </div>
-      <div class="title-row"><div id="q-credits" class="credits" @click="creditsClick"></div><span id="q-age"></span></div>
+      <div class="title-row"><div id="q-credits" class="credits" data-help="Settings credits" @click="creditsClick"></div><span id="q-age"></span></div>
     </div>
     <div id="q-error" class="error" hidden></div>
     <div id="q-graphs" class="graphs"></div>

@@ -133,19 +133,19 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
 </script>
 
 <template>
-  <button ref="button" class="tab tabs-toggle" :class="{ due: due && !running, running }" :title="`Add, open, close, rename or delete projects${running ? '. A project has a session running' : due ? '. A project has its Git or Run button highlighted' : ''}. Ctrl-click opens every project with a red or green dot`" aria-label="Tabs" @click="open">
+  <button ref="button" class="tab tabs-toggle" :class="{ due: due && !running, running }" :title="`Add, open, close, rename or delete projects${running ? '. A project has a session running' : due ? '. A project has its Git or Run button highlighted' : ''}`" aria-label="Tabs" data-help="Tabs button" @click="open">
     <svg viewBox="0 0 20 16" width="20" height="16" aria-hidden="true"><path d="M1 14.5V6h18v8.5zM2 6V2.5h4.5V6M7.75 6V2.5h4.5V6M13.5 6V2.5H18V6" /></svg>
   </button>
   <dialog ref="dialog" class="tabs-pop" closedby="any" @close="emit('closed')">
     <section class="tabs-row">
-      <select v-model="host" aria-label="Host"><option v-for="entry in HOST_NAMES" :key="entry">{{ entry }}</option></select>
-      <button @click="picker?.open(HOSTS[host].appsFolder)">Path</button>
-      <button class="tabs-close" @click="dialog?.close()">Close</button>
+      <select v-model="host" aria-label="Host" data-help="Tabs host"><option v-for="entry in HOST_NAMES" :key="entry">{{ entry }}</option></select>
+      <button data-help="Tabs Path button" @click="picker?.open(HOSTS[host].appsFolder)">Path</button>
+      <button class="tabs-close" data-help="Tabs Close button" @click="dialog?.close()">Close</button>
     </section>
     <div v-if="path" class="tabs-path">{{ path }}</div>
     <section class="tabs-row">
-      <input v-model="name" class="tabs-input" placeholder="Project name" aria-label="Project name" spellcheck="false" @input="edited = !!($event.target as HTMLInputElement).value" @keydown.enter.prevent="create" />
-      <button :disabled="!canCreate" @click="create">Create</button>
+      <input v-model="name" class="tabs-input" placeholder="Project name" aria-label="Project name" data-help="Tabs name box" spellcheck="false" @input="edited = !!($event.target as HTMLInputElement).value" @keydown.enter.prevent="create" />
+      <button :disabled="!canCreate" data-help="Tabs Create button" @click="create">Create</button>
     </section>
     <div v-if="error" class="tabs-error">{{ error }}</div>
     <section class="tabs-names">
@@ -156,6 +156,7 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
         :class="{ open: tab.open }"
         :title="`${tab.host}: ${tab.path}`"
         role="button"
+        data-help="Tabs project name"
         @pointerdown="press(tab, $event)"
         @pointerup="unpress"
         @pointercancel="unpress"
@@ -168,6 +169,7 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
           v-focus
           class="tabs-input"
           spellcheck="false"
+          data-help="rename box"
           @pointerdown.stop
           @click.stop
           @keydown.enter.prevent="finishRename(tab, true)"

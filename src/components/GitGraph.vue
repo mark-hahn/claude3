@@ -43,7 +43,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
 
 <template>
   <div class="git-graph" @wheel="zoom">
-    <div v-for="(line, at) in lines" :key="at" :title="line.hash && `Ctrl-click: copy ${line.hash}. Alt-click: copy the message. Ctrl-alt-click: review its changes`" @click.ctrl.exact="line.hash && copy(line.hash, $event.currentTarget as HTMLElement)" @click.alt.exact="line.message && copy(line.message, $event.currentTarget as HTMLElement)" @click.ctrl.alt.exact="line.hash && emit('review', line.hash, line.message)">{{ line.text }}</div>
+    <div v-for="(line, at) in lines" :key="at" :title="line.hash" :data-help="line.hash ? 'Log row' : undefined" @click.ctrl.exact="line.hash && copy(line.hash, $event.currentTarget as HTMLElement)" @click.alt.exact="line.message && copy(line.message, $event.currentTarget as HTMLElement)" @click.ctrl.alt.exact="line.hash && emit('review', line.hash, line.message)">{{ line.text }}</div>
   </div>
 </template>
 

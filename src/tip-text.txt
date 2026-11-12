@@ -1,0 +1,408 @@
+The text of the middle-click and ? popups (src/keyHelp.ts). A line starting with @ names an item;
+the lines after it, up to the next @ line, are its popup text, blank lines included. The name is the
+element's data-help (middle-click) or data-mode (the ? button's focused part) in the source.
+"global keys" is the ? button's own. npm test fails when a name here is in no source file, or a name
+in the source has no block here. Lines before the first @ line, like these, are ignored.
+
+@global keys
+Middle-click: on any item, how it is used. Nothing on items that only show something. A link keeps its own middle-click (a new background tab).
+Ctrl-B: hide or show the sidebar.
+Ctrl-S: a new session, as +. On an empty new session with nothing typed, back to the session before it.
+Ctrl-G: open or close the Git popup.
+Ctrl-Alt-Z: the big prompt editor on or off (the prompt box full height left of the history).
+Ctrl-Alt-X: in the big prompt editor, the prompt shown as markdown, and back.
+Enter: anywhere outside a text box or the footer, selects and opens the last block; again, opens or closes its box.
+Ctrl-wheel: text size of the history, Files tree and editor, Log, Snips and terminal, each remembered.
+Alt-click: copies a bar's prompt, a box's text, a code block, a card's name, a Files row's path, a Log row's message.
+In a dialog: Enter presses its default button, Esc or a click on the gray outside closes it.
+Ctrl-R: reload the page (also in the terminal).
+
+@keys button
+Click: this list: the global keys, and the keys of the part that has the focus (named on its first line).
+
+@sidebar button
+Click: hide or show this tab's sidebar (the session list). Same as Ctrl-B. Not on the trash list.
+
+@new session button
+Click: a new session, opened in the pane. Empty new sessions are swept away when you leave them.
+Ctrl-S: the same; on an empty new session with nothing typed, back to the session before it.
+
+@Git button
+Click: the Git popup: commit message, staged and changed files, Commit (add all, commit, push).
+Ctrl-G: open or close it from anywhere.
+The label counts the changed files; highlighted when there are any. Off when the folder is in no git repo.
+
+@Run button
+Click: run the project's ./run (the same as the prompt r); its output shows in a dialog as it goes.
+Ctrl-click: the same as the prompt v: ./run with RESTART_VITE=1, which restarts vite and reloads this page.
+Highlighted when files changed since the last deploy.
+
+@Tabs button
+Click: the Tabs dialog: create, open, close, rename or delete projects.
+Ctrl-click: open every closed project that has a red or green dot, no dialog.
+Light red: a project has its Git or Run button highlighted. Light green: a project has a session running.
+
+@tab
+Click: show this project; the cursor goes to its prompt box.
+Ctrl-click: close the project (refused while a session is running). It stays in the Tabs dialog.
+Green dot: a session is responding. Light red dot: its Git or Run button is highlighted.
+
+@Files button
+Click: open or close the Files column (a tree of the project's folder). From the file editor, back to the tree.
+
+@Log button
+Click: open or close the Log pane, a graph of the project's commits. Off when the folder is in no git repo.
+
+@Term button
+Click: open or close the Term pane: up to three shells, the first in the project's folder.
+
+@Snips button
+Click: open or close the Snips, snippets of prompt text shared with claude2 and every tab.
+
+@Settings button
+Click: open or close the Settings pane (quotas).
+
+@Tabs host
+Pick the host the new project is on; Path then picks a folder there.
+
+@Tabs Path button
+Click: pick the new project's folder on the chosen host. The name fills in from the folder.
+
+@Tabs Close button
+Click: close the Tabs dialog; the cursor goes back to the prompt box.
+
+@Tabs name box
+The new project's name, unique ignoring case.
+Enter: create the project, as Create.
+
+@Tabs Create button
+Click: create the project from the host, Path and name, and show its tab behind the dialog.
+
+@Tabs project name
+Click: open the project (and close the dialog), or close it if open.
+Long press: rename it.
+Ctrl-click: delete the project and its sessions, after asking. Its folder is left alone.
+
+@rename box
+Enter: keep the new name. Esc: cancel. Clicking elsewhere keeps it too.
+
+@folder picker path box
+Type a path: the folder's contents list below.
+Enter: pick it, as Ok.
+
+@folder picker Ok
+Click: pick the folder (or file) in the path box.
+
+@folder picker Cancel
+Click: close the picker, picking nothing.
+
+@folder picker entry
+Click a folder: list it. Click a file (only when picking a file): pick it.
+
+@Clean button
+Click: move every session to the trash. Off while a session is running.
+
+@Trash button
+Click: show the trashed sessions, or back to the active ones.
+
+@trash delete button
+Click: permanently delete the picked trashed sessions, after asking.
+Pick cards: click one, ctrl-click to add or drop one, shift-click to add a run.
+
+@session counts
+Active sessions / trashed sessions.
+Ctrl-click: fake an expired login on this tab's host, to try Re-Auth.
+
+@Re-Auth button
+Click: sign in to your Anthropic account again, on each host in turn. Shown when a login expired.
+
+@Re-Auth code box
+Paste the code the sign-in page shows.
+Enter: send it.
+
+@Re-Auth buttons
+Send code: send the pasted code for this host.
+Skip this host: go on to the next host without signing in here.
+Close: close the dialog.
+
+@sidebar search box
+Enter: search every session, trashed ones too, and open the first match; the pane steps through its hits.
+Enter with the box empty: end the search.
+A click on a card steps to its next hit.
+
+@search clear button
+Click: end the search and leave the trash list.
+
+@session card
+Click: open the session (during a search: step to its next hit).
+Long press: rename it.
+Alt-click: copy its name.
+On the trash list: click picks just it, ctrl-click adds or drops it, shift-click adds a run.
+Hover: its first prompt.
+
+@card trash button
+Click: move the session to the trash.
+
+@card restore button
+Click: move the session out of the trash.
+
+@sidebar divider
+Drag: the sidebar's width, the same for every tab.
+
+@side divider
+Drag: how the width is shared between the pane and this column.
+
+@history
+Enter: select and open the last block; again, open or close its box.
+Ctrl-wheel: text size.
+Drop files from Explorer: they join the prompt.
+
+@bar
+Click: select this block and open its box; on the selected bar, open or close the box.
+Ctrl-click: show the whole prompt, or one line again.
+Alt-click: copy the prompt.
+Hover: model and time it ran with, and the prompt.
+
+@fork mark
+Click: fork here, after asking: copy the session, then drop every block below this one.
+
+@bar picture
+Click: show the picture sent with this prompt.
+
+@bar file mark
+Click: details of the file sent with this prompt.
+
+@box
+Click: select text.
+Ctrl-click: switch between the answer and the tool steps.
+Alt-click: copy the whole box as shown.
+
+@tool line
+Click: show or hide this tool step's detail.
+
+@code block
+Alt-click: copy the block.
+
+@prompt box
+Ctrl+Enter: send. In an empty box, brings back the last prompt; sending it unchanged just empties the box.
+Ctrl-Alt-Z or Ctrl-Alt-click: the big prompt editor on or off. Ctrl-Alt-X there: show it as markdown.
+Tab / Shift-Tab: make list items, or step them back. Enter: the next list item. Backspace: drop the dash. #: an empty item becomes a heading.
+Ctrl-J: join lines. Ctrl-D: delete the line. Ctrl-Shift-D: duplicate. Ctrl-Shift-Alt-U / L: upper / lower case. Shift-Alt-Left / Right: cursor undo / redo.
+Ctrl-click: add or remove a cursor. Ctrl-Shift-drag: column selection.
+Line dot: click selects the line, drag selects lines, shift-click extends.
+Ctrl-V: paste text, or a copied picture or files. Drop files from Explorer on the pane: same.
+Picture or file icon: click shows it, ctrl-click removes it.
+
+@prompt markdown view
+The big prompt shown as markdown.
+Ctrl+Enter: send, back in the editor. Ctrl-Alt-X: back to editing.
+
+@stop button
+Click: stop the running response, or a background task it waits on.
+
+@Cap button
+Click: capture the screen for this prompt, hiding this window for the shot.
+Ctrl-click: the same, with this window left up.
+Alt-click: the previous tab is shown for the shot.
+The picture waits in the prompt box: click its icon to see or crop it, ctrl-click to remove it.
+
+@footer File button
+Click: add a file to this prompt, picked on this project's host.
+Ctrl-click: picked on the Windows PC, from C:\Users\mark.
+Pictures, PDFs and text, up to 20MB.
+
+@bestModel box
+Check: run this session on the best model (the hover says which).
+
+@context stat
+Context used / where the CLI compacts it, in thousands of tokens. Red past it.
+Click: compact now (sends /compact), when nothing is running.
+
+@run output
+OK: hide the ./run output; the result brings it back when the run ends.
+
+@run error
+OK: close the failed ./run's error.
+
+@deploy warning
+Deploy: run ./run first; the prompt stays in the box.
+Continue: send anyway.
+Cancel: don't send; the prompt stays in the box.
+
+@deploy setup
+Set up: a new session that writes the project's ./run with the deployable skill.
+Check: check the scripts again.
+Not needed: never ask again for this project, and send.
+Continue: send, ask again next time.
+Cancel: don't send; the prompt stays in the box.
+
+@commit warning
+New session: send the prompt as a new session.
+Continue: send it to this session.
+Cancel: don't send; the prompt stays in the box.
+
+@file details
+OK: close.
+
+@image popup picture
+Drag: crop the picture. Click: undo the last crop.
+A picture already sent is shown only.
+
+@image popup Close
+Click: close.
+
+@Git ↑ button
+Click: back to a newer session's name in the message.
+
+@Git ↓ button
+Click: the newest session's name in the message; each click an older one.
+
+@Git Clr button
+Click: clear the message.
+
+@Git AI button
+Click: Opus 5.5 writes the message from the changes.
+
+@Git Commit button
+Click: add every change, commit with the message, and push.
+Ctrl+Enter in the message box does the same.
+
+@Git Close button
+Click: close the popup.
+
+@Git last commit
+The newest commit's message.
+Click: edit it. Enter: amend the commit and push. Esc: cancel.
+
+@Git message box
+Ctrl+Enter: commit.
+Up at the start / Down at the end: older / newer messages. Alt-Up / Alt-Down: the same from anywhere.
+
+@Git file row
+Click: pick it and show its diff. Ctrl-click: add or drop it. Shift-click: add a run.
+Up / Down: the row above / below.
+Delete or Ctrl-Z: revert the picked files to the last commit, after asking (a new file is deleted).
+
+@Git diff
+Left: the file in the last commit. Right: the file on disk.
+Click a line number: open the file in Files at that line, closing the popup.
+
+@Log row
+Ctrl-click: copy the commit's hash.
+Alt-click: copy its message.
+Ctrl-Alt-click: review its changes in the Git popup.
+Ctrl-wheel: text size.
+
+@Term + button
+Click: add a terminal right below, on the project's host in its folder. Three at most.
+
+@Term Path button
+Click: pick a folder: on this terminal's host it is cd'd to; on another host it gets a new terminal there.
+
+@Term host
+Pick a host: the picker moves to its home folder. Ok on its folder adds a terminal there.
+
+@Term search box
+Enter: select the last place the text is in the terminal; each Enter the one above. Red: not found.
+Esc: back to the terminal.
+
+@Term Clr button
+Click: clear all but the prompt line.
+
+@Term Close button
+Click: end this shell and take it out; the last one closes the pane.
+
+@terminal
+Select text: copies it. Ctrl-C with text selected: copy, else to the shell.
+Ctrl-V: paste. Ctrl-R: reload the page.
+Ctrl-B, Ctrl-S, Ctrl-G and Ctrl-Alt keys are the page's, not the shell's.
+Ctrl-wheel: text size.
+
+@Files Back button
+Click: back to the previous root. Backspace in the tree does the same.
+
+@Files Forward button
+Click: forward to the next root.
+
+@Files Collapse button
+Click: close every folder but the way to the selection; again, close those too and drop the selection.
+
+@Files New button
+Click: a new empty file in the selected folder, beside the selected file, or in the root.
+Ctrl-click: a new folder there.
+
+@Files Prj button
+Click: a new project from the selected folder (the Tabs dialog, filled in).
+
+@Files Path button
+Click: show a folder in the tree, on any host.
+
+@Files host
+Pick a host: the picker moves to its home folder. Ok on its folder shows it in the tree.
+
+@Files search box
+Enter: select the next file or folder whose name has the text. Ctrl-Enter: the one before.
+Esc: back to the tree.
+
+@Files NM box
+Check: the search looks inside node_modules too.
+
+@Files root path
+Click: type a path. Enter: show that folder. Esc: cancel.
+Drop files from Explorer: they are uploaded here.
+
+@Files tree
+Backspace: back to the previous root.
+Delete: delete the selected rows, after asking.
+F2: rename the selected row.
+Ctrl-C / Ctrl-X: copy / cut the selection to the Windows clipboard. Ctrl-V: paste files from it here.
+Ctrl+Enter: add the selected file to the prompt.
+Ctrl-wheel: text size.
+Drop files from Explorer on a folder: they are uploaded there.
+
+@Files row
+Click a folder: open or close it. Click a file: select it.
+Ctrl-click: add or drop a row (folders too). Shift-click: add a run of files.
+Double-click a file: open it in the editor. Double-click a folder: make it the root.
+Ctrl-double-click a .md: show it rendered.
+Long press: everything about it (size, times, lines, totals).
+Alt-click: copy its path.
+
+@file info
+OK: close.
+
+@Files editor
+Saved half a second after typing; read again when the file changes.
+With the last line in view it follows the file's end (path yellow).
+Ctrl-D: delete the line. Ctrl-J: join lines. Ctrl-F: find. Ctrl-wheel: text size.
+Line dot: click selects the line, drag selects lines, shift-click extends.
+
+@Files editor Reload
+Click: read the file again, dropping the edits that couldn't be saved.
+
+@rendered markdown
+Read-only, read again when the file changes. Back to the tree with the Files button.
+Alt-click on a code block: copy it.
+Ctrl-wheel: text size.
+
+@Snips
+Ctrl+Enter with a selection: add it to the prompt (sent at once if the box was empty), take it out of the Snips and close them.
+Ctrl+Enter with no selection: a blank line.
+Esc: close the Snips.
+Saved half a second after typing. Same list and editing keys as the prompt box.
+Ctrl-wheel: text size.
+
+@Settings Update
+Click: ask for a new quota reading now.
+
+@Settings Close
+Click: close the Settings.
+
+@Settings credits
+‹ / ›: the month before / after.
+
+@quota graph
+Click: enlarge this graph; again, back to all of them.
+
+@quota graph period
+‹ / ›: the period before / after.

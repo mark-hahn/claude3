@@ -169,8 +169,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="file-path" :class="{ tail }">{{ file.host }}: {{ file.path }}</div>
-  <div v-if="note" class="file-note">{{ note }} <button v-if="refused" @click="reload">Reload</button></div>
-  <div class="file-text"><div ref="host"></div></div>
+  <div v-if="note" class="file-note">{{ note }} <button v-if="refused" data-help="Files editor Reload" @click="reload">Reload</button></div>
+  <div class="file-text" data-help="Files editor" data-mode="Files editor"><div ref="host"></div></div>
 </template>
 
 <style scoped>
