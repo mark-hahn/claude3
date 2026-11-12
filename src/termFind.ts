@@ -25,3 +25,11 @@ export function findBack(buffer: FindBuffer, cols: number, text: string, before?
   }
   return null;
 }
+
+// What the Term pane shows in brown as a timestamp: month-day or year-month (2 or 4 digits, then 2, by - or /),
+// perhaps after a year, then a space or T and hh:mm, perhaps :ss and a fraction. Or a month by name, capitalised,
+// whole or in three letters (Sept too), and its day, perhaps a year (after a comma or not), perhaps that time.
+// Any number of spaces between the parts (ls pads `Nov  7 16:37`). A word's letters or digits don't start one.
+const TIME = String.raw`\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?`;
+const MONTH = "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?";
+export const STAMP = new RegExp(String.raw`\b(?:(?:\d{4}[-/])?(?:\d{4}|\d{2})[-/]\d{2}(?: +|T)${TIME}|(?:${MONTH}) +\d{1,2}(?:,? +\d{4})?(?: +${TIME})?)\b`, "g");

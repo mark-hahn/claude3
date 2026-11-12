@@ -3,12 +3,12 @@
 // kept by the backend while the pane is closed. Keys go up as typed, Ctrl-C included; selecting text
 // (a double-click's word too) copies it, with text selected Ctrl-C copies it instead, and Ctrl-V pastes.
 import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type IMarker } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { postHost } from "../api.ts";
-import { findBack } from "../termFind.ts";
+import { findBack, STAMP } from "../termFind.ts";
 import FolderPicker from "./FolderPicker.vue";
 
 // index: which of the pane's terminals this is, 0 to 2, each with its own shell. count: how many the pane has.
@@ -31,6 +31,8 @@ const term = new Terminal({
   fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
   cursorBlink: true,
   minimumContrastRatio: 4.5,
+  // For the brown timestamps' decorations.
+  allowProposedApi: true,
   windowsPty: props.host === "win" ? { backend: "conpty" } : undefined,
   theme: {
     background: "#f9f9f7", foreground: "#000000", cursor: "#000000", cursorAccent: "#f9f9f7", selectionBackground: "#add6ff",
@@ -116,6 +118,33 @@ term.onData((data) => {
 });
 term.onResize(({ cols, rows }) => void call("termResize", { cols, rows }).catch(() => undefined));
 
+// Timestamps in brown (STAMP, at the user's asking), as decorations, which leave the shell's colours alone. After each
+// write, the lines it can have changed (the screen's, from its top before the write, which a marker follows through
+// the scrollback's trimming) lose theirs and are matched again. Each has its own marker, disposed with it, else
+// they'd pile up. Not on the alternate screen (vim, less), which takes no decorations. Clr and a reset drop them all.
+// ponytail: one cut by a line's wrap isn't matched, and a match's string index is its column (wrong after wide characters).
+let stamped: IMarker[] = [];
+function write(text: string): void {
+  const before = term.buffer.active;
+  const top = before.type === "normal" ? term.registerMarker(-before.cursorY) : undefined;
+  term.write(text, () => {
+    const buffer = term.buffer.active;
+    const from = top ? Math.max(0, top.line) : buffer.baseY;
+    top?.dispose();
+    if (buffer.type !== "normal") return;
+    for (const marker of stamped) if (marker.line >= from) marker.dispose();
+    stamped = stamped.filter((marker) => !marker.isDisposed);
+    const cursor = buffer.baseY + buffer.cursorY;
+    for (let y = from; y < buffer.length; y++) {
+      for (const match of buffer.getLine(y)?.translateToString(true).matchAll(STAMP) ?? []) {
+        const marker = term.registerMarker(y - cursor);
+        if (term.registerDecoration({ marker, x: match.index, width: match[0].length, foregroundColor: "#8b4513" })) stamped.push(marker);
+        else marker.dispose();
+      }
+    }
+  });
+}
+
 // A long poll: the backend answers at once with output this page hasn't seen, else after 2s.
 let alive = true;
 // The read on its way to the backend, for close to wait on.
@@ -135,7 +164,7 @@ async function follow(): Promise<void> {
       if (!alive) return;
       if (got.exited && props.count > 1) return close();
       if (got.reset) term.reset();
-      if (got.text) term.write(got.text);
+      if (got.text) write(got.text);
       lastAt.value = Date.now() - got.idle;
       ({ id, at } = got);
     } catch (problem) {

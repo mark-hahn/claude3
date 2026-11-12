@@ -10,7 +10,7 @@ import { MessageHistory } from "./messageHistory.ts";
 import { pick } from "./pick.ts";
 import { answerText, matchCount, occurrences, renderMarkdown } from "./render.ts";
 import { byName, folderName, foldersBetween, nextTab, sameName } from "./tabList.ts";
-import { findBack } from "./termFind.ts";
+import { findBack, STAMP } from "./termFind.ts";
 import { wheelZoom } from "./wheelZoom.ts";
 import { fileActions, numberedName } from "../server/files.ts";
 import { headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "../server/gitGraph.ts";
@@ -452,6 +452,13 @@ assert.equal(modelScopedWindow(undefined).pct, null);
   assert.deepEqual(findBack(buffer, 10, "o", { x: 3, y: 2 }), { col: 0, row: 2, length: 1 });
   assert.equal(findBack(buffer, 10, "zzz"), null);
   assert.equal(findBack(buffer, 10, ""), null);
+}
+
+// The Term pane's brown timestamps: each of the user's examples whole, a full date whole, no digits glued to a word.
+{
+  const stamps = (line) => [...line.matchAll(STAMP)].map((match) => match[0]);
+  for (const stamp of ["11-11 16:02:27", "2026-11 16:02:27", "26-11 16:02", "11-11 16:02", "2026-11 16:02", "11/11 16:02:27", "2026/11 16:02:27", "26/11 16:02", "11/11 16:02", "2026/11 16:02", "2026-11-11 16:02:27", "2026-11-11T16:02:27.123", "Nov 11", "November 11", "Nov 11 2026", "November 11 2026", "Nov 11, 2026", "Sept 9", "Nov 11 16:02:27", "May 1 2026 16:02", "Nov  7 16:37", "Nov  7  2026", "11-11   16:02"]) assert.deepEqual(stamps(`at ${stamp}: ok`), [stamp]);
+  assert.deepEqual(stamps("x11-11 16:02 1-11 16:02 11-11 1602 11-11 16:02am 11.11 16:02 nov 11 Novel 11 xNov 11 Nov 111 Nov 2026"), []);
 }
 
 console.log("render checks passed");
