@@ -17,4 +17,6 @@ button:disabled::after { content: ""; position: absolute; inset: -1px; border-ra
 .help-pop .help-text { white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 10px; }
 /* What a line acts on ("Ctrl-click"), before its colon: blue, dark enough not to wash out. */
 .help-pop .help-key { color: #0b5ed7; }
+/* The ? popup's focused part, at the top and over its keys. */
+.help-pop .help-mode { color: #e04848; }
 .help-pop .help-buttons { text-align: right; }

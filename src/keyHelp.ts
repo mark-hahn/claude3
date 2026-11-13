@@ -41,32 +41,42 @@ document.body.append(dialog);
 // What a line acts on, up to its ": " ("Ctrl-click", "Enter (outside a text box)"), at a line's or a
 // sentence's start: shown blue. tip-text.txt keeps ": " for that alone.
 const ACTION = /(?<=^|\. )[^:\n]+?(?=: )/gm;
-function show(heading: string, text: string): void {
-  hideTip();
-  title.textContent = heading;
-  body.replaceChildren();
+function span(className: string, text: string): HTMLSpanElement {
+  const part = document.createElement("span");
+  part.className = className;
+  part.textContent = text;
+  return part;
+}
+function actions(text: string): (string | Node)[] {
+  const parts: (string | Node)[] = [];
   let at = 0;
   for (const match of text.matchAll(ACTION)) {
-    const key = document.createElement("span");
-    key.className = "help-key";
-    key.textContent = match[0];
-    body.append(text.slice(at, match.index), key);
+    parts.push(text.slice(at, match.index), span("help-key", match[0]));
     at = match.index + match[0].length;
   }
-  body.append(text.slice(at));
+  parts.push(text.slice(at));
+  return parts;
+}
+function show(heading: string, parts: (string | Node)[]): void {
+  hideTip();
+  title.textContent = heading;
+  body.replaceChildren(...parts);
   // A modal open on top of another (the Git popup) stacks above it.
   if (!dialog.open) dialog.showModal();
 }
+const blockOf = (name: string): string => tips.get(name) ?? `No text in src/tip-text.txt for @${name}`;
 
 export function showItem(name: string): void {
-  show(name, tips.get(name) ?? `No text in src/tip-text.txt for @${name}`);
+  show(name, actions(blockOf(name)));
 }
 
 // The ? button: global keys, then the keys of what has focus (the button keeps focus where it was).
+// The focused part's name is in light red, at the top and over its keys.
 export function showKeys(): void {
   const mode = document.activeElement?.closest<HTMLElement>("[data-mode]")?.dataset.mode;
-  const text = `Focused: ${mode ?? "none"}\n\n${tips.get(GLOBAL) ?? ""}`;
-  show("Keys", mode ? `${text}\n\n${mode}:\n${tips.get(mode) ?? `No text in src/tip-text.txt for @${mode}`}` : text);
+  const parts = [...actions("Focused: "), mode ? span("help-mode", mode) : "none", "\n\n", ...actions(tips.get(GLOBAL) ?? "")];
+  if (mode) parts.push("\n\n", span("help-mode", mode), ":\n", ...actions(blockOf(mode)));
+  show("Keys", parts);
 }
 
 // Window capture, ahead of every other listener: Monaco's middle-drag column select, xterm's mouse
