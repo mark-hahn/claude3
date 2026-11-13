@@ -25,6 +25,13 @@
 - when i say to save a rule, add it to CLAUDE.md (and mirror it in .github/copilot-instructions.md)
 - Architecture note: `.claude/architecture.md` (read for orientation; keep it current).
 - alt-click in a fenced code block copies that block's text to the clipboard; this overrides any other alt-click rule
+- the middle-click and ? popup text lives in `src/tip-text.txt`; keep it current in the same change:
+  a new clickable or focusable item gets a `data-help` name (and a `data-mode` if it has keys of its
+  own) with a block there; a change to what an item's click, middle-click or keys do updates its
+  block; an item removed or renamed has its block deleted or renamed with it. Write each name
+  literally, as `data-help="X"`, `:data-help="... 'X' ..."` or `dataset.help = "X"` (double quotes)
+  in a `.vue` or `.ts` file under `src/`, or the check can't see it. Run `node src/tipText.check.mjs`
+  afterwards; `./deploy` stops when it fails.
 
 ## Remote server
 

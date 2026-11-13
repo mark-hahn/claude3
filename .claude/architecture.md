@@ -110,7 +110,7 @@ on the laptop, and talks to each backend directly.
 - `server/capture.ts`: claude2's PowerShell screen shot, returned as a PNG data URI.
 - `src/copy.ts`: every alt-click's copy, with its light-red flash.
 - `src/tooltip.ts` (`#tip` in `style.css`): every `title` on the page drawn as the page's own bubble, since a native one can't be sized. One delegated `mouseover`, nothing to add per element. A host's title sits in `data-tip` only while the mouse is on it. A manual popover, so it shows above modal `<dialog>`s.
-- `src/keyHelp.ts` + `src/tip-text.txt` (`.help-pop` in `style.css`): middle-click on any item shows how it is used, in one modal `<dialog>` (`closedby="any"`, Close). Each `@name` line in the text file starts the block of the elements with that `data-help` (in templates, or `dataset.help` on what is built by script: bars, boxes, tool lines, code blocks, quota graphs); an element with none is display only and the middle-click does nothing. One window-capture listener takes every middle-button event (pointer, mouse, auxclick) ahead of Monaco's column select, xterm, Edge's autoscroll and the long presses, and shows on the release (a disabled button gets pointer events but no auxclick); only a link keeps its own. The tab strip's ? (left of the gear, `@mousedown.prevent` so focus stays put) shows the `global keys` block plus the block of the focused element's nearest `data-mode`, named on its first line. The text is a `?raw` import whose hot update swaps it in without a reload. Tooltips keep what an item is; its click and key details live only in the text. `src/tipText.check.mjs` (`npm test`) fails on a name with no block or a block on no element (bound `:data-help` names are read from their quoted strings).
+- `src/keyHelp.ts` + `src/tip-text.txt` (`.help-pop` in `style.css`): middle-click on any item shows how it is used, in one modal `<dialog>` (`closedby="any"`, Close). Each `@name` line in the text file starts the block of the elements with that `data-help` (in templates, or `dataset.help` on what is built by script: bars, boxes, tool lines, code blocks, quota graphs); an element with none is display only and the middle-click does nothing. One window-capture listener takes every middle-button event (pointer, mouse, auxclick) ahead of Monaco's column select, xterm, Edge's autoscroll and the long presses, and shows on the release (a disabled button gets pointer events but no auxclick); only a link keeps its own. The tab strip's ? (left of the gear, `@mousedown.prevent` so focus stays put) shows the `global keys` block plus the block of the focused element's nearest `data-mode`, named on its first line. The text is a `?raw` import whose hot update swaps it in without a reload. What a line acts on, before a `: ` at a line's or sentence's start, is shown in blue (`ACTION`, `.help-key`). Tooltips keep what an item is; its click and key details live only in the text. `src/tipText.check.mjs` (`npm test`) fails on a name with no block or a block on no element (bound `:data-help` names are read from their quoted strings).
 - `src/waitingImages.ts`: unsent pictures per tab in IndexedDB, and unsent files under `files:<tab>`. `src/cropRect.ts`: the crop's
   arithmetic, checked by `npm test`.
 - `src/monaco.ts` (+ `monaco.css`): claude2's Monaco setup (its webviews.ts `monacoScript` /
@@ -140,7 +140,10 @@ on the laptop, and talks to each backend directly.
   repo; endpoints at its top. On hahnca.com: pm2 `claude-stats`, port 7313 (`STATS_URL` in
   `shared/config.ts`), data in `~/.claude-stats/data.json`. It began as claude2's `claude2-stats`
   (port 7301, still there for claude2) and shares nothing with it; `test.mjs` is its check (`npm test`).
-- `deploy`: `./deploy stats` copies `claude-stats/` to hahnca.com and starts it under pm2, with a
+- `deploy`: every run first runs `src/tipText.check.mjs` and stops, deploying nothing, when it
+  fails: its lines come as `!!` lines under `!! src/tipText.check.mjs failed:`, which makes the
+  page's run-error dialog offer Fix it (`TIP_FAIL`, `fixTips` in Pane: the failure as a prompt to a
+  new session, opened, as Set up does). `./deploy stats` copies `claude-stats/` to hahnca.com and starts it under pm2, with a
   version of its own (the folder's hash), so changing it restarts no backend; the first deploy copies
   claude2-stats' `data.json` as its starting data. For the backends it
   builds and copies `package.json server shared` (+ `dist` for WSL) to each host, plus node-pty's runtime parts (`copy_pty`: its `lib`, the Linux `pty.node` npm install built here, which hahnca.com's glibc 2.39 also runs, and the win32-x64 prebuilds without `.pdb`s, ~3MB; on Windows after the old backend is stopped, as it holds the DLLs), and
@@ -410,7 +413,7 @@ on the laptop, and talks to each backend directly.
 - Enter in any modal `<dialog>` presses its `autofocus` button, or its only button (`src/main.ts`,
   window capture, ahead of Pane's Enter), unless focus is on a button, input, textarea, select or link.
   A click on a dialog's text leaves focus on the body, where Pane's Enter would act behind the dialog.
-- A new clickable or focusable item needs a `data-help` name (and a `data-mode` where it has keys of its own) with a block in `src/tip-text.txt`; `npm test` catches a mismatch. Names stay literal strings so the check can find them.
+- A new clickable or focusable item needs a `data-help` name (and a `data-mode` where it has keys of its own) with a block in `src/tip-text.txt`; `npm test` and every `./deploy` catch a mismatch. Names stay literal strings so the check can find them.
 - Every modal `<dialog>` carries `closedby="any"`: a click on its gray backdrop closes it as Esc does
   (a `cancel` handler can refuse, as Git's does while committing; a press that starts inside and is let
   go outside doesn't count). Give a new dialog the attribute too.

@@ -579,6 +579,7 @@ function putRun(text: string): void {
   const failure = sessionStorage.getItem(runFailKey());
   if (failure && !runErrorEl.value!.open) {
     runErrorText.value = failure;
+    runErrorEl.value!.returnValue = "";
     runErrorEl.value!.showModal();
   }
 }
@@ -587,6 +588,21 @@ function putRun(text: string): void {
 const runFailKey = (): string => `runFail:${props.tab.id}`;
 function runErrorClosed(): void {
   sessionStorage.removeItem(runFailKey());
+  if (runErrorEl.value!.returnValue === "fix") void fixTips(runErrorText.value);
+}
+// claude3's ./deploy stops on this line when src/tip-text.txt and the data-help names in src/
+// disagree, and the error dialog then offers Fix it: the failure goes to Claude in a new session,
+// opened, as Set up does. The ./run output's dialog closes with it.
+const TIP_FAIL = "!! src/tipText.check.mjs failed:";
+async function fixTips(failure: string): Promise<void> {
+  runPopEl.value!.close();
+  const prompt = `./deploy stopped because src/tipText.check.mjs failed:\n\n${failure}\n\nFix it: bring src/tip-text.txt and the data-help / data-mode names in src/ back into agreement, following the CLAUDE.md rule for src/tip-text.txt (write a block's text from what the item really does), until \`node src/tipText.check.mjs\` passes. Don't deploy.`;
+  try {
+    const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: "", prompt, images: [] });
+    emit("started", sessionId);
+  } catch (error) {
+    report(new Error(`Fix it couldn't start a session in ${props.tab.label}: ${error instanceof Error ? error.message : String(error)}`));
+  }
 }
 function runFailure(head: string, output = ""): string {
   return [head, ...plain(output).split("\n").filter((line) => line.startsWith("!!"))].join("\n");
@@ -1511,7 +1527,7 @@ onBeforeUnmount(() => {
     </dialog>
     <dialog ref="runErrorEl" closedby="any" class="run-pop run-error" @close="runErrorClosed">
       <pre>{{ runErrorText }}</pre>
-      <form method="dialog" data-help="run error"><button autofocus>OK</button></form>
+      <form method="dialog" data-help="run error"><button v-if="runErrorText.includes(TIP_FAIL)" value="fix">Fix it</button> <button autofocus>OK</button></form>
     </dialog>
     <dialog ref="deployPopEl" closedby="any" class="run-pop">
       <pre>{{ deployText }}</pre>

@@ -28,6 +28,15 @@ STARTED=$(date +%s.%N) # the stamp's time: see stamp
 # WSL's Windows directories, so reg.exe, powershell.exe and conhost.exe weren't found.
 PATH="$PATH:/mnt/c/Windows/System32:/mnt/c/Windows/System32/WindowsPowerShell/v1.0"
 
+# src/tip-text.txt against the data-help / data-mode names in src/: a mismatch stops every deploy
+# before any host. The page's run-error dialog offers Fix it on the first line below (TIP_FAIL in
+# Pane.vue). Silent when it passes, since --if-stale runs this again for each host.
+if ! tips=$(node src/tipText.check.mjs 2>&1); then
+  echo "!! src/tipText.check.mjs failed:"
+  sed 's/^/!!   /' <<< "$tips"
+  exit 1
+fi
+
 REMOTE=hahnca.com
 WSL_DIR=/root/apps/claude3Wsl
 WIN_DIR=/mnt/c/Users/mark/apps/claude3Win

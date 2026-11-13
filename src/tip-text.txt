@@ -3,6 +3,8 @@ the lines after it, up to the next @ line, are its popup text, blank lines inclu
 element's data-help (middle-click) or data-mode (the ? button's focused part) in the source.
 "global keys" is the ? button's own. npm test fails when a name here is in no source file, or a name
 in the source has no block here. Lines before the first @ line, like these, are ignored.
+The text before a ": " at a line's or a sentence's start is shown in blue as what the line
+acts on ("Ctrl-click: ..."), so a ": " goes only there.
 
 @global keys
 Middle-click: on any item, how it is used. Nothing on items that only show something. A link keeps its own middle-click (a new background tab).
@@ -162,6 +164,7 @@ Click: select this block and open its box; on the selected bar, open or close th
 Ctrl-click: show the whole prompt, or one line again.
 Alt-click: copy the prompt.
 Hover: model and time it ran with, and the prompt.
+Enter (outside a text box): open or close the last block's box; with another block selected, select the last one first.
 
 @fork mark
 Click: fork here, after asking: copy the session, then drop every block below this one.
@@ -176,6 +179,8 @@ Click: details of the file sent with this prompt.
 Click: select text.
 Ctrl-click: switch between the answer and the tool steps.
 Alt-click: copy the whole box as shown.
+Enter (outside a text box): open or close the last block's box; with another block selected, select the last one first.
+Ctrl-wheel: text size.
 
 @tool line
 Click: show or hide this tool step's detail.
@@ -204,7 +209,7 @@ Click: stop the running response, or a background task it waits on.
 Click: capture the screen for this prompt, hiding this window for the shot.
 Ctrl-click: the same, with this window left up.
 Alt-click: the previous tab is shown for the shot.
-The picture waits in the prompt box: click its icon to see or crop it, ctrl-click to remove it.
+The picture waits in the prompt box; click its icon to see or crop it, ctrl-click to remove it.
 
 @footer File button
 Click: add a file to this prompt, picked on this project's host.
@@ -223,6 +228,7 @@ OK: hide the ./run output; the result brings it back when the run ends.
 
 @run error
 OK: close the failed ./run's error.
+Fix it (when claude3's deploy stopped on tip-text.txt): a new session where Claude fixes it, opened.
 
 @deploy warning
 Deploy: run ./run first; the prompt stays in the box.
@@ -370,6 +376,8 @@ Double-click a file: open it in the editor. Double-click a folder: make it the r
 Ctrl-double-click a .md: show it rendered.
 Long press: everything about it (size, times, lines, totals).
 Alt-click: copy its path.
+Selected: Delete deletes it, after asking. F2: rename it. Ctrl+Enter: add the file to the prompt.
+Ctrl-C / Ctrl-X: copy / cut it to the Windows clipboard.
 
 @file info
 OK: close.

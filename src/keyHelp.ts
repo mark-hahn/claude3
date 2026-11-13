@@ -38,10 +38,22 @@ buttons.append(close);
 dialog.append(title, body, buttons);
 document.body.append(dialog);
 
+// What a line acts on, up to its ": " ("Ctrl-click", "Enter (outside a text box)"), at a line's or a
+// sentence's start: shown blue. tip-text.txt keeps ": " for that alone.
+const ACTION = /(?<=^|\. )[^:\n]+?(?=: )/gm;
 function show(heading: string, text: string): void {
   hideTip();
   title.textContent = heading;
-  body.textContent = text;
+  body.replaceChildren();
+  let at = 0;
+  for (const match of text.matchAll(ACTION)) {
+    const key = document.createElement("span");
+    key.className = "help-key";
+    key.textContent = match[0];
+    body.append(text.slice(at, match.index), key);
+    at = match.index + match[0].length;
+  }
+  body.append(text.slice(at));
   // A modal open on top of another (the Git popup) stacks above it.
   if (!dialog.open) dialog.showModal();
 }
