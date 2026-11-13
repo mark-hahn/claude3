@@ -1,5 +1,5 @@
 // The Term pane's shells: one pty per terminal (main.ts keys them, three a tab at most), in the folder the page names, through node-pty (what VS Code's
-// terminal uses): bash on Linux, PowerShell on Windows. Kept here, so closing the pane or
+// terminal uses): bash on Linux, Git Bash on Windows (as VS Code's Git Bash profile). Kept here, so closing the pane or
 // reloading the page loses nothing. The page's xterm.js gets the raw output, colours and all, and
 // sends keys as typed. The last LINES lines are kept, to replay to a page that comes in fresh.
 import { randomUUID } from "crypto";
@@ -57,24 +57,27 @@ function append(shell: Shell, data: string): void {
 // Each prompt sends the shell's folder as OSC 7 with a bare path, for the pane's header. Added after
 // the user's own startup (bash's ~/.bashrc unsets PROMPT_COMMAND), and last, so $? is still theirs.
 // Readline (bash 5.1+) shows pasted text as an inverse-video "active region"; that's turned off.
-const BASH_RC = `[ -f ~/.bashrc ] && . ~/.bashrc
+// Git Bash first reads /etc/profile, as its login shell would (PATH, the git prompt), and sends the
+// folder as a Windows path, the one the Path dialog and its cd take.
+const bashRc = (windows: boolean): string => {
+  const folder = windows ? `\\$(cygpath -w \\"\\$PWD\\")` : `\\$PWD`;
+  return `${windows ? ". /etc/profile\n" : ""}[ -f ~/.bashrc ] && . ~/.bashrc
 bind 'set enable-active-region off' 2>/dev/null
 PROMPT_COMMAND="\${PROMPT_COMMAND}
-printf '\\e]7;%s\\a' \\"\\$PWD\\""
+printf '\\e]7;%s\\a' \\"${folder}\\""
 `;
-const PS_PROMPT = `$global:__c3Prompt = $function:prompt; function global:prompt { "$([char]27)]7;$($PWD.ProviderPath)$([char]7)" + (& $global:__c3Prompt) }`;
+};
+// Also what a ./run on Windows goes through (main.ts).
+export const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
 
 function start(shell: Shell, cwd: string): void {
   try {
     const { spawn } = require("node-pty") as typeof import("node-pty");
     const windows = process.platform === "win32";
-    let args = ["-NoLogo", "-NoExit", "-EncodedCommand", Buffer.from(PS_PROMPT, "utf16le").toString("base64")];
-    if (!windows) {
-      const rc = join(homedir(), ".claude3", "term.bashrc");
-      writeFileSync(rc, BASH_RC);
-      args = ["--rcfile", rc];
-    }
-    const pty = spawn(windows ? "powershell.exe" : "bash", args, { name: "xterm-256color", cols: shell.cols, rows: shell.rows, cwd, env: { ...childEnv(), TERM: "xterm-256color", COLORTERM: "truecolor" } });
+    const rc = join(homedir(), ".claude3", "term.bashrc");
+    writeFileSync(rc, bashRc(windows));
+    // Git Bash is given C:/..., not backslashes.
+    const pty = spawn(windows ? GIT_BASH : "bash", ["--rcfile", rc.replaceAll("\\", "/")], { name: "xterm-256color", cols: shell.cols, rows: shell.rows, cwd, env: { ...childEnv(), TERM: "xterm-256color", COLORTERM: "truecolor" } });
     shell.pty = pty;
     shell.exited = false;
     pty.onData((data) => append(shell, data));

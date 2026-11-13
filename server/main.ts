@@ -62,7 +62,7 @@ import { commitFiles, GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMess
 import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
 import { checkCosts, QuotaService, speechmaticsCost, type QuotaState } from "./quota.ts";
 import { stampProblem, stampTime } from "./stamp.ts";
-import { termClear, termClose, termRead, termResize, termSend } from "./term.ts";
+import { GIT_BASH, termClear, termClose, termRead, termResize, termSend } from "./term.ts";
 
 const hostName = process.argv[2] as HostName;
 const host = HOSTS[hostName];
@@ -917,7 +917,7 @@ function errorText(error: unknown): string {
 // Windows can't start a script by its #! line, so there ./run goes through Git Bash; every
 // project's ./run is bash on every host. The ~/.claude/skills/deployable skill (skills/ here) is
 // what tells a project's Claude how to write one; keep it in step with this, deployNeeded and deployCheck.
-const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
+// GIT_BASH is term.ts's, the Term pane's shell on Windows too.
 // Whether the project has that file. A folder of the name isn't one: a project at / has /run.
 const isFile = (cwd: string, name: string): boolean => fs.statSync(path.join(cwd, name), { throwIfNoEntry: false })?.isFile() ?? false;
 // How long a ./run may take. coreutils' timeout (Git Bash's own on Windows) then stops the script

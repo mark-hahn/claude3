@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// One terminal of the tab row's Term pane (Project stacks up to three): xterm.js on its own pty (server/term.ts), bash or PowerShell on win,
+// One terminal of the tab row's Term pane (Project stacks up to three): xterm.js on its own pty (server/term.ts), bash (Git Bash on win),
 // kept by the backend while the pane is closed. Keys go up as typed, Ctrl-C included; selecting text
 // (a double-click's word too) copies it, with text selected Ctrl-C copies it instead, and Ctrl-V pastes.
 import { FitAddon } from "@xterm/addon-fit";
@@ -178,8 +178,8 @@ async function follow(): Promise<void> {
 // The header's Path: the folder picker with a host selector left of its box, opened on this terminal's
 // host at its shell's folder. Another host chosen there only moves the picker to that host's home
 // folder (back on this one, to the shell's folder); nothing is done until Ok. A folder picked on this
-// host is a cd to it, after clearing any half-typed line (bash's Ctrl-E Ctrl-U; PowerShell's is left
-// as it is); one on another host is a new terminal there, starting in it. With three terminals the
+// host is a cd to it, after clearing any half-typed line (Ctrl-E Ctrl-U; Git Bash takes a Windows
+// path as it is); one on another host is a new terminal there, starting in it. With three terminals the
 // selector is off.
 const picker = ref<InstanceType<typeof FolderPicker>>();
 const pickHost = ref<HostName>(props.host);
@@ -192,7 +192,7 @@ function picked(folder: string): void {
   cd(folder);
 }
 function cd(folder: string): void {
-  pending += props.host === "win" ? `Set-Location -LiteralPath '${folder.replaceAll("'", "''")}'\r` : `\x05\x15cd -- '${folder.replaceAll("'", "'\\''")}'\r`;
+  pending += `\x05\x15cd -- '${folder.replaceAll("'", "'\\''")}'\r`;
   void flush();
   term.focus();
 }
