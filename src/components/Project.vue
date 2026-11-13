@@ -23,8 +23,9 @@ import Term from "./Term.vue";
 // active: this is the tab on show. side: what this tab has open right of the pane ("", "snips",
 // "settings", "git", "term", "files" for the tree or "file" for its editor), through App's column toggles.
 // focusAsked: a change puts the cursor in the prompt box of the tab on show. sidebarAsked: a change
-// toggles the sidebar of the tab on show.
-const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number; sidebarAsked: number }>();
+// toggles the sidebar of the tab on show. logViewEnd: a change (a tab row click other than Log) ends
+// the Git popup's review of a Log pane commit.
+const props = defineProps<{ tab: Tab; active: boolean; side: string; focusAsked: number; sidebarAsked: number; logViewEnd: number }>();
 // The Term pane's terminals, top to bottom, sharing the column's height equally: each a slot (0 to 2,
 // its own shell in its host's backend), the host its shell is on (any, not only the tab's) and the
 // folder it starts in. A terminal asks for another (its + or its Path dialog's host selector), which takes
@@ -45,7 +46,7 @@ function closeTerm(slot: number): void {
   terms.value = terms.value.filter((one) => one.slot !== slot);
   void nextTick(() => termPanes.value.at(-1)?.focus());
 }
-const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; showFiles: []; highlighted: [on: boolean]; noRepo: [none: boolean]; sessionName: [name: string] }>();
+const emit = defineEmits<{ busy: [count: number]; closeSide: []; openFile: []; showFiles: []; highlighted: [on: boolean]; noRepo: [none: boolean]; sessionName: [name: string]; logView: [on: boolean] }>();
 
 // Plain objects mutated in place as text streams in; `version` tells Vue when the shape changed.
 let sessions: ClaudeSession[] = [];
@@ -435,7 +436,7 @@ watch(() => gitDirty.value || deployDue.value, (on) => emit("highlighted", on));
 // line. By way of the tree, so an editor already open saves and closes first; Files is there to ask
 // once the column has changed.
 const filesPane = ref<InstanceType<typeof Files>>();
-// The Log pane's ctrl-alt-click opens it on a commit.
+// A click on a Log pane line opens it on a commit.
 const gitPopup = ref<InstanceType<typeof Git>>();
 async function openInFiles(path: string, line: number): Promise<void> {
   emit("showFiles");
@@ -455,6 +456,11 @@ watch(() => props.active, (active) => {
   void ensureOpen();
 });
 watch(() => props.side, (open) => !open && props.active && focusPrompt());
+// Log view mode, the Git popup's review of a Log pane commit: it follows the side pane, ends on a tab row
+// click, and shows on the Log button.
+watch(() => props.side, (side) => gitPopup.value?.sideShown(side));
+watch(() => props.logViewEnd, () => gitPopup.value?.endReview());
+watch(() => !!gitPopup.value?.reviewing, (on) => emit("logView", on));
 watch(() => props.focusAsked, () => props.active && focusPrompt());
 watch(() => props.sidebarAsked, () => props.active && toggleSidebar());
 // A project closed and opened again comes back with its sidebar open.
@@ -553,7 +559,7 @@ onBeforeUnmount(() => {
     <div v-if="side" class="divider side-divider" data-help="side divider" @pointerdown="dragSideDivider"></div>
     <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
-    <GitGraph v-if="side === 'git'" :tab="tab" :active="active" @review="(hash, subject) => gitPopup?.openCommit(hash, subject)" />
+    <GitGraph v-if="side === 'git'" :tab="tab" :active="active" :reviewing="gitPopup?.reviewing" @review="(hash, subject) => gitPopup?.openCommit(hash, subject)" />
     <div v-if="side === 'term'" class="terms"><Term v-for="one in terms" :key="one.slot" ref="termPanes" :tab="tab" :active="active" :index="one.slot" :host="one.host" :start="one.cwd" :count="terms.length" @add="(host, cwd) => addTerm(one.slot, host, cwd)" @close="closeTerm(one.slot)" /></div>
     <Files v-if="side.startsWith('file')" ref="filesPane" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" @attach="(path, host) => pane?.attach(path, host)" />
   </div>

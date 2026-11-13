@@ -39,9 +39,14 @@ watch([toShow, sorted], () => {
 const focusAsked = ref(0);
 // Bumped by the tab strip's sidebar button; the Project on show toggles its sidebar, as Ctrl-B does.
 const sidebarAsked = ref(0);
+// Bumped by a click on a tab or a tab strip toggle other than Log: it ends log view mode (Git.vue's
+// review of a Log pane commit). Per tab: log view mode is on, and the Log button has a red border.
+const logViewEnd = ref(0);
+const logView = reactive<Record<string, boolean>>({});
 // Ctrl-click closes the project, as a click on its name in the Tabs dialog does. The tab goes when
 // the backend's new list comes down; a project with a session running is refused.
 function clickTab(tab: Tab, event: MouseEvent): void {
+  logViewEnd.value++;
   if (event.ctrlKey) {
     post(tab, "openProject", { open: false })
       .catch((error) => window.alert(error instanceof Error ? error.message : String(error)))
@@ -65,7 +70,10 @@ const sessionNames = reactive<Record<string, string>>({});
 // the editor back to the tree.
 const sides = reactive<Record<string, string>>({});
 const side = computed(() => sides[current.value] ?? "");
-const toggle = (name: string): void => void (sides[current.value] = side.value === name ? "" : name);
+function toggle(name: string): void {
+  if (name !== "git") logViewEnd.value++;
+  sides[current.value] = side.value === name ? "" : name;
+}
 // With no project open, the Snips and Settings have the page to themselves. Both are the host's
 // actions, not a project's, so this stand-in only names the WSL backend to ask.
 const NO_TAB: Tab = { id: "", label: "", host: "wsl", path: "", open: false };
@@ -113,13 +121,13 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
       </button>
       <span class="session-name">{{ sessionNames[current] }}</span>
       <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" data-help="Files button" @click="toggle('files')">Files</button>
-      <button class="tab git-toggle" :class="{ active: side === 'git' }" :aria-pressed="side === 'git'" :disabled="!currentTab || noRepo[current]" data-help="Log button" @click="toggle('git')">Log</button>
+      <button class="tab git-toggle" :class="{ active: side === 'git', 'log-view': logView[current] }" :aria-pressed="side === 'git'" :disabled="!currentTab || noRepo[current]" data-help="Log button" @click="toggle('git')">Log</button>
       <button class="tab term-toggle" :class="{ active: side === 'term' }" :aria-pressed="side === 'term'" :disabled="!currentTab" data-help="Term button" @click="toggle('term')">Term</button>
       <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" data-help="Snips button" @click="toggle('snips')">Snips</button>
       <button class="tab" aria-label="Keys" data-help="keys button" @mousedown.prevent @click="showKeys">?</button>
       <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" aria-label="Settings" data-help="Settings button" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
-    <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" @no-repo="(none) => (noRepo[tab.id] = none)" @session-name="(name) => (sessionNames[tab.id] = name)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" :sidebar-asked="sidebarAsked" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" @show-files="sides[tab.id] = 'files'" />
+    <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" @no-repo="(none) => (noRepo[tab.id] = none)" @session-name="(name) => (sessionNames[tab.id] = name)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" :sidebar-asked="sidebarAsked" :log-view-end="logViewEnd" @log-view="(on) => (logView[tab.id] = on)" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" @show-files="sides[tab.id] = 'files'" />
     <Snips v-if="!currentTab && side === 'snips'" class="alone" :tab="NO_TAB" shown :add-to-prompt="() => false" @close="sides[current] = ''" />
     <Settings v-if="!currentTab && side === 'settings'" class="alone" :tab="NO_TAB" active @close="sides[current] = ''" />
   </div>
@@ -146,6 +154,8 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
 .tabs .session-name { flex: 1 1 0; min-width: 0; align-self: center; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tabs .files-toggle { margin-left: auto; }
 .tabs .files-toggle.active, .tabs .git-toggle.active, .tabs .term-toggle.active, .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
+/* Log view mode (Git.vue's review of a Log pane commit), with its popup open or parked behind the Files editor. */
+.tabs .git-toggle.log-view { border-color: #d11a1a; }
 /* 20% over the tab's 14px. The line-height keeps the bigger glyph from making its tab taller. */
 .tabs .tab-dot { color: #1a8f2e; margin-right: 6px; font-size: 16.8px; line-height: 1; }
 .tabs .tab-dot.due { color: #f08080; }

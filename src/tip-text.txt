@@ -54,6 +54,7 @@ Click: open or close the Files column (a tree of the project's folder). From the
 
 @Log button
 Click: open or close the Log pane, a graph of the project's commits. Off when the folder is in no git repo.
+A red border: log view mode (a click on a Log row). Opening a file from its diff leaves it on: a click here brings back the log, the popup, its file and diff. Closing the log or the popup, or a click on any other tab or tab row toggle, ends it.
 
 @Term button
 Click: open or close the Term pane: up to three bash shells (Git Bash on win), the first in the project's folder.
@@ -288,18 +289,18 @@ Ctrl+Enter: commit.
 Up at the start / Down at the end: older / newer messages. Alt-Up / Alt-Down: the same from anywhere.
 
 @Git file row
-Click: pick it and show its diff. Ctrl-click: add or drop it. Shift-click: add a run.
+Click: pick it and show its diff; on the only picked row, unpick it, closing the diff. Ctrl-click: add or drop it. Shift-click: add a run.
 Up / Down: the row above / below.
 Delete or Ctrl-Z: revert the picked files to the last commit, after asking (a new file is deleted).
 
 @Git diff
 Left: the file in the last commit. Right: the file on disk.
-Click a line number: open the file in Files at that line, closing the popup.
+Click a line number: open the file in Files at that line, closing the popup. In log view mode the Log button brings the popup back.
 
 @Log row
+Click: log view mode: review the commit's changes in the Git popup, or show it in the one already open. The log stays usable beside it (no gray cover), the commit's line is highlighted and the Log button red; see the Log button. A diff on show covers the log: click its file row to close it first.
 Ctrl-click: copy the commit's hash.
 Alt-click: copy its message.
-Ctrl-Alt-click: review its changes in the Git popup.
 Ctrl-wheel: text size.
 
 @Term + button

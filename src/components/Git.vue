@@ -6,8 +6,9 @@
 // diff is on show to their right, Up and Down in the list walking the files; a click on one of the diff's line numbers opens the file there in the Files pane. The label counts the files waiting
 // for a commit. It's re-read while the project is open, on show or not, for the dot on its tab:
 // when it comes up, when a session changes (a turn starting or ending), and every 2s for changes
-// no event tells of. The Log pane's ctrl-alt-click opens it on one commit instead (`openCommit`): that
-// commit's files and their diffs against its parent, with no buttons but Close, no message boxes, no revert.
+// no event tells of. A click on a Log pane line opens it on one commit instead (`openCommit`): that
+// commit's files and their diffs against its parent, with no buttons but Close, no message boxes, no revert,
+// not modal (no gray cover, no click-outside close), so a click on another log line shows that commit.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
@@ -57,6 +58,11 @@ const shown = computed(() => [...staged.value, ...changed.value]);
 const picked = ref(new Set<string>());
 let anchor = "";
 function clickFile(key: string, event: MouseEvent): void {
+  // A plain click on the only picked row unpicks it, closing its diff.
+  if (!event.ctrlKey && !event.shiftKey && picked.value.size === 1 && picked.value.has(key)) {
+    picked.value = new Set();
+    return;
+  }
   const next = new Set(picked.value);
   anchor = pick(next, shown.value.map((file) => file.key), key, anchor, event);
   picked.value = next;
@@ -234,14 +240,19 @@ watch(diffHost, (host) => {
   }
   void loadDiff();
 }, { flush: "post" });
-// The popup closes: the file is in the editor behind it.
+// The popup closes: the file is in the editor behind it. A review is kept (parked) for the Log button
+// to bring back.
 function openAt(line: number): void {
   if (!canOpen.value || committing.value) return;
+  parked = !!review.value;
   emit("openFile", diffRow.value!.full!, line);
   dialog.value?.close();
 }
+// A row coming on show reads its right side again, as only that read says whether a reviewed file is
+// still as its commit left it (the same row again, or a parked review brought back after an edit).
 watch(() => diffRow.value?.key, () => {
   fresh.value = false;
+  sides.rightOf = "";
   void loadDiff();
 });
 // The usual popup always numbers its lines; a review only where a click on one opens the file.
@@ -278,10 +289,18 @@ function onPageKey(event: KeyboardEvent): void {
   if (!props.active || event.code !== "KeyG" || !event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
   event.preventDefault();
   event.stopPropagation();
-  if (event.repeat || committing.value) return;
-  if (!dialog.value?.open) {
-    if (!noRepo.value) open();
-  } else dialog.value.close();
+  if (!event.repeat && !committing.value) void toggle();
+}
+// The button and Ctrl-G. A parked review ends first: this is the usual popup.
+async function toggle(): Promise<void> {
+  if (dialog.value?.open) return dialog.value.close();
+  if (noRepo.value) return;
+  if (review.value) {
+    endReview();
+    // closedby follows review before the popup shows.
+    await nextTick();
+  }
+  open();
 }
 onMounted(() => {
   poller = window.setInterval(() => void poll(), 2000);
@@ -303,31 +322,63 @@ function open(): void {
   dialog.value!.style.maxHeight = `calc(100vh - ${bottom + 16}px)`;
   // With a diff on show it reaches from here to the window's right edge.
   dialog.value!.style.setProperty("--git-left", `${left}px`);
-  dialog.value!.showModal();
+  // A review isn't modal: the Log pane beside it stays usable, its lines picking the commit.
+  if (review.value) dialog.value!.show();
+  else dialog.value!.showModal();
   isOpen.value = true;
   void refresh();
 }
 
-// The Log pane's ctrl-alt-click on a commit: the popup on that commit's changes. Shown at once, the
-// list filling in when it comes.
+// A click on a Log pane line: the popup on that commit's changes, or the one open moving to it. A diff reaches over the log, so it is closed before another line
+// can be clicked. Shown at once, the list filling in when it comes.
 async function openCommit(hash: string, subject: string): Promise<void> {
-  open();
+  error.value = "";
   picked.value = new Set();
   review.value = { hash, subject, files: [] };
+  if (!dialog.value!.open) {
+    // closedby follows review before the popup shows.
+    await nextTick();
+    if (review.value?.hash === hash) open();
+  }
   try {
     const { files: changes } = await post<{ files: GitFile[] }>(props.tab, "gitCommit", { hash });
     if (review.value?.hash === hash) review.value = { hash, subject, files: changes };
   } catch (problem) {
-    error.value = messageOf(problem);
+    if (review.value?.hash === hash) error.value = messageOf(problem);
   }
 }
-defineExpose({ openCommit });
+// Log view mode: a review is on, its popup open or parked while a file it opened is in the Files
+// editor (`parked`). For the Log pane and the tab row: the commit under review (its line highlighted,
+// the Log button red), and the end of the review (a tab row click, the log closing, the popup closing).
+let parked = false;
+const reviewing = computed(() => review.value?.hash ?? "");
+function endReview(): void {
+  if (!review.value) return;
+  parked = false;
+  if (dialog.value?.open) return dialog.value.close();
+  review.value = undefined;
+  picked.value = new Set();
+}
+// The tab's side pane changed: the log coming back brings a parked review back, popup, picked file and
+// diff; anything else but the Files pane a parked review opened ends it.
+function sideShown(side: string): void {
+  if (!review.value) return;
+  if (side !== "git") {
+    if (!parked || !side.startsWith("file")) endReview();
+  } else if (parked) {
+    parked = false;
+    open();
+  }
+}
+defineExpose({ openCommit, reviewing, endReview, sideShown });
 
 function onClose(): void {
   isOpen.value = false;
-  // A row picked in the review isn't the usual popup's.
-  if (review.value) picked.value = new Set();
-  review.value = undefined;
+  // A row picked in the review isn't the usual popup's. A parked review keeps both.
+  if (!parked) {
+    if (review.value) picked.value = new Set();
+    review.value = undefined;
+  }
   emit("closed");
 }
 
@@ -438,10 +489,10 @@ function onMessageKey(event: KeyboardEvent): void {
 </script>
 
 <template>
-  <button ref="button" class="tab git" :class="{ dirty: files.length }" data-help="Git button" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" :disabled="noRepo" @click="open">
+  <button ref="button" class="tab git" :class="{ dirty: files.length }" data-help="Git button" :title="failure || `Commit and push ${tab.path}: ${files.length} changed file${files.length === 1 ? '' : 's'}`" :disabled="noRepo" @click="toggle">
     G<span v-if="files.length">&nbsp;{{ files.length }}</span>
   </button>
-  <dialog ref="dialog" class="git-pop" :class="{ wide: diffRow }" @cancel="committing && $event.preventDefault()" @close="onClose" closedby="any">
+  <dialog ref="dialog" class="git-pop" :class="{ wide: diffRow }" @cancel="committing && $event.preventDefault()" @close="onClose" :closedby="review ? 'closerequest' : 'any'">
     <div class="git-main">
       <div class="git-head">
         <div class="git-title">{{ review ? `Commit ${review.hash.slice(0, 7)}: ${review.subject}` : `Source Control: ${tab.path}` }}</div>
@@ -492,6 +543,8 @@ function onMessageKey(event: KeyboardEvent): void {
 /* A diff on show: from under the button to the window's right and bottom edges, the lists keeping their width and place. */
 .git-pop.wide { width: calc(100vw - var(--git-left) - 12px); max-width: none; height: 100vh; }
 .git-main { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; min-height: 0; }
+/* A review isn't modal: placed as the modal popup is, over the panes. */
+.git-pop:not(:modal) { position: fixed; inset: 0; z-index: 100; }
 .git-pop.wide .git-main { flex: none; width: calc(min(420px, 92vw) - 26px); }
 .git-diff { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
 .git-diff-path { font-weight: 600; overflow-wrap: anywhere; }
