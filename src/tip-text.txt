@@ -321,6 +321,8 @@ Click: end this shell and take it out; the last one closes the pane.
 @terminal
 Select text: copies it. Ctrl-C with text selected: copy, else to the shell.
 Ctrl-V: paste. Ctrl-R: reload the page.
+p <command> on win: runs it in PowerShell, as typed (Enter rewrites the line to powershell -Command).
+p alone on win: enter PowerShell; exit comes back to bash.
 Ctrl-B, Ctrl-S, Ctrl-G and Ctrl-Alt keys are the page's, not the shell's.
 Ctrl-wheel: text size.
 

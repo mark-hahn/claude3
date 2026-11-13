@@ -59,13 +59,24 @@ function append(shell: Shell, data: string): void {
 // Readline (bash 5.1+) shows pasted text as an inverse-video "active region"; that's turned off.
 // Git Bash first reads /etc/profile, as its login shell would (PATH, the git prompt), and sends the
 // folder as a Windows path, the one the Path dialog and its cd take.
+// There Enter also rewrites a line typed as "p <command>" to powershell -NoProfile -Command '<command>'
+// (its quotes escaped) before running it, so <command> reaches PowerShell as typed, $, braces and ;
+// included, and a line of just "p" to an interactive PowerShell (its profile kept, for the colours).
+// Bash parses a line before any hook of its own sees it, so this is readline's: Enter is a
+// macro of the rewrite (bind -x) and then accept-line, on CR and LF both, whichever Enter arrives as.
+const P_LINE = `__c3_p() { case $READLINE_LINE in p | "p ") READLINE_LINE="powershell -NoLogo" ;; "p "*) local q="'" rest=\${READLINE_LINE#p }; READLINE_LINE="powershell -NoProfile -Command '\${rest//$q/$q\\\\$q$q}'" ;; *) return ;; esac; READLINE_POINT=\${#READLINE_LINE}; }
+bind -x '"\\C-x\\C-p": __c3_p'
+bind '"\\C-x\\C-m": accept-line'
+bind '"\\C-m": "\\C-x\\C-p\\C-x\\C-m"'
+bind '"\\C-j": "\\C-x\\C-p\\C-x\\C-m"'
+`;
 const bashRc = (windows: boolean): string => {
   const folder = windows ? `\\$(cygpath -w \\"\\$PWD\\")` : `\\$PWD`;
   return `${windows ? ". /etc/profile\n" : ""}[ -f ~/.bashrc ] && . ~/.bashrc
 bind 'set enable-active-region off' 2>/dev/null
 PROMPT_COMMAND="\${PROMPT_COMMAND}
 printf '\\e]7;%s\\a' \\"${folder}\\""
-`;
+${windows ? P_LINE : ""}`;
 };
 // Also what a ./run on Windows goes through (main.ts).
 export const GIT_BASH = "C:\\Program Files\\Git\\bin\\bash.exe";
