@@ -598,26 +598,26 @@ onBeforeUnmount(() => window.clearInterval(poller));
     <FileEditor v-else-if="fileMode && file" :active="active" :file="file" />
     <div v-show="!fileMode" ref="treeArea" class="files-mode" tabindex="-1" data-mode="Files tree" @keydown="keyDown">
       <div class="files-bar">
-        <button title="New empty file in the selected folder, beside the selected file, or in the root" data-help="Files New button" :disabled="many" @click="newFile($event.ctrlKey)">New</button>
-        <button title="New project from the selected folder" data-help="Files Prj button" :disabled="!selectedRow?.dir" @click="newProjectAt(treeHost, selectedRow!.path)">Prj</button>
-        <button title="Show a folder in the tree, on any host" data-help="Files Path button" @click="showHost(treeHost)">Path</button>
+        <button data-help="Files New button" :disabled="many" @click="newFile($event.ctrlKey)">New</button>
+        <button data-help="Files Prj button" :disabled="!selectedRow?.dir" @click="newProjectAt(treeHost, selectedRow!.path)">Prj</button>
+        <button data-help="Files Path button" @click="showHost(treeHost)">Path</button>
         <!-- One piece, so the search box and NM wrap to the next line together. -->
         <span class="files-find">
           <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" data-help="Files search box" data-mode="Files search box" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="focusTree()" />
-          <label class="files-nm" title="Search inside node_modules too" data-help="Files NM box"><input v-model="searchNodeModules" type="checkbox" />NM</label>
+          <label class="files-nm" data-help="Files NM box"><input v-model="searchNodeModules" type="checkbox" />NM</label>
         </span>
       </div>
       <div class="files-bar">
-        <button title="Up to the root's parent folder" aria-label="Up" data-help="Files Up button" :disabled="!upFolder" @click="goUp">
+        <button aria-label="Up" data-help="Files Up button" :disabled="!upFolder" @click="goUp">
           <svg viewBox="0 0 20 16"><path d="M10 15.5V1.5M5.5 6 10 1.5 14.5 6" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" /></svg>
         </button>
-        <button title="Back to the previous root" aria-label="Back" data-help="Files Back button" :disabled="rootIdx < 0" @click="stepRoot(-1)">
+        <button aria-label="Back" data-help="Files Back button" :disabled="rootIdx < 0" @click="stepRoot(-1)">
           <svg viewBox="0 0 20 16"><path d="M1.5 5.5H14a4.5 4.5 0 0 1 0 9M6 10 1.5 5.5 6 1" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" /></svg>
         </button>
-        <button title="Forward to the next root" aria-label="Forward" data-help="Files Forward button" :disabled="rootIdx >= roots.length - 1" @click="stepRoot(1)">
+        <button aria-label="Forward" data-help="Files Forward button" :disabled="rootIdx >= roots.length - 1" @click="stepRoot(1)">
           <svg class="files-flip" viewBox="0 0 20 16"><path d="M1.5 5.5H14a4.5 4.5 0 0 1 0 9M6 10 1.5 5.5 6 1" stroke-width="2" stroke-linecap="butt" stroke-linejoin="miter" /></svg>
         </button>
-        <button title="Close all folders but the way to the selection; pressed again, close those too and drop the selection" aria-label="Collapse" data-help="Files Collapse button" @click="collapse">
+        <button aria-label="Collapse" data-help="Files Collapse button" @click="collapse">
           <svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="10" height="10" rx="1" /><path d="M4 9.5h5M4.5 1.5h10v10" /></svg>
         </button>
       </div>
@@ -653,7 +653,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
         </div>
       </div>
       <FolderPicker ref="picker" :host="treeHost" @pick="goTo($event, pickHost)">
-        <select :value="pickHost" aria-label="Host" title="The host whose folders these are" data-help="Files host" @change="showHost(($event.target as HTMLSelectElement).value as HostName)"><option v-for="(_, name) in HOSTS" :key="name">{{ name }}</option></select>
+        <select :value="pickHost" aria-label="Host" data-help="Files host" @change="showHost(($event.target as HTMLSelectElement).value as HostName)"><option v-for="(_, name) in HOSTS" :key="name">{{ name }}</option></select>
       </FolderPicker>
       <dialog ref="infoDialog" class="files-info" closedby="any" @wheel.stop @close="treeArea?.focus()">
         <table>

@@ -133,7 +133,7 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
 </script>
 
 <template>
-  <button ref="button" class="tab tabs-toggle" :class="{ due: due && !running, running }" :title="`Add, open, close, rename or delete projects${running ? '. A project has a session running' : due ? '. A project has its Git or Run button highlighted' : ''}`" aria-label="Tabs" data-help="Tabs button" @click="open">
+  <button ref="button" class="tab tabs-toggle" :class="{ due: due && !running, running }" aria-label="Tabs" data-help="Tabs button" @click="open">
     <svg viewBox="0 0 20 16" width="20" height="16" aria-hidden="true"><path d="M1 14.5V6h18v8.5zM2 6V2.5h4.5V6M7.75 6V2.5h4.5V6M13.5 6V2.5H18V6" /></svg>
   </button>
   <dialog ref="dialog" class="tabs-pop" closedby="any" @close="emit('closed')">

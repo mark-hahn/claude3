@@ -103,21 +103,21 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
 <template>
   <div class="app">
     <nav class="tabs">
-      <button class="tab tabs-toggle sidebar-toggle" title="Hide or show the session list" aria-label="Sidebar" data-help="sidebar button" :disabled="!currentTab" @mousedown.prevent @click="sidebarAsked++">
+      <button class="tab tabs-toggle sidebar-toggle" aria-label="Sidebar" data-help="sidebar button" :disabled="!currentTab" @mousedown.prevent @click="sidebarAsked++">
         <svg viewBox="0 0 20 16" width="20" height="16" aria-hidden="true"><rect x="1" y="1.5" width="18" height="13" rx="3" /><path d="M7.5 1.5H4a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3h3.5z" fill="currentColor" /></svg>
       </button>
       <span class="project-buttons"></span>
       <Tabs ref="tabsDialog" :tabs="sorted" :highlighted="highlighted" :busy="busy" @show="(host, path) => (toShow = { host, path })" @closed="focusAsked++" />
       <button v-for="tab in opened" :key="tab.id" class="tab" :class="[tab.host, { selected: tab.id === current }]" :title="`${tab.path} (${tab.host})`" data-help="tab" @click="clickTab(tab, $event)">
-        <span v-if="busy[tab.id] || highlighted[tab.id]" class="tab-dot" :class="{ due: !busy[tab.id] }" :title="busy[tab.id] ? 'Responding' : 'Git or Run is highlighted'">&#x25CF;</span>{{ tab.label }}
+        <span v-if="busy[tab.id] || highlighted[tab.id]" class="tab-dot" :class="{ due: !busy[tab.id] }">&#x25CF;</span>{{ tab.label }}
       </button>
       <span class="session-name">{{ sessionNames[current] }}</span>
-      <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" title="Open or close the Files: a tree of the project's folder, and an editor" data-help="Files button" @click="toggle('files')">Files</button>
-      <button class="tab git-toggle" :class="{ active: side === 'git' }" :aria-pressed="side === 'git'" :disabled="!currentTab || noRepo[current]" title="Open or close the Log pane: a graph of the project's commits" data-help="Log button" @click="toggle('git')">Log</button>
-      <button class="tab term-toggle" :class="{ active: side === 'term' }" :aria-pressed="side === 'term'" :disabled="!currentTab" title="Open or close the Term pane: a shell in the project's folder (bash, PowerShell on win)" data-help="Term button" @click="toggle('term')">Term</button>
-      <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" title="Open or close the Snips: snippets of prompt text, one copy shared with claude2 and every tab" data-help="Snips button" @click="toggle('snips')">Snips</button>
-      <button class="tab" title="Keys: the global ones and those of the part that has the focus" aria-label="Keys" data-help="keys button" @mousedown.prevent @click="showKeys">?</button>
-      <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" title="Open or close the Settings: quotas" aria-label="Settings" data-help="Settings button" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
+      <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" data-help="Files button" @click="toggle('files')">Files</button>
+      <button class="tab git-toggle" :class="{ active: side === 'git' }" :aria-pressed="side === 'git'" :disabled="!currentTab || noRepo[current]" data-help="Log button" @click="toggle('git')">Log</button>
+      <button class="tab term-toggle" :class="{ active: side === 'term' }" :aria-pressed="side === 'term'" :disabled="!currentTab" data-help="Term button" @click="toggle('term')">Term</button>
+      <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" data-help="Snips button" @click="toggle('snips')">Snips</button>
+      <button class="tab" aria-label="Keys" data-help="keys button" @mousedown.prevent @click="showKeys">?</button>
+      <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" aria-label="Settings" data-help="Settings button" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
     <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" @no-repo="(none) => (noRepo[tab.id] = none)" @session-name="(name) => (sessionNames[tab.id] = name)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" :sidebar-asked="sidebarAsked" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" @show-files="sides[tab.id] = 'files'" />
     <Snips v-if="!currentTab && side === 'snips'" class="alone" :tab="NO_TAB" shown :add-to-prompt="() => false" @close="sides[current] = ''" />

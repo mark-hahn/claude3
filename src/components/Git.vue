@@ -446,17 +446,17 @@ function onMessageKey(event: KeyboardEvent): void {
       <div class="git-head">
         <div class="git-title">{{ review ? `Commit ${review.hash.slice(0, 7)}: ${review.subject}` : `Source Control: ${tab.path}` }}</div>
         <template v-if="!review">
-        <button data-help="Git ↑ button" title="Back up to a newer session's name" :disabled="describing || committing || named <= 0" @click="walkNames(-1)">↑</button>
-        <button data-help="Git ↓ button" title="The newest session's name, then each click an older one" :disabled="describing || committing || named >= sessionNames.length - 1" @click="walkNames(1)">↓</button>
-        <button data-help="Git Clr button" title="Clear the message" :disabled="describing || committing" @click="clearMessage">Clr</button>
-        <button data-help="Git AI button" title="Describe changes: Opus 5.5 writes the message" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "AI…" : "AI" }}</button>
+        <button data-help="Git ↑ button" :disabled="describing || committing || named <= 0" @click="walkNames(-1)">↑</button>
+        <button data-help="Git ↓ button" :disabled="describing || committing || named >= sessionNames.length - 1" @click="walkNames(1)">↓</button>
+        <button data-help="Git Clr button" :disabled="describing || committing" @click="clearMessage">Clr</button>
+        <button data-help="Git AI button" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "AI…" : "AI" }}</button>
         <button class="git-commit" data-help="Git Commit button" :disabled="!canCommit" @click="commit">{{ committing ? "Committing…" : "Commit" }}</button>
         </template>
         <button :disabled="committing" data-help="Git Close button" @click="dialog?.close()">Close</button>
       </div>
       <template v-if="!review">
       <input v-if="editing" v-model="draft" v-focus class="git-last-edit" data-help="Git last commit" spellcheck="false" :readonly="committing" @keydown.enter.prevent="saveLast" @keydown.esc.prevent="stopEditing" />
-      <div v-else-if="last?.hash" class="git-last" data-help="Git last commit" title="The last commit's message" @click="editLast">{{ last.subject }}</div>
+      <div v-else-if="last?.hash" class="git-last" data-help="Git last commit" @click="editLast">{{ last.subject }}</div>
       <textarea ref="messageBox" v-model="message" class="git-message" data-help="Git message box" rows="3" spellcheck="false" autofocus :readonly="describing" @keydown="onMessageKey"></textarea>
       </template>
       <div v-if="failure" class="git-error">{{ failure }}</div>

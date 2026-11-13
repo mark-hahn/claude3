@@ -54,7 +54,7 @@ Click: open or close the Files column (a tree of the project's folder). From the
 Click: open or close the Log pane, a graph of the project's commits. Off when the folder is in no git repo.
 
 @Term button
-Click: open or close the Term pane: up to three shells, the first in the project's folder.
+Click: open or close the Term pane: up to three shells (bash, PowerShell on win), the first in the project's folder.
 
 @Snips button
 Click: open or close the Snips, snippets of prompt text shared with claude2 and every tab.

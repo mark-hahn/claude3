@@ -170,7 +170,6 @@ function render(): void {
     const forkIcon = document.createElement("span");
     forkIcon.className = "bar-icon";
     forkIcon.dataset.help = "fork mark";
-    forkIcon.title = "Fork here: copy the session, then drop every block below this one";
     forkIcon.innerHTML = '<svg viewBox="0 0 16 16"><path d="M8 1v5l-4 4v5M8 6l4 4v5M2 12.5 4 15l2-2.5M10 12.5 12 15l2-2.5"/></svg>';
     bar.appendChild(forkIcon);
     // One icon per picture sent with this prompt, as in the prompt box.
@@ -1551,15 +1550,15 @@ onBeforeUnmount(() => {
         <div class="footer">
           <div class="indicator finish" :class="pill.cls" :title="pill.title">{{ pill.text }}</div>
           <div class="group">
-            <button class="stop" data-help="stop button" :class="{ stopping: stopping && active }" title="Stop" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
-            <button title="Capture the screen for this prompt, hiding this window for the shot" data-help="Cap button" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
-            <button title="Add a file to this prompt, picked on this project's host" data-help="footer File button" :disabled="session?.trashed" @mousedown.prevent @click="pickFile">File</button>
+            <button class="stop" data-help="stop button" :class="{ stopping: stopping && active }" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
+            <button data-help="Cap button" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
+            <button data-help="footer File button" :disabled="session?.trashed" @mousedown.prevent @click="pickFile">File</button>
             <input type="checkbox" aria-label="bestModel" data-help="bestModel box" :title="modelChoice(session?.bestModel).title" :checked="!!session?.bestModel" :disabled="!session || session.trashed" @mousedown.prevent @change="setBestModel" />
           </div>
         </div>
         <div class="stats">
           <div class="status" title="Agentic turns in the last prompt">{{ stats.turns }}</div>
-          <div class="status context" :class="{ over: contextUsed > compactAt }" title="Context used / where the CLI compacts it, in thousands of tokens" data-help="context stat" @click="compactNow">
+          <div class="status context" :class="{ over: contextUsed > compactAt }" data-help="context stat" @click="compactNow">
             {{ Math.round((contextUsed || 0) / 1000) }}/{{ inK(compactAt) }}
           </div>
           <div v-if="stats.graftSaved > 0.25" class="status" title="What graft has saved this session">${{ stats.graftSaved.toFixed(2) }}</div>

@@ -82,7 +82,7 @@ function onClose(): void {
 </script>
 
 <template>
-  <button v-if="needed" class="re-auth" data-help="Re-Auth button" title="Authorization expired: sign in to your Anthropic account again, on each host in turn" @click="reAuth">Re-Auth</button>
+  <button v-if="needed" class="re-auth" data-help="Re-Auth button" @click="reAuth">Re-Auth</button>
   <dialog ref="dialog" closedby="any" class="auth-pop" @close="onClose">
     <div class="auth-title">Claude sign-in</div>
     <div v-for="line in results" :key="line" class="auth-line">{{ line }}</div>
