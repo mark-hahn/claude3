@@ -165,6 +165,13 @@ on the laptop, and talks to each backend directly.
   starts vite detached (`setsid nohup`, output in `vite.log`), waits for its ready line, and exits. So starting the page also restarts any backend whose
   server code changed, cutting that backend's running turns. Page-only changes never restart one.
   It exits 1 when a host failed or vite's ready line never came, so the page's error dialog shows it.
+- At boot vite comes up from systemd `claude3-vite` (`/etc/systemd/system/claude3-vite.service`, by
+  hand, not from `deploy`; output truncated into `vite.log`). It is `Restart=on-failure`, so
+  RESTART_VITE's pkill is a clean stop it leaves alone, and `./run` starts its own detached vite then.
+  WSL itself is started at Windows logon and kept up by the scheduled task "Start WSL Ubuntu at
+  Logon" (`conhost.exe --headless wsl.exe ... --exec sleep infinity`, no delay, no time limit;
+  changing it needs an elevated PowerShell): WSL stops a distro about 20s after the last wsl.exe
+  attached to it exits, systemd services or not, so without the held `sleep` the backend and vite die.
 - `server/stamp.ts`: the deploy stamp's rules that need no project to try (`stampProblem`: how a
   script must write `.deployed`; `stampTime`: when a stamp counts from), with `stamp.check.mjs`
   (`npm test`). `deployNeeded` and `deployCheck` in `main.ts` use them.

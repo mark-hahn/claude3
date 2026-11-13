@@ -486,13 +486,13 @@ function onMessageKey(event: KeyboardEvent): void {
 /* Something to commit: changed or staged files. */
 .git.dirty { background: #fbd9d9; border-color: #e4a7a7; }
 .git.dirty:hover { background: linear-gradient(var(--wash), var(--wash)), #fbd9d9; }
-.git-pop { width: min(560px, 92vw); max-height: 86vh; padding: 12px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: var(--ink); line-height: 1.5; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2); }
+.git-pop { width: min(420px, 92vw); max-height: 86vh; padding: 12px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: var(--ink); line-height: 1.5; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2); }
 .git-pop button { height: 25px; min-height: 0; flex: none; padding: 0 8px; }
 .git-pop[open] { display: flex; gap: 12px; }
 /* A diff on show: from under the button to the window's right and bottom edges, the lists keeping their width and place. */
 .git-pop.wide { width: calc(100vw - var(--git-left) - 12px); max-width: none; height: 100vh; }
 .git-main { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; min-height: 0; }
-.git-pop.wide .git-main { flex: none; width: calc(min(560px, 92vw) - 26px); }
+.git-pop.wide .git-main { flex: none; width: calc(min(420px, 92vw) - 26px); }
 .git-diff { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
 .git-diff-path { font-weight: 600; overflow-wrap: anywhere; }
 .git-diff-text { position: relative; flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: 6px; }
@@ -501,8 +501,8 @@ function onMessageKey(event: KeyboardEvent): void {
 /* A line number opens the file there. */
 .git-diff-text.opens :deep(.margin .line-numbers) { cursor: pointer; }
 .git-pop::backdrop { background: rgba(0, 0, 0, 0.15); }
-.git-head { display: flex; align-items: center; gap: 8px; }
-.git-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.git-head { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
+.git-title { flex: 1 0 100%; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .git-last, .git-last-edit { padding: 5px 8px; border: 1px solid transparent; border-radius: 6px; color: var(--ink); font: inherit; }
 .git-last { cursor: text; overflow-wrap: anywhere; }
 .git-last:hover { background: var(--wash); }
