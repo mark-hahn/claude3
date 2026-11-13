@@ -652,7 +652,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
           <span v-else class="files-name">{{ row.name }}</span>
         </div>
       </div>
-      <FolderPicker ref="picker" :host="treeHost" @pick="goTo($event, pickHost)">
+      <FolderPicker ref="picker" :host="treeHost" :project="tab" @pick="goTo($event, pickHost)">
         <select :value="pickHost" aria-label="Host" data-help="Files host" @change="showHost(($event.target as HTMLSelectElement).value as HostName)"><option v-for="(_, name) in HOSTS" :key="name">{{ name }}</option></select>
       </FolderPicker>
       <dialog ref="infoDialog" class="files-info" closedby="any" @wheel.stop @close="treeArea?.focus()">

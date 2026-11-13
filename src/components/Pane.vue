@@ -1545,7 +1545,7 @@ onBeforeUnmount(() => {
       <pre>{{ fileText }}</pre>
       <form method="dialog" data-help="file details"><button autofocus>OK</button></form>
     </dialog>
-    <FolderPicker ref="filePicker" :host="tab.host" files @pick="attach" />
+    <FolderPicker ref="filePicker" :host="tab.host" :project="tab" files @pick="attach" />
     <dialog ref="imagePopEl" closedby="any" class="img-pop" @close="popSrc = ''">
       <div class="img-title">
         <strong>{{ popLabel }}</strong>

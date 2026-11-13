@@ -92,6 +92,9 @@ Enter: keep the new name. Esc: cancel. Clicking elsewhere keeps it too.
 Type a path: the folder's contents list below.
 Enter: pick it, as Ok.
 
+@folder picker root
+Click: put the project folder in the path box and list it (on another host than the project's, or in the Tabs dialog, the host's home: /root, or C:\Users\mark on win).
+
 @folder picker Ok
 Click: pick the folder (or file) in the path box.
 

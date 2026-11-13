@@ -244,7 +244,7 @@ onBeforeUnmount(() => {
   <div class="term" @wheel.capture="zoom">
     <div class="term-head"><span class="term-cwd">{{ host }}: <span v-for="(part, at) in cwdParts" :key="at">{{ part }}</span></span><span class="term-bar"><button data-help="Term + button" aria-label="Add a terminal" :disabled="count >= 3" @click="emit('add', tab.host, tab.path)">+</button><button class="term-path" data-help="Term Path button" @click="showHost(host)">Path</button><input v-model="findText" class="tabs-input" :class="{ missed }" spellcheck="false" aria-label="Search the terminal's text, from the bottom up" data-help="Term search box" data-mode="Term search box" @input="missed = false" @keydown.enter.prevent="find" @keydown.esc.prevent="term.focus()" /><button data-help="Term Clr button" @click="clear">Clr</button><button data-help="Term Close button" @click="close">Close</button><span class="term-idle" title="Time since the shell's last output or key">{{ idle }}</span></span></div>
     <div ref="box" class="term-box" data-help="terminal" data-mode="terminal"></div>
-    <FolderPicker ref="picker" :host="host" @pick="picked">
+    <FolderPicker ref="picker" :host="host" :project="tab" @pick="picked">
       <select :value="pickHost" :disabled="count >= 3" aria-label="Host" data-help="Term host" @change="showHost(($event.target as HTMLSelectElement).value as HostName)"><option v-for="(_, name) in HOSTS" :key="name">{{ name }}</option></select>
     </FolderPicker>
   </div>

@@ -4,10 +4,11 @@
 // (folders bold); they can't be clicked unless `files`, when it picks a file instead (the footer's File).
 // The slot is left of the box: the Term pane's host selector, which calls open again for another host.
 import { computed, ref } from "vue";
-import type { HostName } from "../../shared/config.ts";
+import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { postHost } from "../api.ts";
 
-const props = defineProps<{ host: HostName; files?: boolean }>();
+// project: the tab it serves (none in the Tabs dialog), whose folder `root` goes to on its host.
+const props = defineProps<{ host: HostName; files?: boolean; project?: Tab }>();
 const emit = defineEmits<{ pick: [folder: string] }>();
 
 interface Folders {
@@ -61,8 +62,9 @@ defineExpose({ open });
     <div class="tabs-row">
       <slot />
       <input class="tabs-input" :value="typed" autofocus spellcheck="false" aria-label="Folder path" data-help="folder picker path box" @input="list(($event.target as HTMLInputElement).value)" @keydown.enter.prevent="pick" />
-      <button :disabled="!canPick" data-help="folder picker Ok" @click="pick">Ok</button>
+      <button data-help="folder picker root" @click="list(project && host === project.host ? project.path : HOSTS[host].home)">root</button>
       <button data-help="folder picker Cancel" @click="dialog?.close()">Cancel</button>
+      <button :disabled="!canPick" data-help="folder picker Ok" @click="pick">Ok</button>
     </div>
     <div v-if="error" class="tabs-error">{{ error }}</div>
     <div class="tabs-folders">
