@@ -273,7 +273,10 @@ on the laptop, and talks to each backend directly.
   `~/.claude3/run-<tab>.files`). And a file saved while the deploy was running: a stamp written
   during the Run button's `./run` counts from that run's start (`stampTime`, from `run-<tab>.start`
   and the status file's time), which also flags, until the next Run, a file the deploy itself
-  rewrote under the stamped paths (`npm install` and a lock file). A `./run` from a terminal keeps
+  rewrote under the stamped paths (`npm install` and a lock file). A run whose output has the
+  frozen line (`== sources frozen <epoch ms>`, `FROZEN_LINE`: it wrote its own sources before then
+  and copies none until after; tv's unilog reconcile) counts from that line's time instead, read
+  from `run-<tab>.log` by `lastRun`. A `./run` from a terminal keeps
   its stamp's own time; claude3's `deploy` back-dates its stamp itself. The tab row's R (Run) button is highlighted
   while the same check finds files; it is re-read for every project, open or closed, on showing, window focus,
   session events, and a ./run's result.

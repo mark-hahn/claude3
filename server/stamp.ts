@@ -24,6 +24,14 @@ export function stampProblem(texts: string[]): string {
 // The time a stamp counts from. One written while the Run button's ./run was going (started to
 // ended; no end yet while it goes on) counts from that run's start: a file saved during the deploy
 // may have missed it. A run whose end was never written stops mattering after ten minutes.
-export function stampTime(stamp: number, run: { started: number; ended?: number } | null): number {
-  return run && run.started < stamp && stamp <= (run.ended ?? run.started + 600_000) ? run.started : stamp;
+// A run that printed its frozen line (FROZEN_LINE) counts from that time instead: it writes its own
+// sources (a code generator) before then and copies none until after, so what was saved before it
+// was deployed.
+export function stampTime(stamp: number, run: { started: number; ended?: number; frozen?: number } | null): number {
+  if (!run || !(run.started < stamp && stamp <= (run.ended ?? run.started + 600_000))) return stamp;
+  return run.frozen && run.frozen > run.started && run.frozen <= stamp ? run.frozen : run.started;
 }
+
+// The line a ./run prints, with the epoch ms it took the time at, once its own writes to its
+// sources are done and before it copies any: `echo "== sources frozen $(date +%s%3N)"`.
+export const FROZEN_LINE = /^== sources frozen (\d+)\s*$/m;

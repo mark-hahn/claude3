@@ -61,7 +61,7 @@ import { fileActions, upload } from "./files.ts";
 import { commitFiles, GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "./gitGraph.ts";
 import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
 import { checkCosts, QuotaService, speechmaticsCost, type QuotaState } from "./quota.ts";
-import { stampProblem, stampTime } from "./stamp.ts";
+import { FROZEN_LINE, stampProblem, stampTime } from "./stamp.ts";
 import { GIT_BASH, termClear, termClose, termRead, termResize, termSend } from "./term.ts";
 
 const hostName = process.argv[2] as HostName;
@@ -988,10 +988,15 @@ function runFile(project: Project, extension: "log" | "status" | "start" | "file
 // The Run button's last ./run: when it started, its page's id for it, and when it ended (the
 // status file's time; none while it goes on). null before the first. Files, not memory, since
 // claude3's own ./run restarts this backend under itself.
-function lastRun(project: Project): { started: number; id: string; ended?: number } | null {
+function lastRun(project: Project): { started: number; id: string; ended?: number; frozen?: number } | null {
   try {
     const [started, id = ""] = fs.readFileSync(runFile(project, "start"), "utf8").split(" ");
-    return { started: Number(started), id, ended: fs.statSync(runFile(project, "status"), { throwIfNoEntry: false })?.mtimeMs };
+    let frozen: number | undefined; // the run's frozen line, if it printed one (stampTime)
+    try {
+      const line = FROZEN_LINE.exec(fs.readFileSync(runFile(project, "log"), "utf8"));
+      if (line) frozen = Number(line[1]);
+    } catch {} // no output yet
+    return { started: Number(started), id, ended: fs.statSync(runFile(project, "status"), { throwIfNoEntry: false })?.mtimeMs, frozen };
   } catch {
     return null; // none yet
   }

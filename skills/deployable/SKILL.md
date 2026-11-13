@@ -49,7 +49,9 @@ the user should see when they press Run.
     **started**, so a file saved during the deploy still raises the warning. So does a file the
     deploy itself rewrites under the stamped paths (`npm install` and a lock file): the warning
     then stays up until the next Run. Keep what the deploy writes out of the stamped paths where
-    you can.
+    you can. A deploy that must write its own sources (a code generator) does that first, before
+    copying anything, and then prints `echo "== sources frozen $(date +%s%3N)"`: the stamp then
+    counts from that line's time instead.
 
 ## What to build
 

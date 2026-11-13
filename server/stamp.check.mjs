@@ -1,6 +1,6 @@
 // Self-check for stamp.ts: `node server/stamp.check.mjs` (part of `npm test`).
 import assert from "node:assert/strict";
-import { stampProblem, stampTime } from "./stamp.ts";
+import { FROZEN_LINE, stampProblem, stampTime } from "./stamp.ts";
 
 const ok = (...texts) => assert.equal(stampProblem(texts), "", texts.join(" | "));
 const bad = (word, ...texts) => assert.match(stampProblem(texts), word, texts.join(" | "));
@@ -31,5 +31,12 @@ assert.equal(stampTime(500, { started: 400 }), 400); // still going
 assert.equal(stampTime(700, { started: 400, ended: 600 }), 700); // stamped later, from a terminal
 assert.equal(stampTime(300, { started: 400, ended: 600 }), 300); // the run wrote no stamp
 assert.equal(stampTime(400 + 600_001, { started: 400 }), 400 + 600_001); // a run that never ended
+// A run that printed its frozen line counts from that time, when it falls between start and stamp.
+assert.equal(stampTime(500, { started: 400, ended: 600, frozen: 450 }), 450);
+assert.equal(stampTime(500, { started: 400, ended: 600, frozen: 550 }), 400); // after the stamp: ignored
+assert.equal(stampTime(500, { started: 400, ended: 600, frozen: 300 }), 400); // before the run: ignored
+assert.equal(stampTime(700, { started: 400, ended: 600, frozen: 450 }), 700); // stamped later, from a terminal
+assert.equal(FROZEN_LINE.exec("x\n== sources frozen 1763002343123\r\ny")?.[1], "1763002343123");
+assert.equal(FROZEN_LINE.exec("echo == sources frozen 1"), null);
 
 console.log("stamp.check: ok");
