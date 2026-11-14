@@ -147,8 +147,8 @@ on the laptop, and talks to each backend directly.
   version of its own (the folder's hash), so changing it restarts no backend; the first deploy copies
   claude2-stats' `data.json` as its starting data. For the backends it
   builds and copies `package.json server shared` (+ `dist` for WSL) to each host, plus node-pty's runtime parts (`copy_pty`: its `lib`, the Linux `pty.node` npm install built here, which hahnca.com's glibc 2.39 also runs, and the win32-x64 prebuilds without `.pdb`s, ~3MB; on Windows after the old backend is stopped, as it holds the DLLs), and
-  sets up what keeps it running: systemd `claude3` on WSL, the `claude3` value of the HKCU Run
-  key on Windows (at logon), pm2 `claude3` on hahnca.com. It stamps each copy with a `version` file, the hash of `server/`
+  sets up what keeps it running: systemd `claude3` on WSL, the scheduled task "claude3 win backend" on Windows (at logon, not elevated, made by hand; `deploy` keeps the HKCU Run
+  key's `claude3` value deleted while the task exists and writes it only where there is no task: Windows starts Run-key programs a minute or more after logon, so the page was up before the backend), pm2 `claude3` on hahnca.com. It stamps each copy with a `version` file, the hash of `server/`
   and `shared/`, which the backend answers at `GET /version`; `deploy --if-stale` redeploys only
   the hosts that don't answer with the repo's hash. The WSL deploy builds the page first, so a
   type error anywhere in `src/` fails it. A failed host leaves `.deployed` unstamped (the deploy

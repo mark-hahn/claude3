@@ -217,11 +217,18 @@ EOF
     # Node 22.12 there still needs the flag for type stripping. conhost --headless keeps the
     # backend's console window out of sight.
     # ponytail: conhost --headless is undocumented; a hidden-window launcher if Windows drops it.
-    # Started at logon from the user's Run key: a logon-triggered scheduled task needs an admin
-    # prompt, which this script can't answer. Called directly, not through cmd.exe, so WSL quotes
-    # the command as one argument.
-    (cd /mnt/c && reg.exe add 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v claude3 /t REG_SZ /f \
-      /d "conhost.exe --headless $WIN_NODE --experimental-strip-types $WIN_DIR_W\\server\\main.ts win" | tr -d '\r')
+    # Started at logon by the scheduled task "claude3 win backend" (made by hand: it runs this
+    # same command, not elevated, and creating a logon-triggered task needs an admin prompt this
+    # script can't answer). Windows starts Run-key programs a minute or more after logon, the task
+    # at once. While the task exists the Run key is kept empty, or the backend would start twice;
+    # on a machine without the task the Run key is the fallback. reg.exe is called directly, not
+    # through cmd.exe, so WSL quotes the command as one argument.
+    if (cd /mnt/c && schtasks.exe /query /tn 'claude3 win backend' >/dev/null 2>&1); then
+      (cd /mnt/c && reg.exe delete 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v claude3 /f >/dev/null 2>&1) || true
+    else
+      (cd /mnt/c && reg.exe add 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run' /v claude3 /t REG_SZ /f \
+        /d "conhost.exe --headless $WIN_NODE --experimental-strip-types $WIN_DIR_W\\server\\main.ts win" | tr -d '\r')
+    fi
     # Whatever holds the port is the old backend, whichever launcher started it. exit 0: with
     # nothing on the port, Get-NetTCPConnection still leaves an error and PowerShell exits 1.
     (cd /mnt/c && powershell.exe -NoProfile -Command "Get-NetTCPConnection -LocalPort 7311 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id \$_.OwningProcess -Force }; exit 0" | tr -d '\r')
