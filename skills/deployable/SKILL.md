@@ -28,7 +28,9 @@ the user should see when they press Run.
     directories**: to call `cmd.exe`, `powershell.exe` or `reg.exe`, add
     `PATH="$PATH:/mnt/c/Windows/System32:/mnt/c/Windows/System32/WindowsPowerShell/v1.0"`.
     Windows programs started from here run elevated.
-  - **srv** (hahnca.com): spawned by claude3's backend, which runs under pm2. `HOME=/root`,
+  - **srv** (hahnca.com): `systemd-run` as a transient unit with `KillMode=process`, like wsl,
+    so what `./run` leaves running is outside `pm2-root.service` (claude3's backend runs under
+    pm2) and survives that unit's restarts. `HOME=/root`,
     `PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin`.
   - **win** (Windows on the laptop): Git Bash (`C:\Program Files\Git\bin\bash.exe`) runs
     `bash ./run` under its own `timeout`, with the user's

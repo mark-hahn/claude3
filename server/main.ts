@@ -906,9 +906,11 @@ function errorText(error: unknown): string {
 
 // git in the tab's project folder. With no terminal prompt, a push that wants a password fails
 // instead of hanging on a question nobody can see.
-// The project's ./run, its output combined. On WSL it runs as a transient systemd unit, outside
-// claude3.service's cgroup: a restart of this backend (claude3's own ./run deploys) would
-// otherwise kill it and whatever it leaves running. KillMode=process lets those outlive it.
+// The project's ./run, its output combined. On WSL and srv it runs as a transient systemd unit,
+// outside this backend's cgroup (claude3.service on WSL, pm2-root.service on srv): a restart of
+// that unit (claude3's own ./run deploys on WSL; needrestart after a libc6 upgrade restarted
+// pm2-root on srv, 2026-11-14, and took finance's vite with it) would otherwise kill it and
+// whatever it leaves running. KillMode=process lets those outlive it.
 // Its output and exit code go to files, not a pipe back here, so they survive that restart and
 // the next backend can answer runResult. The unit needs a fresh name each time: one that leaves
 // vite running stays loaded as long as vite does, so a fixed name would refuse every later ./run.
@@ -922,7 +924,7 @@ function errorText(error: unknown): string {
 const isFile = (cwd: string, name: string): boolean => fs.statSync(path.join(cwd, name), { throwIfNoEntry: false })?.isFile() ?? false;
 // How long a ./run may take. coreutils' timeout (Git Bash's own on Windows) then stops the script
 // and what it started, all but what it detached with setsid, and exits 124. Killing the child from
-// here stopped nothing: on WSL that is only systemd-run's client, on Windows only Git Bash's
+// here stopped nothing: on WSL and srv that is only systemd-run's client, on Windows only Git Bash's
 // launcher, and the script ran on under both.
 const RUN_LIMIT_S = 300;
 const TIMED_OUT = 124;
@@ -943,7 +945,7 @@ function runScript(project: Project, restartVite: boolean, id: string): Promise<
   fs.rmSync(statusFile, { force: true });
   // When it started and the page's id for it: see lastRun.
   fs.writeFileSync(runFile(project, "start"), `${Date.now()} ${id}`);
-  const detached = hostName === "wsl";
+  const detached = hostName !== "win";
   const limit = String(RUN_LIMIT_S);
   const [command, ...args] = detached
     ? ["systemd-run", "--quiet", "--collect", "--wait", "--expand-environment=no", "-p", "KillMode=process", "-p", `WorkingDirectory=${cwd}`, "-E", `PATH=${process.env.PATH}`, "-E", `HOME=${os.homedir()}`, ...(restartVite ? ["-E", "RESTART_VITE=1"] : []), "/bin/sh", "-c", 'timeout "$3" ./run > "$1" 2>&1; code=$?; echo $code > "$2"; exit $code', "sh", logFile, statusFile, limit]
@@ -967,7 +969,7 @@ function runScript(project: Project, restartVite: boolean, id: string): Promise<
     });
     child.on("exit", (code, signal) => {
       exited = true;
-      // WSL's wrapper has written its own, unless systemd-run never got as far as running it.
+      // The systemd-run wrapper has written its own, unless systemd-run never got as far as running it.
       if (!fs.existsSync(statusFile)) fs.writeFileSync(statusFile, String(code ?? 1));
       if (detached && !output && fs.existsSync(logFile)) {
         // Output from systemd-run itself would mean it failed, and that's the message to show.
