@@ -346,6 +346,10 @@ Click: close every folder but the way to the selection; again, close those too a
 Click: a new empty file in the selected folder, beside the selected file, or in the root.
 Ctrl-click: a new folder there.
 
+@Files Del button
+Click: delete every selected file and folder (a folder with all in it), after a confirmation listing them.
+Refused while any selected one is out of sight in a closed folder. The tree's Delete key does the same.
+
 @Files Prj button
 Click: a new project from the selected folder (the Tabs dialog, filled in).
 

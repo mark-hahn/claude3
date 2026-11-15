@@ -610,8 +610,9 @@ onBeforeUnmount(() => window.clearInterval(poller));
     <div v-show="!fileMode" ref="treeArea" class="files-mode" tabindex="-1" data-mode="Files tree" @keydown="keyDown">
       <div class="files-bar">
         <button data-help="Files New button" aria-label="New file" :disabled="many" @click="newFile($event.ctrlKey)"><svg class="files-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg></button>
-        <button data-help="Files Prj button" :disabled="!selectedRow?.dir" @click="newProjectAt(treeHost, selectedRow!.path)">Prj</button>
-        <button data-help="Files Path button" @click="showHost(treeHost)">Path</button>
+        <button data-help="Files Del button" aria-label="Delete" :disabled="!selected.size" @click="remove">
+          <svg viewBox="0 0 16 16"><path d="M2.5 4.5h11M6 4.5v-2h4v2M4 4.5l.8 9.5h6.4l.8-9.5M6.5 7v4.5M9.5 7v4.5" /></svg>
+        </button>
         <!-- One piece, so the search box, GR and NM wrap to the next line together. -->
         <span class="files-find">
           <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" data-help="Files search box" data-mode="Files search box" @keydown.enter.prevent="search()" @keydown.esc.prevent="focusTree()" />
@@ -632,6 +633,8 @@ onBeforeUnmount(() => window.clearInterval(poller));
         <button aria-label="Collapse" data-help="Files Collapse button" @click="collapse">
           <svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="10" height="10" rx="1" /><path d="M4 9.5h5M4.5 1.5h10v10" /></svg>
         </button>
+        <button data-help="Files Prj button" :disabled="!selectedRow?.dir" @click="newProjectAt(treeHost, selectedRow!.path)">Prj</button>
+        <button data-help="Files Path button" @click="showHost(treeHost)">Path</button>
         <span data-help="Files Sel count">Sel {{ selected.size }}</span>
       </div>
       <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root" data-help="Files root path" @click="editRoot">
@@ -688,7 +691,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
 .files-mode { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; outline: none; }
 .files-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .files-find { flex: none; display: flex; align-items: center; gap: 6px; }
-.files-find .tabs-input { flex: none; width: 75px; }
+.files-find .tabs-input { flex: none; width: 100px; }
 .files-bar button { min-height: 0; padding: 3px 10px; }
 .files-bar svg { display: block; width: 20px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .files-bar .files-flip { transform: scaleX(-1); }
