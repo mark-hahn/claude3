@@ -247,7 +247,7 @@ Continue: send, ask again next time.
 Cancel: don't send; the prompt stays in the box.
 
 @commit warning
-New session: send the prompt as a new session.
++: send the prompt as a new session (not on a session's first prompt, which is warned about files waiting to be committed).
 Continue: send it to this session.
 Cancel: don't send; the prompt stays in the box.
 
@@ -356,10 +356,18 @@ Click: show a folder in the tree, on any host.
 Pick a host: the picker moves to its home folder. Ok on its folder shows it in the tree.
 
 @Files search box
-Enter: select the next file or folder whose name has the text. Ctrl-Enter: the one before.
+Enter (with or without Ctrl, Shift or Alt): select every file and folder whose name has the text,
+opening the folders on the way to each. More than 20 asks first.
 Text with a / (or \) matches a path ending in it, e.g. src/main.ts or a whole pasted path.
-Ending it in :<line> (src/main.ts:120) opens the file found, with line numbers, centered on that line.
+Ending it in :<line> (src/main.ts:120) opens the first file found, with line numbers, centered on that line.
+Folders named .git and dist are never searched.
 Esc: back to the tree.
+
+@Files Sel count
+How many files and folders are selected under this root, those out of sight in closed folders included.
+
+@Files GR box
+Check: the search looks inside graft folders too (graft's index cards, a copy of the source tree's layout).
 
 @Files NM box
 Check: the search looks inside node_modules too.

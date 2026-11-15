@@ -61,12 +61,13 @@ async function listFolder(folder: string): Promise<FileEntry[] | null> {
   return entries.sort((a, b) => Number(b.dir) - Number(a.dir) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 }
 
-// The next name holding text, case aside, in the tree's order: below after, or above it going
-// backward, round to the other end when none is left there. node_modules counts only when asked.
+// Every name holding text, case aside, in the tree's order. node_modules and graft (graft's index
+// cards, a copy of the tree's layout) count only when asked; .git and dist (git's own store, the built
+// page) never do.
 // Links to folders aren't followed, or a link cycle would never end. Text with a slash (either way,
 // trailing ones dropped) is looked for in the whole path, ending in the name, so the files below a
 // folder it names don't all match too.
-async function findStep(root: string, text: string, after: string, backward: boolean, nodeModules: boolean): Promise<{ path: string | null }> {
+async function findAll(root: string, text: string, nodeModules: boolean, graft: boolean): Promise<{ paths: string[] }> {
   const wanted = text.toLowerCase().replaceAll("\\", "/").replace(/(.)\/+$/, "$1");
   const byPath = wanted.includes("/");
   const hits = (entry: FileEntry): boolean => {
@@ -78,33 +79,22 @@ async function findStep(root: string, text: string, after: string, backward: boo
     const at = full.lastIndexOf(wanted);
     return at >= 0 && at + wanted.length > full.length - name.length;
   };
-  let first: string | null = null;
-  let latest: string | null = null;
-  let passed = !after;
-  const walk = async (folder: string): Promise<string | null> => {
+  const paths: string[] = [];
+  const walk = async (folder: string): Promise<void> => {
     for (const entry of (await listFolder(folder)) ?? []) {
-      if (entry.name === "node_modules" && !nodeModules) {
+      if (entry.name === ".git" || entry.name === "dist" || (entry.name === "node_modules" && !nodeModules) || (entry.name === "graft" && !graft)) {
         continue;
       }
-      const hit = hits(entry);
-      if (backward ? entry.path === after && latest : hit && passed) {
-        return backward ? latest : entry.path;
+      if (hits(entry)) {
+        paths.push(entry.path);
       }
-      if (hit) {
-        first ??= entry.path;
-        latest = entry.path;
-      }
-      passed ||= entry.path === after;
       if (entry.dir && (await fs.promises.lstat(entry.path).then((found) => found.isDirectory(), () => false))) {
-        const found = await walk(entry.path);
-        if (found) {
-          return found;
-        }
+        await walk(entry.path);
       }
     }
-    return null;
   };
-  return { path: (await walk(root)) ?? (backward ? latest : first) };
+  await walk(root);
+  return { paths };
 }
 
 // text is left out when the file is still the version known, and null when it can't be edited
@@ -383,7 +373,7 @@ export const fileActions: Record<string, (body: Record<string, unknown>) => Prom
     const paths = Array.isArray(body.paths) ? body.paths.map(absolute) : [];
     return { listings: Object.fromEntries(await Promise.all(paths.map(async (folder) => [folder, await listFolder(folder)]))) };
   },
-  findFile: (body) => findStep(absolute(body.root), String(body.text ?? ""), String(body.after ?? ""), body.backward === true, body.nodeModules === true),
+  findFile: (body) => findAll(absolute(body.root), String(body.text ?? ""), body.nodeModules === true, body.graft === true),
   readFile: (body) => readText(absolute(body.path), Number(body.known)),
   attachFile: (body) => attachFile(absolute(body.path)),
   waitFile: (body) => waitForChange(absolute(body.path), Number(body.known)),

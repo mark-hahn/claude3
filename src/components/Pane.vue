@@ -814,10 +814,17 @@ async function deployOk(): Promise<boolean> {
 // starts one), Continue (send it here) or Cancel. A failed check doesn't hold the prompt up.
 // snips: the Snips' text sent straight from an empty box, which nobody looked at the conversation
 // for, so any turns at all ask the same question, commit or not.
+// A new session's first prompt asks Continue or Cancel instead while files wait to be committed,
+// which likely belong to other work. No repo fails that check, which only means nothing to commit.
 async function commitChoice(snips = false): Promise<"new" | "continue" | ""> {
   const last = turns().at(-1);
-  if (!last) return "continue";
-  if (snips) {
+  if (!last) {
+    const files = await post<{ files: { path: string }[] }>(props.tab, "git", {}).then((status) => status.files, () => []);
+    if (!files.length) return "continue";
+    const shown = files.slice(0, 10).map((file) => file.path);
+    if (files.length > 10) shown.push(`… and ${files.length - 10} more`);
+    commitText.value = `${props.tab.label}: ${files.length} changed file${files.length === 1 ? " is" : "s are"} waiting to be committed.\n\n${shown.join("\n")}`;
+  } else if (snips) {
     commitText.value = `${props.tab.label}: this conversation already has prompts. Send the Snips' text to it, or start a new session with it?`;
   } else {
     let head: { at: number; subject: string };
@@ -1539,7 +1546,7 @@ onBeforeUnmount(() => {
     </dialog>
     <dialog ref="commitPopEl" closedby="any" class="run-pop">
       <pre>{{ commitText }}</pre>
-      <form method="dialog" data-help="commit warning"><button value="new">New session</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
+      <form method="dialog" data-help="commit warning"><template v-if="turns().length"><button value="new" aria-label="New session"><svg class="plus-icon" viewBox="2 2 12 12"><path d="M8 3v10M3 8h10" /></svg></button> </template><button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
     </dialog>
     <dialog ref="filePopEl" closedby="any" class="run-pop">
       <pre>{{ fileText }}</pre>

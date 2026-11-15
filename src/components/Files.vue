@@ -103,6 +103,14 @@ const selectedRow = computed(() => (selected.value.size === 1 ? selectedRows.val
 const many = computed(() => selected.value.size > 1);
 // Its path below the root, or a * for more than one.
 const selectedBelowRoot = computed(() => (many.value ? "*" : selectedRow.value ? below(selectedRow.value.path) : ""));
+// The path row takes it up only once a double-click would be over: a first click that made the row
+// wrap would move the tree, and the second click would land on another row.
+const shownBelowRoot = ref("");
+let showTimer = 0;
+watch(selectedBelowRoot, (text) => {
+  clearTimeout(showTimer);
+  showTimer = window.setTimeout(() => (shownBelowRoot.value = text), 500);
+}, { immediate: true });
 // The folders that have to be open for a row under the root to show.
 const wayTo = (path: string): string[] => (foldersBetween(root.value, path) ?? []).slice(0, -1);
 // Where New and paste land: in the selected folder, beside the selected file, else in the root.
@@ -260,35 +268,35 @@ async function goToTyped(): Promise<void> {
   }
 }
 
-// Each Enter in the search box goes on to the next name below the last one found, in the tree's
-// order, closed folders included, and Ctrl-Enter back to the one above it; new text starts from the
-// end it is heading away from. Queued, so quick presses each move on one.
+// Enter in the search box, with any modifiers, selects every name with the text in it, in the tree's
+// order, closed folders included, and opens the way to each. Queued, so the last press's text wins.
 const searchText = ref("");
 const searchNodeModules = ref(false);
-let foundAt = "";
+const searchGraft = ref(false);
 let searches: Promise<void> = Promise.resolve();
 
-// Text ending in :<line> looks for what is before it and opens the file found centered on that line.
-async function findStep(text: string, backward: boolean): Promise<void> {
+// Text ending in :<line> looks for what is before it and opens the first one found centered on that line.
+async function findAll(text: string): Promise<void> {
   note.value = "";
   const [, name = text, line] = /^(.+):(\d+)$/.exec(text) ?? [];
   try {
-    const reply = await postHost<{ path: string | null }>(treeHost.value, "findFile", { root: root.value, text: name, after: foundAt, backward, nodeModules: searchNodeModules.value });
-    if (!reply.path) {
+    const { paths } = await postHost<{ paths: string[] }>(treeHost.value, "findFile", { root: root.value, text: name, nodeModules: searchNodeModules.value, graft: searchGraft.value });
+    if (!paths.length) {
       note.value = /[\\/]/.test(name) ? `No path here ends in "${name}".` : `No name here contains "${name}".`;
       return;
     }
-    foundAt = reply.path;
-    await selectAndReveal(reply.path);
-    if (line) await openRow(reply.path, false, Number(line));
+    if (paths.length > 20 && !window.confirm(`Select all ${paths.length} matches for "${name}", opening the folders on the way to each?`)) return;
+    select(...paths);
+    await reveal(paths[0]!, paths.flatMap(wayTo));
+    if (line) await openRow(paths[0]!, false, Number(line));
   } catch (problem) {
     note.value = messageOf(problem);
   }
 }
 
-function search(backward: boolean): void {
+function search(): void {
   const text = searchText.value;
-  if (text) searches = searches.then(() => findStep(text, backward));
+  if (text) searches = searches.then(() => findAll(text));
 }
 
 // A srv tree's clipboard work is done by WSL's backend: the clipboard is on the laptop.
@@ -601,12 +609,13 @@ onBeforeUnmount(() => window.clearInterval(poller));
     <FileEditor v-else-if="fileMode && file" :active="active" :file="file" />
     <div v-show="!fileMode" ref="treeArea" class="files-mode" tabindex="-1" data-mode="Files tree" @keydown="keyDown">
       <div class="files-bar">
-        <button data-help="Files New button" :disabled="many" @click="newFile($event.ctrlKey)">New</button>
+        <button data-help="Files New button" aria-label="New file" :disabled="many" @click="newFile($event.ctrlKey)"><svg class="files-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg></button>
         <button data-help="Files Prj button" :disabled="!selectedRow?.dir" @click="newProjectAt(treeHost, selectedRow!.path)">Prj</button>
         <button data-help="Files Path button" @click="showHost(treeHost)">Path</button>
-        <!-- One piece, so the search box and NM wrap to the next line together. -->
+        <!-- One piece, so the search box, GR and NM wrap to the next line together. -->
         <span class="files-find">
-          <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" data-help="Files search box" data-mode="Files search box" @input="foundAt = ''" @keydown.enter.prevent="search($event.ctrlKey)" @keydown.esc.prevent="focusTree()" />
+          <input v-model="searchText" class="tabs-input" spellcheck="false" aria-label="Find a file or folder by name" data-help="Files search box" data-mode="Files search box" @keydown.enter.prevent="search()" @keydown.esc.prevent="focusTree()" />
+          <label class="files-nm" data-help="Files GR box"><input v-model="searchGraft" type="checkbox" />GR</label>
           <label class="files-nm" data-help="Files NM box"><input v-model="searchNodeModules" type="checkbox" />NM</label>
         </span>
       </div>
@@ -623,11 +632,12 @@ onBeforeUnmount(() => window.clearInterval(poller));
         <button aria-label="Collapse" data-help="Files Collapse button" @click="collapse">
           <svg viewBox="0 0 16 16"><rect x="1.5" y="4.5" width="10" height="10" rx="1" /><path d="M4 9.5h5M4.5 1.5h10v10" /></svg>
         </button>
+        <span data-help="Files Sel count">Sel {{ selected.size }}</span>
       </div>
       <div class="files-root" :class="{ drop: dragTarget === root, working: working === root }" :data-drop="root" data-help="Files root path" @click="editRoot">
         {{ treeHost }}:
         <input v-if="rootText !== null" ref="rootInput" v-model="rootText" class="files-rename" spellcheck="false" aria-label="Folder path" data-mode="Files root path" @keydown.enter.prevent="goToTyped" @keydown.esc.prevent="rootText = null; focusTree()" @blur="rootText = null" />
-        <template v-else>{{ withSeparator(root) }}<span class="files-relative">{{ selectedBelowRoot }}</span></template>
+        <template v-else>{{ withSeparator(root) }}<span class="files-relative">{{ shownBelowRoot }}</span></template>
       </div>
       <div v-if="note || listProblem" class="files-note">{{ note || listProblem }}</div>
       <div ref="tree" class="files-tree" data-help="Files tree">
@@ -677,15 +687,16 @@ onBeforeUnmount(() => window.clearInterval(poller));
 .files .pane .files-rendered-text, .files .pane .files-rendered-text :deep(:is(h1, h2, h3, h4, h5, h6, code, table)) { font-size: var(--files-font-size, 14px); }
 .files-mode { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; outline: none; }
 .files-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-/* Basis 0, so it wraps only when NM and a 5em box no longer fit (its min-content); otherwise the
-   input's ~20-character default width would decide. */
-.files-find { flex: 1 1 0; display: flex; align-items: center; gap: 6px; }
-.files-find .tabs-input { min-width: 5em; }
+.files-find { flex: none; display: flex; align-items: center; gap: 6px; }
+.files-find .tabs-input { flex: none; width: 75px; }
 .files-bar button { min-height: 0; padding: 3px 10px; }
 .files-bar svg { display: block; width: 20px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .files-bar .files-flip { transform: scaleX(-1); }
+/* The page header's + (Project.vue's new session button). */
+.files-bar .files-plus { stroke-width: 1.8; }
 .files-bar .tabs-input { padding: 3px 8px; }
-.files-nm { flex: none; display: flex; align-items: center; gap: 3px; margin-right: 15px; cursor: pointer; user-select: none; }
+.files-nm { flex: none; display: flex; align-items: center; gap: 3px; cursor: pointer; user-select: none; }
+.files-nm:last-child { margin-right: 15px; }
 .files-root { flex: none; padding: 2px 6px; border-radius: 4px; overflow-wrap: anywhere; }
 .files-root:has(.files-rename) { display: flex; align-items: center; gap: 4px; }
 .files-relative { background: #fffbdf; }
