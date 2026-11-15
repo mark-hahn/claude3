@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The Files pane's file mode: one file on its host (the tree's) in a stock Monaco editor, of the prompt
-// box's and Snips' custom keys only Ctrl-D, coloured by the language its name or #! line implies, wrapped, their line dots in place of line numbers (but numbers, and that line centered, for a file opened at a line from the Git popup's diff), no minimap. Live as Snips are: saved half a second after the
+// box's and Snips' custom keys only Ctrl-D, coloured by the language its name or #! line implies, wrapped, their line dots in place of line numbers (but numbers, and that line centered, for a file opened at a line from the Git popup's diff or a Files search ending in :<line>), no minimap. Live as Snips are: saved half a second after the
 // typing stops and at once on close, and read again when the file changes on disk. A save is
 // refused if the file changed since it was read, and then nothing more is saved until Reload.
 // With the file's last line in view it is in tail mode, shown by the header's path going yellow:

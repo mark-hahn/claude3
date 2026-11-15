@@ -268,16 +268,19 @@ const searchNodeModules = ref(false);
 let foundAt = "";
 let searches: Promise<void> = Promise.resolve();
 
+// Text ending in :<line> looks for what is before it and opens the file found centered on that line.
 async function findStep(text: string, backward: boolean): Promise<void> {
   note.value = "";
+  const [, name = text, line] = /^(.+):(\d+)$/.exec(text) ?? [];
   try {
-    const reply = await postHost<{ path: string | null }>(treeHost.value, "findFile", { root: root.value, text, after: foundAt, backward, nodeModules: searchNodeModules.value });
+    const reply = await postHost<{ path: string | null }>(treeHost.value, "findFile", { root: root.value, text: name, after: foundAt, backward, nodeModules: searchNodeModules.value });
     if (!reply.path) {
-      note.value = `No name here contains "${text}".`;
+      note.value = /[\\/]/.test(name) ? `No path here ends in "${name}".` : `No name here contains "${name}".`;
       return;
     }
     foundAt = reply.path;
     await selectAndReveal(reply.path);
+    if (line) await openRow(reply.path, false, Number(line));
   } catch (problem) {
     note.value = messageOf(problem);
   }

@@ -357,6 +357,8 @@ Pick a host: the picker moves to its home folder. Ok on its folder shows it in t
 
 @Files search box
 Enter: select the next file or folder whose name has the text. Ctrl-Enter: the one before.
+Text with a / (or \) matches a path ending in it, e.g. src/main.ts or a whole pasted path.
+Ending it in :<line> (src/main.ts:120) opens the file found, with line numbers, centered on that line.
 Esc: back to the tree.
 
 @Files NM box

@@ -63,9 +63,21 @@ async function listFolder(folder: string): Promise<FileEntry[] | null> {
 
 // The next name holding text, case aside, in the tree's order: below after, or above it going
 // backward, round to the other end when none is left there. node_modules counts only when asked.
-// Links to folders aren't followed, or a link cycle would never end.
+// Links to folders aren't followed, or a link cycle would never end. Text with a slash (either way,
+// trailing ones dropped) is looked for in the whole path, ending in the name, so the files below a
+// folder it names don't all match too.
 async function findStep(root: string, text: string, after: string, backward: boolean, nodeModules: boolean): Promise<{ path: string | null }> {
-  const wanted = text.toLowerCase();
+  const wanted = text.toLowerCase().replaceAll("\\", "/").replace(/(.)\/+$/, "$1");
+  const byPath = wanted.includes("/");
+  const hits = (entry: FileEntry): boolean => {
+    const name = entry.name.toLowerCase();
+    if (!byPath) {
+      return name.includes(wanted);
+    }
+    const full = entry.path.toLowerCase().replaceAll("\\", "/");
+    const at = full.lastIndexOf(wanted);
+    return at >= 0 && at + wanted.length > full.length - name.length;
+  };
   let first: string | null = null;
   let latest: string | null = null;
   let passed = !after;
@@ -74,7 +86,7 @@ async function findStep(root: string, text: string, after: string, backward: boo
       if (entry.name === "node_modules" && !nodeModules) {
         continue;
       }
-      const hit = entry.name.toLowerCase().includes(wanted);
+      const hit = hits(entry);
       if (backward ? entry.path === after && latest : hit && passed) {
         return backward ? latest : entry.path;
       }
