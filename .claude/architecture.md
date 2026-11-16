@@ -216,7 +216,9 @@ on the laptop, and talks to each backend directly.
   draft in the moment before `ensureOpen` has a session or if it failed, creates the session; a running session is stopped first unless the
   prompt can follow up a background wait) → `runTurn` stores the turn, posts `session`, names the
   session on its first prompt, and runs the CLI. Text and status go out as `delta` every 80ms.
-  The result settles the turn (`markAnswer` puts the answer mark in), saves, posts `session`.
+  The result settles the turn (`markAnswer` puts the answer mark in, at the run's first non-empty
+  result text, so a background task's later wake-up turn doesn't shrink the closed box to its short
+  text), saves, posts `session`.
   The checks before a send (deploy setup, deploy warning, commit warning) take a few round trips with the text still in the box, so `submit` lets one send through at a time (`sending`): a second Ctrl+Enter meanwhile does nothing.
   Each session's unsent text is saved on every edit in localStorage (`draft:<tab>:<session id>`,
   '' for the new-session draft, removed on send), so it is back in its box after a reload and

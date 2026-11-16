@@ -687,7 +687,9 @@ export class ClaudeCliRunner {
           }
           const resultText = stringOf(message.result);
           const isError = message.is_error === true;
-          if (!isError) {
+          // The first result's text starts the answer: a background task finishing brings a second
+          // turn, and marking only that one's short text hid the real answer above it.
+          if (!isError && !answer.trim()) {
             answer = resultText;
           }
           // Tool lines alone do not count as a response, so the result text still has to land after
