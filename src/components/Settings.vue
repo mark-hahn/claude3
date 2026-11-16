@@ -209,18 +209,18 @@ function renderCredits(): void {
       }
     }
   }
-  const usage = "<span>" + (spent === null ? "" : escapeHtml(money(spent)) + "/") + '<span id="q-age"></span></span>';
+  const usage = "<span>" + (spent === null ? "" : escapeHtml(money(spent)) + (creditMonth === 0 ? "/" : "")) + (creditMonth === 0 ? '<span id="q-age"></span>' : "") + "</span>";
   // Speechmatics months are Los Angeles time. ERR marks a failed latest read; the age is since the last good one.
   if (!(key in speechmatics)) loadSpeechmatics(key);
   const asr = speechmatics[key];
-  let speech = "<span>ASR ...</span>";
+  let speech = '<span class="q-asr">Asr: ...</span>';
   if (asr !== undefined) {
-    const parts = ["ASR"];
+    const parts = ["Asr:"];
     if (asr.error) parts.push("ERR");
     if (typeof asr.usd === "number") parts.push(escapeHtml(money(asr.usd)));
     const age = typeof asr.at === "number" ? '/<span id="q-asr-age" data-at="' + asr.at + '">' + elapsed(asr.at) + "</span>" : "";
     const hours = typeof asr.hrs === "number" ? escapeHtml(asr.hrs.toFixed(1)) + " audio hours" : "never read";
-    speech = '<span title="tv ASR on Speechmatics: ' + hours + '">' + parts.join(" ") + age + "</span>";
+    speech = '<span class="q-asr" title="tv ASR on Speechmatics: ' + hours + '">' + parts.join(" ") + age + "</span>";
   }
   node.innerHTML = nav + usage + speech;
   renderAge();
@@ -498,6 +498,7 @@ onBeforeUnmount(() => {
 .settings #q-age { font-size: 14px; font-variant-numeric: tabular-nums; }
 .settings .credits { display: flex; align-items: center; gap: 8px; font-size: 14px; font-variant-numeric: tabular-nums; }
 .settings .credits button { min-height: 21px; padding: 0 4px; }
+.settings .credits .q-asr { margin-left: 10px; }
 .settings .graphs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; min-height: 0; overflow: auto; }
 .settings .graphs.single { display: flex; flex: 1; min-height: 0; justify-content: center; align-items: flex-start; }
 .settings .graph { width: 80%; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 11px; min-width: 0; }
