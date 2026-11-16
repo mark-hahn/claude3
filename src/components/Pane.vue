@@ -7,8 +7,8 @@
 // prompt editor.
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { HostName, Tab } from "../../shared/config.ts";
-import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, modelChoice, quotaSpend, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
-import { post, postHost, quotaUse } from "../api.ts";
+import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, modelChoice, quotaSpend, shortModel, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
+import { modelPicks, post, postHost, quotaUse } from "../api.ts";
 import { cropRect } from "../cropRect.ts";
 import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
@@ -152,7 +152,7 @@ function render(): void {
     if (props.search && (occurrences(typed, searchNeedle()) || occurrences(shownText(turn), searchNeedle()))) bar.classList.add("search-hit");
     // The hover leads with what this prompt actually ran under, which need not be what the dock
     // is set to now, and when it was sent.
-    const ranAs = [turn.model, turn.effort, turn.advisor && `advisor ${turn.advisor}`, turn.modelId].filter(Boolean).join(" / ");
+    const ranAs = [shortModel(turn.model), turn.effort, turn.advisor && `advisor ${shortModel(turn.advisor)}`, shortModel(turn.modelId)].filter(Boolean).join(" / ");
     const sent = new Date(turn.createdAt).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
     bar.title = `${ranAs}   ${sent}\n${typed}`;
     bar.dataset.help = "bar";
@@ -1576,7 +1576,7 @@ onBeforeUnmount(() => {
             <button class="stop" data-help="stop button" :class="{ stopping: stopping && active }" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
             <button data-help="Cap button" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
             <button data-help="footer File button" :disabled="session?.trashed" @mousedown.prevent @click="pickFile">File</button>
-            <input type="checkbox" aria-label="bestModel" data-help="bestModel box" :title="modelChoice(session?.bestModel).title" :checked="!!session?.bestModel" :disabled="!session || session.trashed" @mousedown.prevent @change="setBestModel" />
+            <input type="checkbox" aria-label="bestModel" data-help="bestModel box" :title="modelChoice(session?.bestModel, modelPicks[tab.host]).title" :checked="!!session?.bestModel" :disabled="!session || session.trashed" @mousedown.prevent @change="setBestModel" />
           </div>
         </div>
         <div class="stats">

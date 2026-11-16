@@ -40,7 +40,15 @@ function showError(error: unknown): void {
   const text = error instanceof Error ? error.message : String(error)
   if (shown.has(text)) return
   shown.add(text)
-  window.alert(`Page error: ${text}\n\nIf part of the page is missing, reload it.`)
+  const dlg = document.createElement('dialog')
+  dlg.style.cssText = 'font-size:14px;max-width:600px;padding:16px;border:1px solid #888;border-radius:4px'
+  dlg.innerHTML = `<p style="margin:0 0 10px;font-weight:bold">Page error</p>` +
+    `<pre style="white-space:pre-wrap;word-break:break-word;user-select:text;margin:0 0 12px;font-size:14px">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</pre>` +
+    `<p style="margin:0 0 12px;font-size:14px">If part of the page is missing, reload it.</p>` +
+    `<button autofocus style="padding:3px 10px">OK</button>`
+  dlg.querySelector('button')!.onclick = () => { dlg.close(); dlg.remove() }
+  document.body.appendChild(dlg)
+  dlg.showModal()
 }
 window.addEventListener('error', (event) => { if (event.error) showError(event.error) })
 window.addEventListener('unhandledrejection', (event) => showError(event.reason))

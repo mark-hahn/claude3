@@ -39,6 +39,9 @@
 //        quota { force } -> { readAt, rows, state, apiCosts } (the Quotas pane; force is its Update)
 //        quotaSync { readAt, error } -> { payload } (null when the pane already shows the newest)
 //        speechmatics { month, rescan } -> { payload } (the tv project's Speechmatics spend)
+//        models {} -> { payload: ModelPick } (the CLI's model list asked fresh, and the Default)
+//        setDefaultModel { model, id } -> {} (the Models tab's Default checkbox; the page sends it to every host,
+//                                              each keeping its own list's value for that id: ownModel)
 //        login -> { url } (starts this host's `claude auth login`) | loginCode { code } -> {} | loginCancel -> {}
 //        loginResult -> { done, account, error } (the page polls this; error is "" on success)
 //        fakeAuthNeeded -> {} (a test: raises this host's expired-login flag)
@@ -53,7 +56,7 @@ import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { FIRST_TABS, HOSTS, ORIGINS, STATS_URL, type HostName, type Tab } from "../shared/config.ts";
-import { ANSWER_MARK, AUTH_FAILED, CLI_MISSING, DEFAULT_CONTEXT_WINDOW, fileNote, imageNote, modelChoice, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
+import { ANSWER_MARK, AUTH_FAILED, CLI_MISSING, DEFAULT_CONTEXT_WINDOW, fileNote, imageNote, modelChoice, ownModel, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type ModelList, type ModelMap, type ModelPick, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
 import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, copySessionTranscript, swapSessionTranscripts, truncateSessionTranscript, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
@@ -254,10 +257,20 @@ function statuses(project: Project): Record<string, RunningStatus> {
 
 // The CLI's model list, asked once at start and again until it answers.
 let models: ModelMap = {};
+let modelNames: Record<string, string> = {};
+let modelIds: Record<string, string> = {};
+// The Settings pane's Default model (a list value), kept per host: the page sets it on every host.
+const MODEL_DEFAULT_FILE = path.join(DATA_DIR, "model-default");
+let modelDefault = fs.existsSync(MODEL_DEFAULT_FILE) ? fs.readFileSync(MODEL_DEFAULT_FILE, "utf8").trim() : "sonnet";
+const modelPick = (): ModelPick => ({ default: modelDefault, models, names: modelNames, ids: modelIds });
+function setModels(list: ModelList): void {
+  ({ models, names: modelNames, ids: modelIds } = list);
+  broadcast({ type: "modelPick", pick: modelPick() });
+}
 async function loadModels(): Promise<void> {
   const cwd = [...projects.values()][0]?.tab.path ?? os.homedir();
   try {
-    models = (await runner.listModels(cwd)).models;
+    setModels(await runner.listModels(cwd));
   } catch (error) {
     log(`Model list failed: ${errorText(error)}`);
     setTimeout(() => void loadModels(), 60000);
@@ -338,7 +351,7 @@ async function submitPrompt(project: Project, body: Record<string, unknown>): Pr
   const id = session.id;
   // While the CLI waits on a background task the prompt joins that process instead; otherwise a
   // prompt sent during a run replaces it (the page asked first).
-  const { model, effort, advisor } = modelChoice(session.bestModel);
+  const { model, effort, advisor } = modelChoice(session.bestModel, modelPick());
   if (!runner.canFollowUp(id, model, effort, advisor) && (runs.has(id) || runner.isRunning(id))) {
     runner.stop(id);
     await runs.get(id);
@@ -411,7 +424,7 @@ async function sendCeilings(project: Project): Promise<void> {
 // Ported from claude2's runTurn, without files, stats, quota or notifications.
 async function runTurn(project: Project, session: ClaudeSession, prompt: string, images: string[], files: AttachedFile[] = []): Promise<void> {
   const workspacePath = project.tab.path;
-  const { model, effort, advisor } = modelChoice(session.bestModel);
+  const { model, effort, advisor } = modelChoice(session.bestModel, modelPick());
   const wasFirstPrompt = session.turns.length === 0;
   // Context is a level: a run inherits where the last one that recorded one left off.
   const priorContext = session.turns.reduce((level, prior) => prior.contextUsed || (prior.cleared ? 0 : level), 0);
@@ -569,7 +582,7 @@ async function nameSession(project: Project, session: ClaudeSession, prompt: str
 // The Ctx popup's table: the transcript's counts with the CLI's own split of the fixed parts.
 async function ctxTable(project: Project, session: ClaudeSession): Promise<unknown> {
   let usage: Record<string, unknown> | null = null;
-  const { model, advisor } = modelChoice(session.bestModel);
+  const { model, advisor } = modelChoice(session.bestModel, modelPick());
   try {
     usage = await runner.contextUsage({
       sessionId: session.id,
@@ -681,6 +694,30 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "quotaSync") {
     return { payload: await quota.shared(Number(body.readAt) || 0, String(body.error ?? "")) };
+  }
+  if (name === "models") {
+    // A fresh ask of the CLI each time the pane opens; a failure comes back as the pane's error.
+    let limitsError = "";
+    const [list, contextTokens] = await Promise.all([
+      runner.listModels([...projects.values()][0]?.tab.path ?? os.homedir()),
+      quota.modelLimits().catch((error) => { limitsError = errorText(error); return {} as Record<string, number>; }),
+    ]);
+    setModels(list);
+    return { payload: { ...modelPick(), contextTokens, limitsError } };
+  }
+  if (name === "cliVersion") {
+    return await new Promise<{ version: string }>((resolve) => {
+      execFile("claude", ["--version"], (err, stdout) => resolve({ version: err ? "?" : (stdout.trim().split(/\s+/)[0] ?? "?") }));
+    });
+  }
+  if (name === "setDefaultModel") {
+    const id = String(body.id ?? "");
+    const model = ownModel(modelPick(), String(body.model ?? ""), id);
+    if (!model) throw new Error(`This host's CLI lists no ${id || String(body.model ?? "") || "model"}.`);
+    modelDefault = model;
+    fs.writeFileSync(MODEL_DEFAULT_FILE, model);
+    broadcast({ type: "modelPick", pick: modelPick() });
+    return {};
   }
   if (name === "speechmatics") {
     return { payload: await speechmaticsCost(String(body.month ?? ""), body.rescan === true, log) };
@@ -1269,7 +1306,7 @@ const server = createServer((req, res) => {
   }
   if (req.method === "GET" && url.pathname === "/events") {
     res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
-    const events: StreamEvent[] = [{ type: "projects", tabs: tabList() }, { type: "auth", needed: authNeeded }, ...[...projects.values()].map((project): StreamEvent => ({ type: "state", tab: project.tab.id, sessions: project.sessions, statuses: statuses(project) }))];
+    const events: StreamEvent[] = [{ type: "projects", tabs: tabList() }, { type: "auth", needed: authNeeded }, { type: "modelPick", pick: modelPick() }, ...[...projects.values()].map((project): StreamEvent => ({ type: "state", tab: project.tab.id, sessions: project.sessions, statuses: statuses(project) }))];
     res.write(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""));
     clients.add(res);
     for (const project of projects.values()) {

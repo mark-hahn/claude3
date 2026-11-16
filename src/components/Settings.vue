@@ -3,9 +3,10 @@
 // claude2's quotaHtml (webviews.ts) nearly verbatim: the graphs are built by script, as there, so
 // the styles are global, prefixed `.settings`. Data comes from the tab's backend (server/quota.ts).
 // The script uses element ids, looked up inside this pane: every tab with it open has its own.
-import { onBeforeUnmount, onMounted, ref } from "vue";
-import type { Tab } from "../../shared/config.ts";
-import { post } from "../api.ts";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
+import { olderCli, shortModel, sortModels, type ModelPick } from "../../shared/types.ts";
+import { post, postHost } from "../api.ts";
 
 // active: this is the tab on show; a tab out of sight stops asking the backend.
 const props = defineProps<{ tab: Tab; active: boolean }>();
@@ -52,6 +53,53 @@ async function request(action: string, data: Record<string, unknown>): Promise<R
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+// The Models view: what this host's CLI lists now, asked each time it opens. Read-only: claude3 has
+// no presets, so claude2's Show, Preset and Alias columns have nothing to act on here.
+const view = ref<"quota" | "models">("quota");
+const modelRows = ref<{ model: string; id: string; name: string; effort: string; tokens: string }[]>([]);
+const modelsNote = ref("");
+const cliVersions = ref<Partial<Record<HostName, string>>>({});
+const olderHosts = computed(() => olderCli(cliVersions.value));
+// The list value whose Default box is checked: when bestModel is off the run is on it with the next better model
+// as advisor, when on the run is on that next better model alone (shared/types.ts's modelChoice).
+const defaultModel = ref("");
+async function openModels(): Promise<void> {
+  view.value = "models";
+  modelsNote.value = "Asking the CLI...";
+  cliVersions.value = {};
+  const [reply] = await Promise.all([
+    request("models", {}),
+    ...(Object.keys(HOSTS) as HostName[]).map((host) =>
+      postHost<{ version: string }>(host, "cliVersion", {}).then((r) => { cliVersions.value = { ...cliVersions.value, [host]: r.version }; }).catch(() => { cliVersions.value = { ...cliVersions.value, [host]: "?" }; })
+    ),
+  ]);
+  if (unmounted) return;
+  modelsNote.value = "";
+  if (!reply.ok) {
+    window.alert("Could not load the model list: " + (reply.error || "unknown error"));
+    return;
+  }
+  const { models, names, ids, contextTokens, limitsError, default: chosen } = reply.payload as ModelPick & { contextTokens: Record<string, number>; limitsError: string };
+  defaultModel.value = chosen;
+  if (limitsError) window.alert("Could not load the models' token limits: " + limitsError);
+  // The CLI lists a model's efforts weakest first, so the last is its max (none for Haiku 4.5).
+  modelRows.value = sortModels(Object.keys(models), ids).map((model) => {
+    const tokens = contextTokens[ids[model] ?? ""];
+    return { model, id: ids[model] || "", name: names[model] || "", effort: models[model].at(-1) ?? "", tokens: !tokens ? "" : tokens >= 1e6 ? `${tokens / 1e6}M` : `${tokens / 1000}K` };
+  });
+}
+
+// Checkboxes that act as radio buttons: the checked one stays checked, and the choice goes to every
+// host (each keeps its own copy), any that refuse in an alert. The id goes with the value: another
+// host's CLI may list the same model under another name, and keeps its own name for it (ownModel).
+async function setDefault(model: string, id: string, event: Event): Promise<void> {
+  (event.target as HTMLInputElement).checked = true;
+  defaultModel.value = model;
+  const failed: string[] = [];
+  await Promise.all((Object.keys(HOSTS) as HostName[]).map((host) => postHost(host, "setDefaultModel", { model, id }).catch((error) => void failed.push(`${host}: ${error instanceof Error ? error.message : error}`))));
+  if (failed.length) window.alert("The default model was not set on:\n" + failed.join("\n"));
 }
 
 async function load(force: boolean): Promise<void> {
@@ -420,21 +468,31 @@ onBeforeUnmount(() => {
   <div id="q-pane" ref="root" class="settings">
     <div class="title">
       <div class="title-row">
-        <!-- Tabs act as radio buttons; Quotas is the only one so far, so clicking it does nothing. -->
-        <div class="tab-row"><button class="tab selected">Quotas</button></div>
-        <div class="actions"><button id="q-update" data-help="Settings Update" @click="load(true)">Update</button><button data-help="Settings Close" @click="emit('close')">Close</button><label data-help="Settings Pro"><input type="checkbox" @change="togglePro" /> Pro</label></div>
+        <!-- Tabs act as radio buttons. -->
+        <div class="tab-row"><button class="tab" :class="{ selected: view === 'quota' }" data-help="Settings Quotas" @click="view = 'quota'">Quotas</button><button class="tab" :class="{ selected: view === 'models' }" data-help="Settings Models" @click="openModels">Models</button></div>
+        <div class="actions"><button id="q-update" v-show="view === 'quota'" data-help="Settings Update" @click="load(true)">Update</button><button data-help="Settings Close" @click="emit('close')">Close</button><label v-show="view === 'quota'" data-help="Settings Pro"><input type="checkbox" @change="togglePro" /> Pro</label></div>
       </div>
-      <div class="title-row"><div id="q-credits" class="credits" data-help="Settings credits" @click="creditsClick"></div><span id="q-age"></span></div>
+      <div v-show="view === 'quota'" class="title-row"><div id="q-credits" class="credits" data-help="Settings credits" @click="creditsClick"></div><span id="q-age"></span></div>
     </div>
-    <div id="q-error" class="error" hidden></div>
-    <div id="q-graphs" class="graphs"></div>
+    <div id="q-error" v-show="view === 'quota'" class="error" hidden></div>
+    <div id="q-graphs" v-show="view === 'quota'" class="graphs"></div>
+    <div v-show="view === 'models'" class="models-view">
+      <h2>Models By Value</h2>
+      <div class="cli-versions"><span v-for="host in (Object.keys(HOSTS) as HostName[])" :key="host" :class="{ warn: olderHosts.includes(host) || cliVersions[host] === '?' }">{{ host }}: {{ cliVersions[host] ?? '…' }}</span></div>
+      <table>
+        <thead><tr><th>Model</th><th>Descr</th><th>Effort</th><th>Tokens</th><th>Default</th></tr></thead>
+        <tbody><tr v-for="row in modelRows" :key="row.model"><td>{{ shortModel(row.model) }}</td><td>{{ row.name }}</td><td>{{ row.effort }}</td><td>{{ row.tokens }}</td><td><input type="checkbox" data-help="Settings Default" :checked="row.model === defaultModel" @change="setDefault(row.model, row.id, $event)" /></td></tr></tbody>
+      </table>
+      <div>{{ modelsNote }}</div>
+    </div>
   </div>
 </template>
 
 <style>
 /* claude2's Quotas pane styles at zoom 1, under .settings. */
-.settings { --blue: #2457d6; --red: #c62828; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding: 4px 32px 28px; background: var(--page); font-size: 16px; line-height: 1.4; overflow: hidden; }
-.settings button { padding: 7px 8px; min-height: 34px; }
+.settings { --blue: #2457d6; --red: #c62828; min-height: 0; display: flex; flex-direction: column; gap: 16px; padding: 4px 32px 28px; background: var(--page); font-size: 14px; line-height: 1.4; overflow: hidden; }
+/* Buttons are 20% smaller than claude2's (padding and height; the text stays within 14-18px). */
+.settings button { padding: 3px 6.4px; min-height: 27px; }
 /* The tabs and actions on the first line, the month's costs and the reading's age on the second. */
 .settings .title { display: flex; flex-direction: column; align-items: flex-start; gap: 15px; flex: none; padding-top: 6px; }
 .settings .title-row { display: flex; align-items: center; gap: 15px 30px; }
@@ -443,7 +501,7 @@ onBeforeUnmount(() => {
 .settings .actions { display: flex; align-items: center; gap: 12px; font-size: 14px; }
 .settings #q-age { font-size: 14px; font-variant-numeric: tabular-nums; }
 .settings .credits { display: flex; align-items: center; gap: 8px; font-size: 14px; font-variant-numeric: tabular-nums; }
-.settings .credits button { min-height: 26px; padding: 2px 5px; }
+.settings .credits button { min-height: 21px; padding: 0 4px; }
 .settings .graphs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; min-height: 0; overflow: auto; }
 .settings .graphs.single { display: flex; flex: 1; min-height: 0; justify-content: center; align-items: flex-start; }
 .settings .graph { width: 80%; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 11px; min-width: 0; }
@@ -455,12 +513,20 @@ onBeforeUnmount(() => {
 .settings .swatch.blue { background: var(--blue); }
 .settings .swatch.red { background: var(--red); }
 .settings .period { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
-.settings .period button { min-height: 26px; padding: 2px 5px; }
+.settings .period button { min-height: 21px; padding: 0 4px; }
 .settings .plot { position: relative; width: 100%; aspect-ratio: 256 / 140; border: 1px solid var(--border); cursor: pointer; background: #fff; }
 .settings .graphs.single .plot { flex: none; }
 .settings .plot svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .settings svg text { font-size: 14px; fill: var(--ink); text-anchor: end; }
 .settings .figures { margin-top: 8px; font-size: 14px; font-variant-numeric: tabular-nums; display: flex; gap: 10px; flex-wrap: wrap; }
+.settings .models-view { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); padding: 12px 16px; min-height: 0; overflow: auto; }
+.settings .models-view h2 { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+.settings .models-view .cli-versions { font-size: 14px; margin: 0 0 8px; }
+.settings .models-view .cli-versions span { margin-right: 16px; }
+.settings .models-view .cli-versions .warn { color: #c00; font-weight: 600; }
+.settings .models-view table { border-collapse: collapse; margin-bottom: 8px; }
+.settings .models-view td, .settings .models-view th { padding: 3px 20px 3px 0; text-align: left; vertical-align: top; white-space: nowrap; }
+.settings .models-view th { font-weight: 600; }
 .settings .empty, .settings .error { border: 1px dashed var(--border); border-radius: 8px; padding: 18px; }
 .settings .error { background: #fdecec; border-style: solid; }
 .settings .error[hidden] { display: none; }

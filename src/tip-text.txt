@@ -63,7 +63,7 @@ Click: open or close the Term pane: up to three bash shells (Git Bash on win), t
 Click: open or close the Snips, snippets of prompt text shared with claude2 and every tab.
 
 @Settings button
-Click: open or close the Settings pane (quotas).
+Click: open or close the Settings pane (quotas, models).
 
 @Tabs host
 Pick the host the new project is on; Path then picks a folder there.
@@ -221,7 +221,7 @@ Ctrl-click: picked on the Windows PC, from C:\Users\mark.
 Pictures, PDFs and text, up to 20MB.
 
 @bestModel box
-Check: run this session on the best model (the hover says which).
+Check: run this session on the next better model than the Default (the hover says which) with no advisor; unchecked it runs on the Default with that better model as advisor. The Default is set in Settings, Models.
 
 @context stat
 Context used / where the CLI compacts it, in thousands of tokens. Red past it.
@@ -422,6 +422,16 @@ Ctrl+Enter with no selection: a blank line.
 Esc: close the Snips.
 Saved half a second after typing. Same list and editing keys as the prompt box.
 Ctrl-wheel: text size.
+
+@Settings Quotas
+Click: show the quota graphs.
+
+@Settings Models
+Click: show the models the CLI lists now (asked each time): name, description, max effort and context window in tokens (from the Models API). A line above the table shows the CLI version on each host, in red (host name and version) for any host older than another, or showing ? because it didn't answer.
+
+@Settings Default
+Check: make this the default model, and clear the others. A tab's bestModel box unchecked runs on it with the next better model as advisor; checked, it runs on the next better model with no advisor.
+Sent to every host; it stays checked until you check another.
 
 @Settings Update
 Click: ask for a new quota reading now.

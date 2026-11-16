@@ -106,12 +106,79 @@ export interface ClaudeSession {
   bestModel?: boolean;
 }
 
-// What a session's turns run on, in every tab on every host. The CLI's "opus" alias is Opus 5.5.
-// An advisor takes a model only: neither the CLI nor the API has an effort for it.
-export const modelChoice = (bestModel: boolean | undefined) =>
-  bestModel
-    ? { model: "claude-opus-5-5", effort: "xhigh", advisor: "", title: "Opus 5.5 xhigh, no advisor" }
-    : { model: "claude-sonnet-5-5", effort: "xhigh", advisor: "opus", title: "Sonnet 5.5 xhigh, advisor Opus 5.5" };
+// The CLI's model list: each value's effort levels, its Anthropic name and its resolved id.
+export interface ModelList {
+  models: ModelMap;
+  names: Record<string, string>;
+  ids: Record<string, string>;
+}// The list plus the value the Settings pane's Models tab marked Default (a backend keeps it, and sends this to every page).
+export type ModelPick = ModelList & { default: string };
+
+// A host's own list value for the model a page picked from another host's list. Hosts' CLIs differ in
+// version and name one model differently (Fable 5.2 is `fable` on one, `claude-fable-5-2` on another), and
+// one name can be different models (`fable[1m]` is Fable 5.1 on an older CLI), so the id decides: the
+// page's value when it is that model here too, else the first value here that resolves to the id.
+export function ownModel(list: ModelList, model: string, id: string): string | undefined {
+  if (model in list.models && (!id || list.ids[model] === id)) return model;
+  return id ? Object.keys(list.models).find((value) => list.ids[value] === id) : undefined;
+}
+
+// A model value or id as shown on the page: no "claude-" prefix, no date suffix (a number past 100).
+export const shortModel = (model: string) => model.replace(/^claude-/, "").replace(/-\d{3,}$/, "");
+
+// Weakest family first. A model's "next better" one is the newest of the next family up the list has,
+// by resolved version: an alias is the CLI's own pointer, named differently and lagging by host, and the
+// list's order means nothing. With no list yet, the family's alias itself.
+const FAMILIES = ["haiku", "sonnet", "opus", "fable"];
+function nextBetter(value: string, models: ModelMap, ids: Record<string, string> = {}): string {
+  const own = FAMILIES.findIndex((family) => value.includes(family));
+  const listed = Object.keys(models);
+  const pool = listed.length ? listed : FAMILIES;
+  for (const family of own === -1 ? [] : FAMILIES.slice(own + 1)) {
+    const hit = sortModels(pool.filter((id) => id.includes(family)), ids).at(-1);
+    if (hit) return hit;
+  }
+  return "";
+}
+
+// The hosts whose CLI version is below the newest one shown. A "?" (the CLI wouldn't answer) or a host
+// not heard from yet has no version to compare.
+const compareVersions = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
+export function olderCli(versions: Partial<Record<string, string>>): string[] {
+  const known = Object.entries(versions).filter((entry): entry is [string, string] => /^\d+(\.\d+)*$/.test(entry[1] ?? ""));
+  const newest = known.reduce((best, [, version]) => (compareVersions(version, best) > 0 ? version : best), "0");
+  return known.filter(([, version]) => compareVersions(version, newest) < 0).map(([host]) => host);
+}
+
+// A list's values weakest first: by family, then version (read from the resolved id), then name, so
+// an alias (`opus`) lands next to the id it resolves to. A family this doesn't know goes last.
+export function sortModels(values: string[], ids: Record<string, string>): string[] {
+  const key = (value: string) => {
+    const id = ids[value] || value;
+    const family = FAMILIES.findIndex((name) => id.includes(name));
+    const [, major, minor] = id.match(/^claude-[a-z]+-(\d+)(?:-(\d{1,2})(?!\d))?/) ?? [];
+    return [family === -1 ? FAMILIES.length : family, Number(major ?? 0), Number(minor ?? 0)];
+  };
+  return [...values].sort((a, b) => {
+    const [x, y] = [key(a), key(b)];
+    return x[0] - y[0] || x[1] - y[1] || x[2] - y[2] || a.localeCompare(b);
+  });
+}
+
+// What a session's turns run on, in every tab on every host. Bestmodel unchecked: the Default model
+// with the next better one as advisor; checked: the next better one alone (the Default itself when
+// nothing is better). An advisor takes a model only: neither the CLI nor the API has an effort for it.
+// Effort is xhigh where the model has it, else its highest; none for a model with no levels.
+export function modelChoice(bestModel: boolean | undefined, pick: ModelPick = { default: "sonnet", models: {}, names: {}, ids: {} }) {
+  const base = pick.default;
+  const better = nextBetter(base, pick.models, pick.ids);
+  const run = bestModel ? better || base : base;
+  const advisor = bestModel ? "" : better;
+  const efforts = pick.models[run];
+  const effort = !efforts || efforts.includes("xhigh") ? "xhigh" : efforts.at(-1) ?? "";
+  const name = (value: string) => pick.names[value] || value;
+  return { model: pick.ids[run] || run, effort, advisor, title: `${name(run)}${effort ? " " + effort : ""}, ${advisor ? "advisor " + name(advisor) : "no advisor"}` };
+}
 
 export interface RunningStatus {
   active: boolean;
@@ -173,8 +240,8 @@ export type ServerEvent =
   | { type: "returned"; sessionId: string; prompt: string; images: string[]; files: (AttachedFile & { dataUri: string })[]; notice?: string };
 
 // A backend's one event stream: its list of projects and whether its Claude login needs renewing,
-// on connect and at every change, the plan's use on connect and at each turn's end, and each project's events marked with its id.
-export type StreamEvent = { type: "projects"; tabs: Tab[] } | { type: "auth"; needed: boolean } | { type: "quota"; use: QuotaUse } | (ServerEvent & { tab: string });
+// on connect and at every change, the model list and default likewise, the plan's use on connect and at each turn's end, and each project's events marked with its id.
+export type StreamEvent = { type: "projects"; tabs: Tab[] } | { type: "auth"; needed: boolean } | { type: "quota"; use: QuotaUse } | { type: "modelPick"; pick: ModelPick } | (ServerEvent & { tab: string });
 
 // The account's plan use from the backend's newest reading (one account behind every host): each
 // window's (5h, 7d, Fable) percent and reset in epoch seconds, and the month's extra-usage spend.

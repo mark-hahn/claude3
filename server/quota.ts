@@ -224,6 +224,21 @@ export class QuotaService {
     return reshapeUsage(response.body, Date.now());
   }
 
+  // Each model's context window (id -> max_input_tokens) from the Models API, called with the CLI's own
+  // OAuth token, refreshed the same way the usage read refreshes it.
+  public async modelLimits(): Promise<Record<string, number>> {
+    const { expiresAt } = await this.credentials();
+    if (expiresAt !== null && expiresAt <= Date.now()) await this.probeQuotaRefresh();
+    let response = await getModels((await this.credentials()).accessToken);
+    if (response.status === 401) {
+      await this.probeQuotaRefresh();
+      response = await getModels((await this.credentials()).accessToken);
+    }
+    if (!response.ok) throw new Error(`Models API returned ${response.status}: ${(await response.text()).slice(0, 200)}`);
+    const body = (await response.json()) as { data?: { id?: string; max_input_tokens?: number }[] };
+    return Object.fromEntries((body.data ?? []).flatMap((model) => (model.id && model.max_input_tokens ? [[model.id, model.max_input_tokens]] : [])));
+  }
+
   private async credentials(): Promise<{ accessToken: string; expiresAt: number | null }> {
     const credentialsPath = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), ".credentials.json");
     const parsed = JSON.parse(await fs.readFile(credentialsPath, "utf8")) as unknown;
@@ -416,6 +431,13 @@ export class QuotaService {
       this.log(`Claude quota read failed: ${reason}`);
     }
   }
+}
+
+function getModels(accessToken: string): Promise<Response> {
+  return fetch("https://api.anthropic.com/v1/models?limit=1000", {
+    headers: { Authorization: `Bearer ${accessToken}`, "anthropic-beta": "oauth-2025-04-20", "anthropic-version": "2023-06-01" },
+    signal: AbortSignal.timeout(fetchTimeoutMs),
+  });
 }
 
 async function getJson(accessToken: string): Promise<HttpJsonResponse> {

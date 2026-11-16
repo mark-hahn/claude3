@@ -89,8 +89,11 @@ on the laptop, and talks to each backend directly.
   it, the selection is deleted from the Snips and the blank lines at or beside it come down to one
   (`src/blankLines.ts`; a trashed session's prompt takes nothing, so nothing is deleted and they stay open), then the
   Snips close, which saves at once. With no selection they just close.
-- `src/components/Settings.vue`: claude2's management pane in the Snips' column. Only its Quotas
-  tab (the tab button does nothing yet), ported from claude2's `quotaHtml` nearly verbatim: graphs
+- `src/components/Settings.vue`: claude2's management pane in the Snips' column. Its Quotas and
+  Models tabs (`view`; the quota parts are `v-show`n, never removed, since the script draws into them by id). Models is a
+  table of the CLI's list (the `models` action asks the CLI fresh at each open: `listModels`; Effort is the model's max, display only; Tokens is the model's context window (`max_input_tokens`) from the Models API, which `QuotaService.modelLimits` calls with the CLI's OAuth token, refreshed like the usage read's, as the CLI's own list has no such field; the page also asks every host's `cliVersion` action and shows the versions in a line above the table, red for a host older than the newest, `olderCli` in `shared/types.ts`, or showing `?`: the CLI wouldn't answer or the host was unreachable), without claude2's
+  Show/Preset/Alias columns, as claude3 has no presets. Its Default checkboxes act as radio buttons and go to every host's `setDefaultModel`
+  (kept in each host's `~/.claude3/model-default`, so a host that was down keeps its old one until set again), as the list value plus its resolved id: the hosts' CLIs differ in version and name one model differently (Fable 5.2 was `fable` on WSL and win, `claude-fable-5-2` on srv), so each host keeps its own list's value for that id (`ownModel` in `shared/types.ts`, checked in `render.check.mjs`) and refuses an id its CLI doesn't list. Quotas is ported from claude2's `quotaHtml` nearly verbatim: graphs
   built by script, global styles under `.settings`, element ids `q-*` looked up inside its own root (`byId`: one instance per tab with it open, polling only while on show).
   Asks the backend's `quota` (Update = force), `quotaSync` every 30s, `speechmatics` per month.
   The dashed lines to and at 20% are a Pro plan's limits (a fifth of this plan's); the Pro checkbox
@@ -422,7 +425,7 @@ on the laptop, and talks to each backend directly.
   box, as claude2 does.
 - Run settings are fixed in `server/main.ts` `LIMITS` (100 turns, bypassPermissions), copied from
   claude2's Settings pane; the Settings pane has no Settings tab yet.
-- A run's model, effort and advisor come from `modelChoice` in `shared/types.ts`, by the session's `bestModel` (the unlabeled box right of the footer's Cap, kept with the session by the `bestModel` action; its tooltip is the choice's `title`). The prompt doesn't carry them. The advisor has no effort setting anywhere: the CLI's `advisorModel` and the API's advisor tool take only a model.
+- A run's model, effort and advisor come from `modelChoice` in `shared/types.ts`, by the session's `bestModel` (the unlabeled box right of the footer's Cap, kept with the session by the `bestModel` action; its tooltip is the choice's `title`) and the host's `ModelPick` (the CLI's list plus the Settings Models tab's Default; each backend sends it as a `modelPick` event on connect and at every change, kept per host in `modelPicks` in `src/api.ts`, the lists differing by host): unchecked runs on the Default with the next better model (the newest of the next family up by resolved version, not by alias or list order, haiku < sonnet < opus < fable) as advisor, checked on that better model alone. The prompt doesn't carry them. The advisor has no effort setting anywhere: the CLI's `advisorModel` and the API's advisor tool take only a model.
 - Chromium hands focus back after a mouse-closed `<dialog>` without the text box's caret, so
   typing goes nowhere; `src/main.ts` blurs and refocuses on every dialog's close. Monaco's own
   focus call doesn't help, since the textarea already has focus.
@@ -437,7 +440,7 @@ on the laptop, and talks to each backend directly.
   get a `window.alert` from `src/main.ts`, each message once per page load (a broken render repeats
   on every update). Window errors without an error object, like ResizeObserver's loop notice, are skipped.
 - Not ported yet from claude2: export, presets (M),
-  Stats/Models/Instructions/Settings tabs, the git changes check, prompt
+  Stats/Instructions/Settings tabs, the git changes check, prompt
   suggestions, arrow-key navigation.
 - claude2's per-host auth flag (`authNeeded.<remote>` in VS Code's globalState) can't be shared: it
   sits in VS Code's own database on the Windows side, out of hahnca.com's reach, and a running

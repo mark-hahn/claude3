@@ -1,7 +1,7 @@
 // Self-check for the markdown renderer, answer text and trash-list picking ported from claude2: `node src/render.check.mjs`.
 // The ports un-doubled every backslash of claude2's template-literal source, so a missed one shows here.
 import assert from "node:assert/strict";
-import { AUTH_FAILED, imageNote, quotaSpend, typedPrompt } from "../shared/types.ts";
+import { AUTH_FAILED, imageNote, modelChoice, olderCli, ownModel, quotaSpend, shortModel, sortModels, typedPrompt } from "../shared/types.ts";
 import { extraBlankLines, headingEnter, joinLines } from "./blankLines.ts";
 import { cropRect } from "./cropRect.ts";
 import { modifiedLine } from "./diffLine.ts";
@@ -448,6 +448,54 @@ assert.equal(fableWindow(weekly("Fable 5.2", 7, early), weekly("Fable 5.1", 3, e
 assert.equal(fableWindow(weekly("Fable 5.2", 7, early), weekly("Fable 5.1", null, early)).pct, 7);
 assert.deepEqual(fableWindow(weekly("Opus", 5, early)), { key: "model", label: "Fable", pct: null, resetsAt: null });
 assert.equal(modelScopedWindow(undefined).pct, null);
+
+// The Default model: two hosts' CLIs as they listed on 2026-11-15, the older (srv's) naming Fable 5.2 by its id
+// and calling Fable 5.1 `fable[1m]`. A pick goes by its id, each host keeping its own name for it.
+{
+  const efforts = ["low", "medium", "high", "xhigh", "max"];
+  const list = (ids) => ({ models: Object.fromEntries(Object.keys(ids).map((value) => [value, value.includes("4-6") ? ["low", "high", "max"] : efforts])), ids, names: { opus: "Opus 5.5", sonnet: "Sonnet 5.5" } });
+  const shared = { opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5", "claude-opus-4-6": "claude-opus-4-6" };
+  const newer = list({ ...shared, fable: "claude-fable-5-2", "claude-fable-5-1": "claude-fable-5-1" });
+  const older = list({ ...shared, "claude-fable-5-2": "claude-fable-5-2", "fable[1m]": "claude-fable-5-1" });
+  assert.equal(ownModel(newer, "fable", "claude-fable-5-2"), "fable");
+  assert.equal(ownModel(older, "fable", "claude-fable-5-2"), "claude-fable-5-2");
+  assert.equal(ownModel(newer, "fable[1m]", "claude-fable-5-1"), "claude-fable-5-1");
+  assert.equal(ownModel(older, "claude-fable-5-1", "claude-fable-5-1"), "fable[1m]");
+  assert.equal(ownModel(older, "sonnet", "claude-sonnet-5-5"), "sonnet");
+  assert.equal(ownModel(older, "fable", "claude-fable-9"), undefined);
+  assert.equal(ownModel(older, "nope", ""), undefined);
+  // A page from before ids were sent: the value alone, when the list has it.
+  assert.equal(ownModel(older, "opus", ""), "opus");
+  // Unchecked: the Default with the next family up as advisor. Checked: that one alone. Nothing above Fable.
+  const choice = (best, base, from = newer) => { const { model, effort, advisor } = modelChoice(best, { ...from, default: base }); return [model, effort, advisor].join(" "); };
+  assert.equal(choice(false, "sonnet"), "claude-sonnet-5-5 xhigh opus");
+  assert.equal(choice(true, "sonnet"), "claude-opus-5-5 xhigh ");
+  assert.equal(choice(false, "opus"), "claude-opus-5-5 xhigh fable");
+  assert.equal(choice(true, "opus", older), "claude-fable-5-2 xhigh ");
+  assert.equal(choice(false, "fable"), "claude-fable-5-2 xhigh ");
+  assert.equal(choice(true, "claude-fable-5-2", older), "claude-fable-5-2 xhigh ");
+  // The next family's newest by resolved version, wherever the list puts it and whatever its alias says.
+  const lateAlias = list({ ...shared, "claude-fable-5-1": "claude-fable-5-1", "fable[1m]": "claude-fable-5-2" });
+  const staleAlias = list({ ...shared, fable: "claude-fable-5-1", "claude-fable-5-2": "claude-fable-5-2" });
+  assert.equal(choice(true, "opus", lateAlias), "claude-fable-5-2 xhigh ");
+  assert.equal(choice(false, "opus", staleAlias), "claude-opus-5-5 xhigh claude-fable-5-2");
+  assert.equal(choice(false, "claude-opus-4-6"), "claude-opus-4-6 max fable");
+  assert.equal(modelChoice(false, { ...newer, default: "sonnet" }).title, "Sonnet 5.5 xhigh, advisor Opus 5.5");
+  // No list yet (a backend still asking its CLI): the family names themselves.
+  assert.equal(modelChoice(false).model + " " + modelChoice(false).advisor + " " + modelChoice(true).model, "sonnet opus opus");
+  assert.equal(shortModel("claude-haiku-4-5-20251001") + " " + shortModel("claude-sonnet-4-6") + " " + shortModel("opus"), "haiku-4-5 sonnet-4-6 opus");
+  // Hosts' CLI versions: any below the newest is old (compared by number, so 2.1.9 < 2.1.325); "?" and unanswered ones are left out.
+  assert.deepEqual(olderCli({ wsl: "2.1.325", win: "2.1.325", srv: "2.1.325" }), []);
+  assert.deepEqual(olderCli({ wsl: "2.1.325", win: "2.1.9", srv: "2.1.319" }), ["win", "srv"]);
+  assert.deepEqual(olderCli({ wsl: "2.1.325", win: "?", srv: undefined }), []);
+  assert.deepEqual(olderCli({}), []);
+  // The Models tab's order: haiku, sonnet, opus, fable; within one, by version, an alias beside its id.
+  const resolved = { opus: "claude-opus-5-5", fable: "claude-fable-5-2", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5", "claude-fable-5-1": "claude-fable-5-1", "claude-haiku-4-5-20251001": "claude-haiku-4-5-20251001", "claude-sonnet-5": "claude-sonnet-5", "claude-opus-5": "claude-opus-5", "claude-fable-5": "claude-fable-5", "claude-opus-4-8": "claude-opus-4-8", "claude-opus-4-7": "claude-opus-4-7", "claude-opus-4-6": "claude-opus-4-6", "claude-sonnet-4-6": "claude-sonnet-4-6" };
+  assert.equal(
+    sortModels(Object.keys(resolved).reverse(), resolved).map(shortModel).join(" "),
+    "haiku-4-5 haiku sonnet-4-6 sonnet-5 sonnet opus-4-6 opus-4-7 opus-4-8 opus-5 opus fable-5 fable-5-1 fable",
+  );
+}
 
 // The Term pane's search: from the bottom up, case ignored, each next hit ending before the last, a wrapped line read as one.
 {
