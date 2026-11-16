@@ -148,7 +148,6 @@ function render(): void {
   const error = payload.state && payload.state.error ? payload.state.error : null;
   errorNode.hidden = !error;
   errorNode.textContent = error || "";
-  renderAge();
   renderCredits();
   const graphsNode = byId("q-graphs");
   const pane = root.value!;
@@ -198,9 +197,7 @@ function renderCredits(): void {
   const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - creditMonth + 1, 1);
   const key = new Date(start).toISOString().slice(0, 7);
   const label = new Date(start).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
-  // The API key's spend (claude2's Git changes checks) is billed apart from the credits.
-  const costs = payload.apiCosts && typeof payload.apiCosts === "object" ? payload.apiCosts : null;
-  const older = (rows.length > 0 && rows[0].at < start) || (costs !== null && Object.keys(costs).some((month) => month < key));
+  const older = rows.length > 0 && rows[0].at < start;
   const nav = '<button data-month="older"' + (older ? "" : " disabled") + ">‹</button><span>" + label + '</span><button data-month="newer"' + (creditMonth === 0 ? " disabled" : "") + ">›</button>";
   const live = creditMonth === 0 && payload.state && payload.state.credits;
   let spent = live ? numeric(live.spentUsd) : null;
@@ -212,9 +209,7 @@ function renderCredits(): void {
       }
     }
   }
-  const usage = spent === null ? "" : "<span>Sub " + escapeHtml(money(spent)) + "</span>";
-  const month = costs ? costs[key] : null;
-  const api = costs ? '<span title="Claude API key spend for the month: ' + (month ? month.count : 0) + ' Git changes checks">API ' + escapeHtml(money(month ? numeric(month.usd) || 0 : 0)) + "</span>" : "";
+  const usage = "<span>" + (spent === null ? "" : escapeHtml(money(spent)) + "/") + '<span id="q-age"></span></span>';
   // Speechmatics months are Los Angeles time. ERR marks a failed latest read; the age is since the last good one.
   if (!(key in speechmatics)) loadSpeechmatics(key);
   const asr = speechmatics[key];
@@ -223,11 +218,12 @@ function renderCredits(): void {
     const parts = ["ASR"];
     if (asr.error) parts.push("ERR");
     if (typeof asr.usd === "number") parts.push(escapeHtml(money(asr.usd)));
-    if (typeof asr.at === "number") parts.push('<span id="q-asr-age" data-at="' + asr.at + '">' + elapsed(asr.at) + "</span>");
+    const age = typeof asr.at === "number" ? '/<span id="q-asr-age" data-at="' + asr.at + '">' + elapsed(asr.at) + "</span>" : "";
     const hours = typeof asr.hrs === "number" ? escapeHtml(asr.hrs.toFixed(1)) + " audio hours" : "never read";
-    speech = '<span title="tv ASR on Speechmatics: ' + hours + '">' + parts.join(" ") + "</span>";
+    speech = '<span title="tv ASR on Speechmatics: ' + hours + '">' + parts.join(" ") + age + "</span>";
   }
-  node.innerHTML = nav + usage + api + speech;
+  node.innerHTML = nav + usage + speech;
+  renderAge();
 }
 
 function creditsClick(event: MouseEvent): void {
@@ -472,7 +468,7 @@ onBeforeUnmount(() => {
         <div class="tab-row"><button class="tab" :class="{ selected: view === 'quota' }" data-help="Settings Quotas" @click="view = 'quota'">Quotas</button><button class="tab" :class="{ selected: view === 'models' }" data-help="Settings Models" @click="openModels">Models</button></div>
         <div class="actions"><button id="q-update" v-show="view === 'quota'" data-help="Settings Update" @click="load(true)">Update</button><button data-help="Settings Close" @click="emit('close')">Close</button><label v-show="view === 'quota'" data-help="Settings Pro"><input type="checkbox" @change="togglePro" /> Pro</label></div>
       </div>
-      <div v-show="view === 'quota'" class="title-row"><div id="q-credits" class="credits" data-help="Settings credits" @click="creditsClick"></div><span id="q-age"></span></div>
+      <div v-show="view === 'quota'" class="title-row"><div id="q-credits" class="credits" data-help="Settings credits" @click="creditsClick"></div></div>
     </div>
     <div id="q-error" v-show="view === 'quota'" class="error" hidden></div>
     <div id="q-graphs" v-show="view === 'quota'" class="graphs"></div>
