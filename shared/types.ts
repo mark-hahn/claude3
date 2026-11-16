@@ -106,12 +106,12 @@ export interface ClaudeSession {
   bestModel?: boolean;
 }
 
-// What a session's turns run on, in every tab on every host. The CLI's "fable" alias is Fable 5.2.
+// What a session's turns run on, in every tab on every host. The CLI's "opus" alias is Opus 5.5.
 // An advisor takes a model only: neither the CLI nor the API has an effort for it.
 export const modelChoice = (bestModel: boolean | undefined) =>
   bestModel
-    ? { model: "claude-fable-5-2", effort: "xhigh", advisor: "", title: "Fable 5.2 xhigh, no advisor" }
-    : { model: "claude-opus-5-5", effort: "xhigh", advisor: "fable", title: "Opus 5.5 xhigh, advisor Fable 5.2" };
+    ? { model: "claude-opus-5-5", effort: "xhigh", advisor: "", title: "Opus 5.5 xhigh, no advisor" }
+    : { model: "claude-sonnet-5-5", effort: "xhigh", advisor: "opus", title: "Sonnet 5.5 xhigh, advisor Opus 5.5" };
 
 export interface RunningStatus {
   active: boolean;
