@@ -442,7 +442,7 @@ Click: ask for a new quota reading now.
 Click: close the Settings.
 
 @Settings Pro
-Click: show the graphs as a Pro plan would read them: every percent 5x, no 20% lines.
+Checked when the pane opens. Check: show the graphs as a Pro plan would read them: every percent 5x, no 20% lines. Uncheck: this plan's own percents.
 Lines stop at 100%; the figures under each graph show the full value.
 
 @Settings credits
