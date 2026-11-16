@@ -9,7 +9,11 @@ import Settings from "./components/Settings.vue";
 import Snips from "./components/Snips.vue";
 import Tabs from "./components/Tabs.vue";
 import { showKeys } from "./keyHelp.ts";
+import { modelsChanged, watchModels } from "./modelsWatch.ts";
 import { byName, nextTab } from "./tabList.ts";
+
+// Once an hour, ask every host's Models list; the gear (and Settings' Models button) lights while it differs from what the pane last showed.
+watchModels();
 
 // Every project on every host. Each backend's part is replaced when it sends its list; until then
 // it's the last one that backend sent, so a backend that is down still shows its tabs.
@@ -125,7 +129,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
       <button class="tab term-toggle" :class="{ active: side === 'term' }" :aria-pressed="side === 'term'" :disabled="!currentTab" data-help="Term button" @click="toggle('term')">Term</button>
       <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" data-help="Snips button" @click="toggle('snips')">Snips</button>
       <button class="tab" aria-label="Keys" data-help="keys button" @mousedown.prevent @click="showKeys">?</button>
-      <button class="tab settings-toggle" :class="{ active: side === 'settings' }" :aria-pressed="side === 'settings'" aria-label="Settings" data-help="Settings button" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
+      <button class="tab settings-toggle" :class="{ active: side === 'settings', due: modelsChanged }" :aria-pressed="side === 'settings'" aria-label="Settings" data-help="Settings button" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
     <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" @no-repo="(none) => (noRepo[tab.id] = none)" @session-name="(name) => (sessionNames[tab.id] = name)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" :sidebar-asked="sidebarAsked" :log-view-end="logViewEnd" @log-view="(on) => (logView[tab.id] = on)" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" @show-files="sides[tab.id] = 'files'" />
     <Snips v-if="!currentTab && side === 'snips'" class="alone" :tab="NO_TAB" shown :add-to-prompt="() => false" @close="sides[current] = ''" />
@@ -154,6 +158,9 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
 .tabs .session-name { flex: 1 1 0; min-width: 0; align-self: center; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tabs .files-toggle { margin-left: auto; }
 .tabs .files-toggle.active, .tabs .git-toggle.active, .tabs .term-toggle.active, .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
+/* Light red (the Tabs button's): the Models list or a CLI version changed since the Models pane last showed it. The open pane's blue wins. */
+.tabs .settings-toggle.due:not(.active) { background: #fbd9d9; border-color: #e4a7a7; }
+.tabs .settings-toggle.due:not(.active):hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), #fbd9d9; }
 /* Log view mode (Git.vue's review of a Log pane commit), with its popup open or parked behind the Files editor. */
 .tabs .git-toggle.log-view { border-color: #d11a1a; }
 /* 20% over the tab's 14px. The line-height keeps the bigger glyph from making its tab taller. */

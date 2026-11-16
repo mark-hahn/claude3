@@ -5,8 +5,9 @@
 // The script uses element ids, looked up inside this pane: every tab with it open has its own.
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
-import { olderCli, shortModel, sortModels, type ModelPick } from "../../shared/types.ts";
+import { olderCli, shortModel } from "../../shared/types.ts";
 import { post, postHost } from "../api.ts";
+import { checkModels, modelsChanged, type ModelRow } from "../modelsWatch.ts";
 
 // active: this is the tab on show; a tab out of sight stops asking the backend.
 const props = defineProps<{ tab: Tab; active: boolean }>();
@@ -58,37 +59,30 @@ async function request(action: string, data: Record<string, unknown>): Promise<R
 // The Models view: what this host's CLI lists now, asked each time it opens. Read-only: claude3 has
 // no presets, so claude2's Show, Preset and Alias columns have nothing to act on here.
 const view = ref<"quota" | "models">("quota");
-const modelRows = ref<{ model: string; id: string; name: string; effort: string; tokens: string }[]>([]);
+const modelRows = ref<ModelRow[]>([]);
 const modelsNote = ref("");
 const cliVersions = ref<Partial<Record<HostName, string>>>({});
 const olderHosts = computed(() => olderCli(cliVersions.value));
 // The list value whose Default box is checked: when bestModel is off the run is on it with the next better model
 // as advisor, when on the run is on that next better model alone (shared/types.ts's modelChoice).
 const defaultModel = ref("");
+// Asks every host (src/modelsWatch.ts), which also counts the pane as seen, clearing its light red; this tab's host fills the table.
 async function openModels(): Promise<void> {
   view.value = "models";
   modelsNote.value = "Asking the CLI...";
   cliVersions.value = {};
-  const [reply] = await Promise.all([
-    request("models", {}),
-    ...(Object.keys(HOSTS) as HostName[]).map((host) =>
-      postHost<{ version: string }>(host, "cliVersion", {}).then((r) => { cliVersions.value = { ...cliVersions.value, [host]: r.version }; }).catch(() => { cliVersions.value = { ...cliVersions.value, [host]: "?" }; })
-    ),
-  ]);
+  const got = await checkModels(true);
   if (unmounted) return;
   modelsNote.value = "";
-  if (!reply.ok) {
-    window.alert("Could not load the model list: " + (reply.error || "unknown error"));
+  cliVersions.value = Object.fromEntries((Object.keys(HOSTS) as HostName[]).map((host) => [host, got[host] instanceof Error ? "?" : (got[host] as { version: string }).version]));
+  const mine = got[props.tab.host];
+  if (mine instanceof Error) {
+    window.alert("Could not load the model list: " + mine.message);
     return;
   }
-  const { models, names, ids, contextTokens, limitsError, default: chosen } = reply.payload as ModelPick & { contextTokens: Record<string, number>; limitsError: string };
-  defaultModel.value = chosen;
-  if (limitsError) window.alert("Could not load the models' token limits: " + limitsError);
-  // The CLI lists a model's efforts weakest first, so the last is its max (none for Haiku 4.5).
-  modelRows.value = sortModels(Object.keys(models), ids).map((model) => {
-    const tokens = contextTokens[ids[model] ?? ""];
-    return { model, id: ids[model] || "", name: names[model] || "", effort: models[model].at(-1) ?? "", tokens: !tokens ? "" : tokens >= 1e6 ? `${tokens / 1e6}M` : `${tokens / 1000}K` };
-  });
+  defaultModel.value = mine.defaultModel;
+  if (mine.limitsError) window.alert("Could not load the models' token limits: " + mine.limitsError);
+  modelRows.value = mine.rows;
 }
 
 // Checkboxes that act as radio buttons: the checked one stays checked, and the choice goes to every
@@ -465,7 +459,7 @@ onBeforeUnmount(() => {
     <div class="title">
       <div class="title-row">
         <!-- Tabs act as radio buttons. -->
-        <div class="tab-row"><button class="tab" :class="{ selected: view === 'quota' }" data-help="Settings Quotas" @click="view = 'quota'">Quotas</button><button class="tab" :class="{ selected: view === 'models' }" data-help="Settings Models" @click="openModels">Models</button></div>
+        <div class="tab-row"><button class="tab" :class="{ selected: view === 'quota' }" data-help="Settings Quotas" @click="view = 'quota'">Quotas</button><button class="tab" :class="{ selected: view === 'models', due: modelsChanged }" data-help="Settings Models" @click="openModels">Models</button></div>
         <div class="actions"><button id="q-update" v-show="view === 'quota'" data-help="Settings Update" @click="load(true)">Update</button><button data-help="Settings Close" @click="emit('close')">Close</button><label v-show="view === 'quota'" data-help="Settings Pro"><input type="checkbox" @change="togglePro" /> Pro</label></div>
       </div>
       <div v-show="view === 'quota'" class="title-row"><div id="q-credits" class="credits" data-help="Settings credits" @click="creditsClick"></div></div>
@@ -494,6 +488,9 @@ onBeforeUnmount(() => {
 .settings .title-row { display: flex; align-items: center; gap: 15px 30px; }
 .settings .tab-row { display: flex; gap: 6px; flex: none; }
 .settings .tab-row .tab.selected { background: #e2e2e2; }
+/* Light red (the Tabs button's): the Models list or a CLI version changed since the pane last showed it. */
+.settings .tab-row .tab.due { background: #fbd9d9; border-color: #e4a7a7; }
+.settings .tab-row .tab.due:hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), #fbd9d9; }
 .settings .actions { display: flex; align-items: center; gap: 12px; font-size: 14px; }
 .settings #q-age { font-size: 14px; font-variant-numeric: tabular-nums; }
 .settings .credits { display: flex; align-items: center; gap: 8px; font-size: 14px; font-variant-numeric: tabular-nums; }

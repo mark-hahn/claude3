@@ -64,6 +64,7 @@ Click: open or close the Snips, snippets of prompt text shared with claude2 and 
 
 @Settings button
 Click: open or close the Settings pane (quotas, models).
+Light red: the models list, or a CLI version on a host, changed since the Models tab last showed it (checked once an hour). Opening the Models tab clears it.
 
 @Tabs host
 Pick the host the new project is on; Path then picks a folder there.
@@ -428,6 +429,7 @@ Click: show the quota graphs.
 
 @Settings Models
 Click: show the models the CLI lists now (asked each time): name, description, max effort and context window in tokens (from the Models API). A line above the table shows the CLI version on each host, in red (host name and version) for any host older than another, or showing ? because it didn't answer.
+Light red: something in it changed on any host since you last opened it (checked once an hour; the Default box doesn't count). Clicking it asks all three hosts and clears the colour.
 
 @Settings Default
 Check: make this the default model, and clear the others. A tab's bestModel box unchecked runs on it with the next better model as advisor; checked, it runs on the next better model with no advisor.
