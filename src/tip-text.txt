@@ -429,6 +429,10 @@ Click: ask for a new quota reading now.
 @Settings Close
 Click: close the Settings.
 
+@Settings Pro
+Click: show the graphs as a Pro plan would read them: every percent 5x, no 20% lines.
+Lines stop at 100%; the figures under each graph show the full value.
+
 @Settings credits
 ‹ / ›: the month before / after.
 

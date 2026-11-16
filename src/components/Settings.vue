@@ -17,6 +17,12 @@ const zoom = 1;
 
 type Reply = { ok: boolean; payload?: any; error?: string };
 const backs: Record<string, number> = { five: 0, seven: 0 };
+// Pro: the graphs as a Pro plan would read, its limits a fifth of this plan's, so every percent is 5x.
+let pro = false;
+function togglePro(event: Event): void {
+  pro = (event.target as HTMLInputElement).checked;
+  render();
+}
 // Months back from the current one that the credits bar shows.
 let creditMonth = 0;
 // The tv project's Speechmatics spend by month: { usd, hrs, at, error }, undefined while an ask is out.
@@ -279,7 +285,7 @@ function buildWindowGraph(key: string, title: string, lengthMs: number, seriesDe
       if (value === null || resetSeconds === null) return;
       const end = resetSeconds * 1000;
       if (row.at <= end || (value > 0 && row.at - end < 600000)) {
-        findPeriod(end).series[index].points.push({ t: Math.min(row.at, end), v: value });
+        findPeriod(end).series[index].points.push({ t: Math.min(row.at, end), v: pro ? value * 5 : value });
       }
     });
   }
@@ -310,7 +316,11 @@ function drawSvg(period: any, width: number, height: number): string {
     svg += '<line x1="' + xValue + '" x2="' + xValue + '" y1="' + margin.top + '" y2="' + (height - margin.bottom) + '" stroke="rgba(0,0,0,0.15)" />';
   }
   svg += '<line x1="' + margin.left + '" y1="' + y(0) + '" x2="' + (width - margin.right) + '" y2="' + y(yMax) + '" stroke="rgba(0,0,0,0.45)" stroke-dasharray="5 4" stroke-width="1" />';
-  svg += '<line x1="' + margin.left + '" y1="' + y(0) + '" x2="' + (width - margin.right) + '" y2="' + y(yMax / 5) + '" stroke="rgba(0,0,0,0.45)" stroke-dasharray="5 4" stroke-width="1" />';
+  // The Pro plan's limit drawn on this plan's scale; the Pro view is already on its own scale.
+  if (!pro) {
+    svg += '<line x1="' + margin.left + '" y1="' + y(0) + '" x2="' + (width - margin.right) + '" y2="' + y(yMax / 5) + '" stroke="rgba(0,0,0,0.45)" stroke-dasharray="5 4" stroke-width="1" />';
+    svg += '<line x1="' + margin.left + '" y1="' + y(yMax / 5) + '" x2="' + (width - margin.right) + '" y2="' + y(yMax / 5) + '" stroke="rgba(0,0,0,0.45)" stroke-dasharray="5 4" stroke-width="1" />';
+  }
   for (const series of period.series) {
     const points = carriedPoints(series.points, period).sort((left, right) => left.t - right.t);
     if (points.length === 1) {
@@ -412,7 +422,7 @@ onBeforeUnmount(() => {
       <div class="title-row">
         <!-- Tabs act as radio buttons; Quotas is the only one so far, so clicking it does nothing. -->
         <div class="tab-row"><button class="tab selected">Quotas</button></div>
-        <div class="actions"><button id="q-update" data-help="Settings Update" @click="load(true)">Update</button><button data-help="Settings Close" @click="emit('close')">Close</button></div>
+        <div class="actions"><button id="q-update" data-help="Settings Update" @click="load(true)">Update</button><button data-help="Settings Close" @click="emit('close')">Close</button><label data-help="Settings Pro"><input type="checkbox" @change="togglePro" /> Pro</label></div>
       </div>
       <div class="title-row"><div id="q-credits" class="credits" data-help="Settings credits" @click="creditsClick"></div><span id="q-age"></span></div>
     </div>

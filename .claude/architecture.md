@@ -93,6 +93,8 @@ on the laptop, and talks to each backend directly.
   tab (the tab button does nothing yet), ported from claude2's `quotaHtml` nearly verbatim: graphs
   built by script, global styles under `.settings`, element ids `q-*` looked up inside its own root (`byId`: one instance per tab with it open, polling only while on show).
   Asks the backend's `quota` (Update = force), `quotaSync` every 30s, `speechmatics` per month.
+  The dashed lines to and at 20% are a Pro plan's limits (a fifth of this plan's); the Pro checkbox
+  multiplies every percent by 5 in `buildWindowGraph` and drops those lines (plot clamps at 100%).
 - `server/quota.ts`: claude2's QuotaService and its stats-server calls. The account's one history
   and the poll lease live on claude-stats, one for all three backends; local
   fallback files in `~/.claude3/quota-*.json`. `sendQuota` in main.ts broadcasts each reading as a host-wide `quota` event
