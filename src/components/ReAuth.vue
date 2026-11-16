@@ -5,7 +5,7 @@
 // for the browser to allow a pop-up on.
 import { nextTick, ref } from "vue";
 import { HOSTS, type HostName } from "../../shared/config.ts";
-import { postHost } from "../api.ts";
+import { authNeeded, postHost } from "../api.ts";
 
 defineProps<{ needed: boolean }>();
 const emit = defineEmits<{ closed: [] }>();
@@ -49,8 +49,13 @@ async function reAuth(): Promise<void> {
   const mine = ++walk;
   results.value = [];
   dialog.value?.showModal();
-  for (const host of Object.keys(HOSTS) as HostName[]) {
-    const outcome = await signIn(host, mine);
+  for (const host of (Object.keys(HOSTS) as HostName[]).filter((name) => authNeeded[name])) {
+    let outcome = await signIn(host, mine);
+    // A wrong code: say so and start this host's sign-in over, rather than moving on without it.
+    while (mine === walk && outcome.includes("Invalid code")) {
+      results.value.push(`${host}: ${outcome}`);
+      outcome = await signIn(host, mine);
+    }
     if (mine !== walk) return;
     results.value.push(`${host}: ${outcome}`);
   }
@@ -85,7 +90,7 @@ function onClose(): void {
   <button v-if="needed" class="re-auth" data-help="Re-Auth button" @click="reAuth">Re-Auth</button>
   <dialog ref="dialog" closedby="any" class="auth-pop" @close="onClose">
     <div class="auth-title">Claude sign-in</div>
-    <div v-for="line in results" :key="line" class="auth-line">{{ line }}</div>
+    <div v-for="(line, index) in results" :key="index" class="auth-line">{{ line }}</div>
     <form v-if="step" class="auth-step" @submit.prevent="sendCode">
       <div v-if="step.url"><strong>{{ step.host }}:</strong> <a :href="step.url" target="_blank" rel="noreferrer">open the sign-in page</a>, approve, then paste the code it shows.</div>
       <div v-else><strong>{{ step.host }}:</strong> starting…</div>

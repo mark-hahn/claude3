@@ -59,6 +59,11 @@ export function startLogin(cwd: string, onSignedIn: () => void, log: (line: stri
     stream.on("data", (chunk: string) => {
       state.said += chunk;
       log(`login ${name}: ${JSON.stringify(chunk)}`);
+      // The CLI says so and then waits on a stdin that sendLoginCode has closed: report it now, not after 2 minutes.
+      if (/invalid code/i.test(state.said)) {
+        finish(state, state.said.trim());
+        child.kill("SIGTERM");
+      }
     });
   }
   child.on("error", (error) => finish(state, error.message));

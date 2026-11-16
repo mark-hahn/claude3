@@ -121,11 +121,11 @@ Active sessions / trashed sessions.
 Ctrl-click: fake an expired login on this tab's host, to try Re-Auth.
 
 @Re-Auth button
-Click: sign in to your Anthropic account again, on each host in turn. Shown when a login expired.
+Click: sign in to your Anthropic account again, on each host whose login expired, in turn. Shown when a login expired.
 
 @Re-Auth code box
-Paste the code the sign-in page shows.
-Enter: send it.
+Paste the long code the sign-in page shows after you approve (not a 6-digit email code).
+Enter: send it. A wrong code starts this host's sign-in over.
 
 @Re-Auth buttons
 Send code: send the pasted code for this host.

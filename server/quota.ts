@@ -245,7 +245,7 @@ export class QuotaService {
     const oauth = recordOf(recordOf(parsed)?.claudeAiOauth);
     const accessToken = stringOf(oauth?.accessToken);
     if (!accessToken) {
-      throw new Error(`No Claude OAuth access token found in ${credentialsPath}.`);
+      throw new Error(`Claude is signed out on this host (no OAuth access token in ${credentialsPath}). Run \`claude\` there and use /login.`);
     }
     return { accessToken, expiresAt: numberOf(oauth?.expiresAt) };
   }
