@@ -541,7 +541,7 @@ function emptyState(error: string | null): QuotaState {
 }
 
 function rateLimitedMessage(until: number): string {
-  return `Quota check returned 429 (too many checks, not your usage limit). Quota checking is paused until ${new Date(until).toLocaleTimeString()}; Update checks now.`;
+  return `Anthropic's usage endpoint refused the quota check with a 429 (it limits this call on its own, not your usage limit). Quota checking is paused until ${new Date(until).toLocaleTimeString()}; Update checks now.`;
 }
 
 function retryAfterMs(firstValue: string | undefined): number {
