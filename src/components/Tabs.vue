@@ -176,7 +176,7 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
           @keydown.esc.prevent="finishRename(tab, false)"
           @blur="finishRename(tab, true)"
         />
-        <template v-else><span v-if="busy[tab.id] || highlighted[tab.id]" class="tab-dot" :class="{ due: !busy[tab.id] }" :title="busy[tab.id] ? 'Responding' : 'Git or Run is highlighted'">&#x25CF;</span>{{ tab.host }}:&nbsp;&nbsp; {{ tab.label }}</template>
+        <template v-else><span class="tab-dot" :class="{ due: !busy[tab.id], off: !busy[tab.id] && !highlighted[tab.id] }" :title="busy[tab.id] ? 'Responding' : highlighted[tab.id] ? 'Git or Run is highlighted' : undefined">&#x25CF;</span><span class="tabs-host">{{ tab.host }}:</span>{{ tab.label }}</template>
       </div>
     </section>
   </dialog>
@@ -207,6 +207,10 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
 .tabs-name { padding: 2px 6px; border-radius: 4px; cursor: pointer; user-select: none; }
 .tabs-name:hover { background: var(--wash); }
 .tabs-name.open { font-weight: 700; }
+/* A fixed width, wider than any host (bold too), so the names start at the same x. */
+.tabs-host { display: inline-block; min-width: 3em; margin-right: 6px; color: #4da3e0; }
+/* A name with no dot keeps the dot's room, so the names line up. */
+.tabs-name .tab-dot.off { visibility: hidden; }
 .tabs-folders { flex: 1; min-height: 0; overflow: auto; }
 .tabs-folder { display: block; width: 100%; min-height: 0; padding: 2px 6px; border: none; border-radius: 4px; background: transparent; text-align: left; }
 /* Folders, apart from the files. A folder picker's files can't be picked, but stay solid black. */
