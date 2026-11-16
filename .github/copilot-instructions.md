@@ -18,9 +18,6 @@
 - never do git commit, push, pop, or anything else that modifies git repo unless i tell you to
 - you can do git reads without permission
 - don't deploy anything -- i will deploy before i test (`./deploy` copies the backend to the three hosts and restarts it; `./run` does the same for any host whose server code is out of date)
-- never turn on the advisor except through the footer's Advisor selector: no `/advisor` command
-  (it writes `advisorModel` to the global ~/.claude/settings.json, reaching every session on the
-  machine), no `advisorModel` in any settings file, no `--advisor` flag
 - claude.md instructions are authorative and copilot-instructions.md should always be a copy of claude.md
 - when i say to save a rule, add it to CLAUDE.md (and mirror it in .github/copilot-instructions.md)
 - Architecture note: `.claude/architecture.md` (read for orientation; keep it current).
