@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // claude2's Snips tab, a column right of the conversation pane, the window's full height below the
-// tab strip. One text, kept on the stats server (claude-stats, the backend's `snips` action), so
-// every tab on every host edits the same copy. Read when it opens and whenever the window gets focus back; saved half a
+// tab strip. Two kinds, each with its own text on the stats server (claude-stats): the global one
+// (the backend's `snips` action), which every tab on every host edits, and a project's own
+// (`own`, the `projectSnips` action). A tab mounts one of each, never one swapped between the two,
+// so a save waiting on its timer can't land in the other's text. Read when it opens and whenever the window gets focus back; saved half a
 // second after the typing stops, and at once on close. Esc closes it; Ctrl+Enter moves the selected text
 // to the end of the prompt and the cursor there (an empty prompt sends it at once), takes the blank lines around the removed text
 // down to one and closes the Snips; with nothing selected it types two bare newlines, no margin or dash. A Monaco editor with
@@ -12,11 +14,13 @@ import { post } from "../api.ts";
 import { extraBlankLines } from "../blankLines.ts";
 import { addLineDots, addListKeys, addWheelZoom, applyWheelZoom, editorOptions, monaco, typeEdits, untab } from "../monaco.ts";
 
-// addToPrompt answers whether the prompt took the text: a trashed session's doesn't.
-const props = defineProps<{ tab: Tab; shown: boolean; addToPrompt: (text: string) => boolean }>();
+// addToPrompt answers whether the prompt took the text: a trashed session's doesn't. own: this
+// project's Snips, not the global ones.
+const props = defineProps<{ tab: Tab; shown: boolean; addToPrompt: (text: string) => boolean; own?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 
 const FONT_KEY = "claude3.snipsFontSize";
+const action = props.own ? "projectSnips" : "snips";
 // Editable only once the shared copy has been read, so nothing typed early can replace it.
 let ready = false;
 // Why it can't be read or saved; empty while all is well.
@@ -34,7 +38,7 @@ async function load(): Promise<void> {
   if (saveTimer || !props.shown) return;
   const asked = edits;
   try {
-    const reply = await post<{ text: string }>(props.tab, "snips", {});
+    const reply = await post<{ text: string }>(props.tab, action, {});
     if (asked !== edits || saveTimer) return;
     // \n line ends only, so the comparison holds whatever line ends were saved.
     const next = untab(reply.text.replace(/\r\n?/g, "\n"));
@@ -55,7 +59,7 @@ async function load(): Promise<void> {
 function save(): void {
   window.clearTimeout(saveTimer);
   saveTimer = 0;
-  post(props.tab, "snips", { text: text() }).then(
+  post(props.tab, action, { text: text() }).then(
     () => (note.value = ""),
     (error) => (note.value = `Not saved: ${messageOf(error)}`),
   );
@@ -137,6 +141,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div v-show="shown" class="snips">
+    <div class="snips-title">{{ own ? `Snips of ${tab.label}` : "Global Snips" }}</div>
     <div v-if="note" class="snips-note">{{ note }}</div>
     <div class="snips-text" data-help="Snips" data-mode="Snips"><div ref="host"></div></div>
   </div>
@@ -144,6 +149,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .snips { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--page); }
+.snips-title { font-weight: 600; }
 .snips-note { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 4px 8px; }
 .snips-text { position: relative; flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .snips-text:focus-within { outline: 2px solid var(--ink); outline-offset: -1px; border-color: transparent; }

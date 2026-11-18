@@ -60,7 +60,8 @@ A red border: log view mode (a click on a Log row). Opening a file from its diff
 Click: open or close the Term pane: up to three bash shells (Git Bash on win), the first in the project's folder.
 
 @Snips button
-Click: open or close the Snips, snippets of prompt text shared with claude2 and every tab.
+Click: open or close this project's own Snips, snippets of prompt text kept for this project alone. Opens them in place of the global ones if those were showing.
+Ctrl-click: the same for the global Snips, shared with claude2 and every project.
 
 @Settings button
 Click: open or close the Settings pane (quotas, models).
@@ -418,6 +419,7 @@ Alt-click on a code block: copy it.
 Ctrl-wheel: text size.
 
 @Snips
+The title line says which Snips these are: the project's own or the global ones.
 Ctrl+Enter with a selection: add it to the prompt (sent at once if the box was empty), take it out of the Snips and close them.
 Ctrl+Enter with no selection: a blank line.
 Esc: close the Snips.

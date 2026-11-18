@@ -33,8 +33,16 @@ async function main() {
   await call("POST", "/snips", { text: "" });
   assert.deepEqual(await call("GET", "/snips"), { text: "" }, "empty Snips are still set");
   const kept = JSON.parse(fs.readFileSync(dataPath, "utf8"));
-  assert.deepEqual(Object.keys(kept).sort(), ["checks", "quota", "snips", "speechmatics"], "what claude3 never used of claude2-stats' data is dropped");
+  assert.deepEqual(Object.keys(kept).sort(), ["checks", "projectSnips", "quota", "snips", "speechmatics"], "what claude3 never used of claude2-stats' data is dropped");
   assert.equal((await call("POST", "/snips", { text: 1 })).error, "expected { text: string }");
+  assert.deepEqual(await call("GET", "/snips/wsl%3Aa"), {}, "a project's Snips never saved read as unset, not as the global text");
+  await call("POST", "/snips/wsl%3Aa", { text: "mine" });
+  await call("POST", "/snips/srv%3Aa", { text: "other" });
+  assert.deepEqual(await call("GET", "/snips/wsl%3Aa"), { text: "mine" });
+  assert.deepEqual(await call("GET", "/snips/srv%3Aa"), { text: "other" }, "one host's project of the same id has its own");
+  assert.deepEqual(await call("GET", "/snips"), { text: "" }, "and the global text is left alone");
+  assert.deepEqual(await call("GET", "/snips/constructor"), {}, "a key that is an Object property reads as unset");
+  assert.equal((await call("POST", "/snips/wsl%3Aa", { text: 1 })).error, "expected { text: string }");
   assert.equal((await call("GET", "/stats")).error, "not found", "claude2's own endpoints are gone");
 
   const claim = () => call("POST", "/quota/claim");

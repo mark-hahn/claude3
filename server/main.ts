@@ -35,7 +35,8 @@
 //        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
 //        revert { tracked, untracked } -> {} (tracked paths back as HEAD has them, staged and on disk; untracked ones deleted)
 //        describeChanges -> { text } (Opus 5.5's commit message for the uncommitted changes)
-//        snips { text? } -> { text } (the Snips' text, kept on claude-stats; text saves it)
+//        snips { text? } -> { text } (the global Snips' text, kept on claude-stats; text saves it)
+//        projectSnips { text? } -> { text } (the same for this project's own Snips, kept under "<host>:<project id>"; a project action, so an old backend refuses it as unknown)
 //        quota { force } -> { readAt, rows, state, apiCosts } (the Quotas pane; force is its Update)
 //        quotaSync { readAt, error } -> { payload } (null when the pane already shows the newest)
 //        speechmatics { month, rescan } -> { payload } (the tv project's Speechmatics spend)
@@ -757,6 +758,9 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (!project) {
     throw new Error(`No tab ${JSON.stringify(body.tab)} on ${hostName}.`);
   }
+  if (name === "projectSnips") {
+    return await snips(body.text, `${hostName}:${project.tab.id}`);
+  }
   if (name === "setRoots") {
     project.tab.roots = Array.isArray(body.roots) ? body.roots.map(String) : [];
     project.tab.rootIdx = Number(body.rootIdx);
@@ -1231,9 +1235,10 @@ async function commit(project: Project, message: string): Promise<object> {
 
 // The Snips' text lives on the stats server (claude-stats), so every tab on every host shares one
 // copy. Never saved yet reads as empty.
-async function snips(text: unknown): Promise<{ text: string }> {
+// A project's own Snips are the same under /snips/<key>, which an old claude-stats answers 404, so they never show the global text by mistake.
+async function snips(text: unknown, key = ""): Promise<{ text: string }> {
   const saving = typeof text === "string";
-  const res = await fetch(`${STATS_URL}/snips`, {
+  const res = await fetch(`${STATS_URL}/snips${key ? `/${encodeURIComponent(key)}` : ""}`, {
     method: saving ? "POST" : "GET",
     headers: { "content-type": "application/json" },
     body: saving ? JSON.stringify({ text }) : undefined,

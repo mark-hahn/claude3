@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // claude-stats: what claude3's backends on the three hosts share, kept in one place: the account's
-// quota history and the lease on reading it, the Snips' text, and two spend figures for the Quotas
+// quota history and the lease on reading it, the Snips' text (the global one and each project's), and two spend figures for the Quotas
 // pane. Runs on hahnca.com under pm2 as "claude-stats" (port 7313, data in
 // ~/.claude-stats/data.json); `./deploy stats` puts it there. It began as claude2's claude2-stats,
 // cut down to what claude3 calls, and shares nothing with it: its own port, process and data.
@@ -13,6 +13,7 @@
 //   GET  /checks                         -> { months: { <YYYY-MM>: { usd, count } } } : the API key's spend as claude2 recorded it; nothing adds to it
 //   GET  /snips                          -> { text } : the Snips' text ({} until first saved)
 //   POST /snips  body: { text }          -> replace it
+//   GET/POST /snips/<key>                -> the same for one project's Snips (key: "<host>:<project id>", URL-encoded); an old server has no such path and answers 404
 //   GET  /speechmatics/<YYYY-MM>[?rescan=1] -> { usd, hrs, at?, error? } : the tv project's Speechmatics spend
 //
 // The quota block is the account's one reading history. Anthropic's usage endpoint rate-limits
@@ -45,11 +46,11 @@ const quotaFreshMs = 4.5 * 60 * 1000;
 const quotaClaimMs = 30 * 1000;
 const emptyQuota = { rows: [], readAt: 0, pausedUntil: 0, claimedAt: 0, state: null };
 
-let data = { quota: { ...emptyQuota }, checks: {}, speechmatics: {}, snips: null };
+let data = { quota: { ...emptyQuota }, checks: {}, speechmatics: {}, snips: null, projectSnips: {} };
 try {
   // The first data.json is a copy of claude2-stats'; what claude3 never used of it goes at the next save.
   const saved = JSON.parse(fs.readFileSync(dataPath, "utf8"));
-  data = { quota: { ...emptyQuota, ...(saved.quota || {}) }, checks: saved.checks || {}, speechmatics: saved.speechmatics || {}, snips: typeof saved.snips === "string" ? saved.snips : null };
+  data = { quota: { ...emptyQuota, ...(saved.quota || {}) }, checks: saved.checks || {}, speechmatics: saved.speechmatics || {}, snips: typeof saved.snips === "string" ? saved.snips : null, projectSnips: saved.projectSnips && typeof saved.projectSnips === "object" ? saved.projectSnips : {} };
 } catch {
   // first run, or an unreadable file: start empty
 }
@@ -209,15 +210,25 @@ async function handle(request, response) {
     save();
     return json(200, { ok: true, rows: data.quota.rows.length });
   }
-  if (request.method === "GET" && url.pathname === "/snips") {
-    return json(200, data.snips === null ? {} : { text: data.snips });
-  }
-  if (request.method === "POST" && url.pathname === "/snips") {
+  if (parts[0] === "snips" && parts.length <= 2 && (request.method === "GET" || request.method === "POST")) {
+    // /snips is the global text, /snips/<key> one project's.
+    const key = parts.length === 2 ? decodeURIComponent(parts[1]) : null;
+    if (key !== null && (key.length > 200 || !key)) {
+      return json(400, { error: "bad Snips key" });
+    }
+    if (request.method === "GET") {
+      const stored = key === null ? data.snips : Object.hasOwn(data.projectSnips, key) ? data.projectSnips[key] : null;
+      return json(200, typeof stored === "string" ? { text: stored } : {});
+    }
     const body = JSON.parse((await readBody(request)) || "{}");
     if (typeof body.text !== "string") {
       return json(400, { error: "expected { text: string }" });
     }
-    data.snips = body.text;
+    if (key === null) {
+      data.snips = body.text;
+    } else {
+      data.projectSnips[key] = body.text;
+    }
     save();
     return json(200, { ok: true });
   }

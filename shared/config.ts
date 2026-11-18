@@ -58,7 +58,7 @@ export const HOSTS: Record<HostName, Host> = {
 };
 
 // claude-stats (claude-stats/server.mjs, on hahnca.com): the quota history, the lease on reading it
-// and the Snips, one copy for every backend.
+// and the Snips (the global one and each project's), one copy for every backend.
 export const STATS_URL = "http://hahnca.com:7313";
 
 // The page's own origins: vite dev (the usual one, with hot update), vite preview, and the build

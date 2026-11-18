@@ -69,7 +69,7 @@ const noRepo = reactive<Record<string, boolean>>({});
 // Per tab: the name of its selected session, on show in the strip for the tab on show.
 const sessionNames = reactive<Record<string, string>>({});
 // The Files, Git graph, Snips and Settings share the column right of the pane, one at a time: "" (closed),
-// "files" (the tree), "file" (its editor), "git", "term", "snips" or "settings". Each tab has its own, and one
+// "files" (the tree), "file" (its editor), "git", "term", "snips" (the project's own), "snips-global" (Ctrl-click on the button) or "settings". Each tab has its own, and one
 // toggle each here acts on the tab on show. The toggle's name being "files", the Files button takes
 // the editor back to the tree.
 const sides = reactive<Record<string, string>>({});
@@ -78,8 +78,9 @@ function toggle(name: string): void {
   if (name !== "git") logViewEnd.value++;
   sides[current.value] = side.value === name ? "" : name;
 }
-// With no project open, the Snips and Settings have the page to themselves. Both are the host's
-// actions, not a project's, so this stand-in only names the WSL backend to ask.
+// With no project open, the Snips and Settings have the page to themselves (the global Snips, a
+// project having none of its own). Both are the host's actions, not a project's, so this stand-in
+// only names the WSL backend to ask.
 const NO_TAB: Tab = { id: "", label: "", host: "wsl", path: "", open: false };
 // The sidebar width every tab shares; Project's divider drag sets it.
 document.documentElement.style.setProperty("--sidebar-width", `${Number(localStorage.getItem("claude3.sidebarWidth")) || 300}px`);
@@ -127,12 +128,12 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
       <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" data-help="Files button" @click="toggle('files')">Files</button>
       <button class="tab git-toggle" :class="{ active: side === 'git', 'log-view': logView[current] }" :aria-pressed="side === 'git'" :disabled="!currentTab || noRepo[current]" data-help="Log button" @click="toggle('git')">Log</button>
       <button class="tab term-toggle" :class="{ active: side === 'term' }" :aria-pressed="side === 'term'" :disabled="!currentTab" data-help="Term button" @click="toggle('term')">Term</button>
-      <button class="tab snips-toggle" :class="{ active: side === 'snips' }" :aria-pressed="side === 'snips'" data-help="Snips button" @click="toggle('snips')">Snips</button>
+      <button class="tab snips-toggle" :class="{ active: side.startsWith('snips') }" :aria-pressed="side.startsWith('snips')" data-help="Snips button" @click="toggle($event.ctrlKey ? 'snips-global' : 'snips')">Snips</button>
       <button class="tab" aria-label="Keys" data-help="keys button" @mousedown.prevent @click="showKeys">?</button>
       <button class="tab settings-toggle" :class="{ active: side === 'settings', due: modelsChanged }" :aria-pressed="side === 'settings'" aria-label="Settings" data-help="Settings button" @click="toggle('settings')">&#x2699;&#xFE0E;</button>
     </nav>
     <Project v-for="tab in sorted" :key="tab.id" :class="{ offstage: tab.id !== current }" :tab="tab" :active="tab.id === current" @busy="(count) => (busy[tab.id] = count)" @highlighted="(on) => (highlighted[tab.id] = on)" @no-repo="(none) => (noRepo[tab.id] = none)" @session-name="(name) => (sessionNames[tab.id] = name)" :side="sides[tab.id] ?? ''" :focus-asked="focusAsked" :sidebar-asked="sidebarAsked" :log-view-end="logViewEnd" @log-view="(on) => (logView[tab.id] = on)" @close-side="sides[tab.id] = ''" @open-file="sides[tab.id] = 'file'" @show-files="sides[tab.id] = 'files'" />
-    <Snips v-if="!currentTab && side === 'snips'" class="alone" :tab="NO_TAB" shown :add-to-prompt="() => false" @close="sides[current] = ''" />
+    <Snips v-if="!currentTab && side.startsWith('snips')" class="alone" :tab="NO_TAB" shown :add-to-prompt="() => false" @close="sides[current] = ''" />
     <Settings v-if="!currentTab && side === 'settings'" class="alone" :tab="NO_TAB" active @close="sides[current] = ''" />
   </div>
 </template>

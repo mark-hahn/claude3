@@ -20,7 +20,7 @@ import Settings from "./Settings.vue";
 import Snips from "./Snips.vue";
 import Term from "./Term.vue";
 
-// active: this is the tab on show. side: what this tab has open right of the pane ("", "snips",
+// active: this is the tab on show. side: what this tab has open right of the pane ("", "snips", "snips-global",
 // "settings", "git", "term", "files" for the tree or "file" for its editor), through App's column toggles.
 // focusAsked: a change puts the cursor in the prompt box of the tab on show. sidebarAsked: a change
 // toggles the sidebar of the tab on show. logViewEnd: a change (a tab row click other than Log) ends
@@ -446,9 +446,13 @@ async function openInFiles(path: string, line: number): Promise<void> {
 // The selected session's name, as its card shows it, for App's tab strip.
 watch(() => (selected.value ? selected.value.name || "New session" : ""), (name) => emit("sessionName", name));
 // Mounted the first time they are opened, not with every project at page load, and only hidden after that.
+// A tab has two, the project's own ("snips") and the global ones ("snips-global"), each its own Snips.
 const snipsShown = computed(() => props.side === "snips" && props.active);
 const snipsOpened = ref(false);
 watch(snipsShown, (shown) => { if (shown) snipsOpened.value = true; }, { immediate: true });
+const globalSnipsShown = computed(() => props.side === "snips-global" && props.active);
+const globalSnipsOpened = ref(false);
+watch(globalSnipsShown, (shown) => { if (shown) globalSnipsOpened.value = true; }, { immediate: true });
 // Picking a tab puts the cursor in its prompt box.
 watch(() => props.active, (active) => {
   if (!active) return;
@@ -557,7 +561,8 @@ onBeforeUnmount(() => {
     <div class="divider" data-help="sidebar divider" @pointerdown="dragDivider"></div>
     <Pane ref="pane" :tab="tab" :active="active" :session="selected" :status="selected ? statuses[selected.id] ?? null : null" :version="version" :ceilings="ceilings" :search="searchText" @started="select" @deploy-due="(due) => (deployDue = due)" />
     <div v-if="side" class="divider side-divider" data-help="side divider" @pointerdown="dragSideDivider"></div>
-    <Snips v-if="snipsOpened" :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
+    <Snips v-if="snipsOpened" own :shown="snipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
+    <Snips v-if="globalSnipsOpened" :shown="globalSnipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
     <GitGraph v-if="side === 'git'" :tab="tab" :active="active" :reviewing="gitPopup?.reviewing" @review="(hash, subject) => gitPopup?.openCommit(hash, subject)" />
     <div v-if="side === 'term'" class="terms"><Term v-for="one in terms" :key="one.slot" ref="termPanes" :tab="tab" :active="active" :index="one.slot" :host="one.host" :start="one.cwd" :count="terms.length" @add="(host, cwd) => addTerm(one.slot, host, cwd)" @close="closeTerm(one.slot)" /></div>

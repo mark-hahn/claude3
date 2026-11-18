@@ -30,7 +30,7 @@ on the laptop, and talks to each backend directly.
   (`src/tabList.ts`, checked by `npm test`), ctrl-click on one closes its project (`openProject`), and every project's `Project` stays mounted and laid out,
   closed ones too: all in one grid cell, those not on show `visibility:hidden` (`.offstage`), never `display:none` (see Gotchas). The ? button (`src/keyHelp.ts`'s keys popup) and the Files, Log, Term, Snips and
   gear (Settings) toggles are here, at the row's right end, acting on the tab on show; they share one
-  column, each tab with its own state (`sides[id]`: "", "files", "file", "git", "term", "snips" or "settings"), so it is as it was left when the tab comes back. With no project open only Snips and the gear work: App shows them itself, filling the page under the strip, with a stand-in tab (`NO_TAB`) naming the WSL backend, since both are host actions.
+  column, each tab with its own state (`sides[id]`: "", "files", "file", "git", "term", "snips" (the project's own), "snips-global" (ctrl-click on the Snips button) or "settings"), so it is as it was left when the tab comes back. With no project open only Snips (always the global ones) and the gear work: App shows them itself, filling the page under the strip, with a stand-in tab (`NO_TAB`) naming the WSL backend, since both are host actions.
   Each tab's label has a dot: green with a session active, else light red when its Git or Run button
   is highlighted (`dirty` and `deployDue` come up through Project's `highlighted`), else none. Those
   two are re-read for every project, on show or not, closed ones too (their git status every 30s, not 2s), for the Tabs button: light red, with the same dot on each flagged name in its dialog, while any project is highlighted; light green instead (and a green dot) while any project has a session running (`busy`). Centered between the last tab and Files is the name of the selected session of the tab on show (`sessionName` up through Project).
@@ -80,8 +80,7 @@ on the laptop, and talks to each backend directly.
 - `src/components/ReAuth.vue`: the sidebar's red Re-Auth button and its `<dialog>`, which walks
   every backend through a sign-in: a link to that host's sign-in page, the code box, Skip.
 - `src/components/Snips.vue`: claude2's Snips as a Monaco editor in a column right of the pane
-  (Project's `with-snips` grid: `--side-share`, half by default, of the width left of the sidebar, full height below the tabs). The one copy lives on claude-stats (`/snips`),
-  reached through the backend's `snips` action; read on open and window focus,
+  (Project's `with-snips` grid: `--side-share`, half by default, of the width left of the sidebar, full height below the tabs). Two kinds, each a title line over its editor: the global ones (`own` unset; one copy on claude-stats at `/snips`, through the backend's `snips` action, shared by every tab and claude2) and a project's own (`own`; `/snips/<host>:<project id>`, through the `projectSnips` action, which is a project action so a backend without it refuses it, and the path an old claude-stats answers 404, so neither can show the global text as the project's). The Snips button opens the project's, ctrl-click the global ones. A tab mounts one `Snips` of each kind, never one swapped between the two keys, so a save waiting on its timer can't land in the other's text. Read on open and window focus,
   saved 500ms after typing stops. Each tab mounts its own the first time it opens them and after that only hides
   it (`shown` prop), so the cursor and selections last until the page reloads; its `shown` watcher does what a remount
   would (re-read while read-only, save at once, font size), and restores the scroll, since a hidden editor is 0x0. Ctrl+Enter with nothing selected types two bare newlines (no margin, no dash); with a selection it hands it to the `addToPrompt` prop, Pane's
@@ -141,7 +140,7 @@ on the laptop, and talks to each backend directly.
 - `.vscode/settings.json`: forwards vite's 5310 silently, without VS Code's "Your application
   running on port 5310" toast.
 - `claude-stats/server.mjs`: the stats server, what the three backends share: the quota history and
-  its poll lease, the Snips' text, the API key's spend claude2 recorded (`/checks`, nothing adds to it)
+  its poll lease, the Snips' texts (global and per project), the API key's spend claude2 recorded (`/checks`, nothing adds to it)
   and tv's Speechmatics spend (asked of tv-srvr on the same box). Plain node, no imports from the
   repo; endpoints at its top. On hahnca.com: pm2 `claude-stats`, port 7313 (`STATS_URL` in
   `shared/config.ts`), data in `~/.claude-stats/data.json`. It began as claude2's `claude2-stats`
