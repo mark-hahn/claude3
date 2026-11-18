@@ -402,7 +402,15 @@ Selected: Delete deletes it, after asking. F2: rename it. Ctrl+Enter: add the fi
 Ctrl-C / Ctrl-X: copy / cut it to the Windows clipboard.
 
 @file info
-OK: close.
+Reset: put the name back to what it was when this opened.
+OK: close, renaming the item if its name was changed. Esc or a click on the gray outside does the same.
+
+@file info name
+Type a new name: it is saved when the dialog closes.
+Enter: close.
+
+@file info Reset
+Click: put the name back to what it was when this opened.
 
 @Files editor
 Saved half a second after typing; read again when the file changes.

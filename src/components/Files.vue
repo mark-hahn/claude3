@@ -367,6 +367,9 @@ const infoDialog = ref<HTMLDialogElement>();
 const infoRow = ref<Row | null>(null);
 const info = ref<Info | null>(null);
 const infoProblem = ref("");
+// The name box in the dialog: what is in it when the dialog closes is the item's new name.
+const infoName = ref("");
+const infoInput = ref<HTMLInputElement>();
 let pressTimer = 0;
 // The click that ends a long press does nothing more.
 let longPressed = false;
@@ -385,15 +388,50 @@ const unpress = (): void => window.clearTimeout(pressTimer);
 
 async function showInfo(row: Row): Promise<void> {
   infoRow.value = row;
+  infoName.value = row.name;
   info.value = null;
   infoProblem.value = "";
+  pressedGray = false;
   infoDialog.value?.showModal();
+  await nextTick();
+  focusName();
   try {
     const reply = await postHost<Info>(treeHost.value, "fileInfo", { path: row.path });
     if (infoRow.value?.path === row.path) info.value = reply;
   } catch (problem) {
     if (infoRow.value?.path === row.path) infoProblem.value = messageOf(problem);
   }
+}
+
+const focusName = (): void => (infoInput.value ? focusBaseName(infoInput.value) : undefined);
+function resetName(): void {
+  infoName.value = infoRow.value?.name ?? "";
+  void nextTick(focusName);
+}
+
+// The gray outside the dialog is the dialog element itself. Only a press and a release both there
+// close it: the release that ends the long press lands there too, and must leave it open.
+let pressedGray = false;
+function onGray(event: MouseEvent): boolean {
+  const box = infoDialog.value!.getBoundingClientRect();
+  return event.target === infoDialog.value && (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom);
+}
+const grayDown = (event: PointerEvent): void => void (pressedGray = onGray(event));
+function grayClick(event: MouseEvent): void {
+  if (pressedGray && onGray(event)) infoDialog.value?.close();
+  pressedGray = false;
+}
+
+// However it closed (OK, Enter, Esc, the gray), the name in the box is the item's name.
+function infoClosed(): void {
+  const row = infoRow.value;
+  const name = infoName.value.trim();
+  if (row && name && name !== row.name) {
+    void postHost<{ path: string }>(treeHost.value, "renamePath", { path: row.path, name })
+      .then((reply) => moved(row.path, reply.path), (problem) => window.alert(`Not renamed: ${messageOf(problem)}`))
+      .finally(() => refresh());
+  }
+  treeArea.value?.focus();
 }
 
 function sizeText(bytes: number): string {
@@ -413,7 +451,7 @@ const infoRows = computed((): [string, string][] => {
   const row = infoRow.value;
   const found = info.value;
   if (!row) return [];
-  const out: [string, string][] = [["Name", row.name], ["Host", treeHost.value], ["Path", row.path]];
+  const out: [string, string][] = [["Host", treeHost.value], ["Path", row.path]];
   if (!found) return infoProblem.value ? out : [...out, ["", "Reading…"]];
   out.push(["Type", found.link ? `${found.kind}, by a symbolic link to ${found.link}` : found.kind]);
   if (found.realPath && found.realPath !== row.path) out.push(["Real path", found.realPath]);
@@ -550,13 +588,12 @@ function finishRename(row: Row, commit: boolean): void {
   if (commit && name && name !== row.name) void attempt(postHost<{ path: string }>(treeHost.value, "renamePath", { path: row.path, name }).then((reply) => moved(row.path, reply.path)));
 }
 // The name without its extension is selected, as VS Code does.
-const vFocus = {
-  mounted: (el: HTMLInputElement) => {
-    const dot = el.value.lastIndexOf(".");
-    el.focus();
-    el.setSelectionRange(0, dot > 0 ? dot : el.value.length);
-  },
-};
+function focusBaseName(el: HTMLInputElement): void {
+  const dot = el.value.lastIndexOf(".");
+  el.focus();
+  el.setSelectionRange(0, dot > 0 ? dot : el.value.length);
+}
+const vFocus = { mounted: focusBaseName };
 
 // By position, not the event's target: Firefox can make that a text node.
 const folderUnder = (event: DragEvent): string => document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-drop]")?.dataset.drop ?? "";
@@ -671,12 +708,13 @@ onBeforeUnmount(() => window.clearInterval(poller));
       <FolderPicker ref="picker" :host="treeHost" :project="tab" @pick="goTo($event, pickHost)">
         <select :value="pickHost" aria-label="Host" data-help="Files host" @change="showHost(($event.target as HTMLSelectElement).value as HostName)"><option v-for="(_, name) in HOSTS" :key="name">{{ name }}</option></select>
       </FolderPicker>
-      <dialog ref="infoDialog" class="files-info" closedby="any" @wheel.stop @close="treeArea?.focus()">
+      <dialog ref="infoDialog" class="files-info" @wheel.stop @pointerdown="grayDown" @click="grayClick" @close="infoClosed">
         <table>
+          <tr><th>Name</th><td><input ref="infoInput" v-model="infoName" class="files-rename" spellcheck="false" aria-label="Name" data-help="file info name" data-mode="file info name" @keydown.enter.prevent="infoDialog?.close()" /></td></tr>
           <tr v-for="[label, value] in infoRows" :key="label"><th>{{ label }}</th><td>{{ value }}</td></tr>
         </table>
         <div v-if="infoProblem" class="files-note">{{ infoProblem }}</div>
-        <form method="dialog" data-help="file info"><button autofocus>OK</button></form>
+        <form method="dialog" data-help="file info"><button type="button" data-help="file info Reset" @click="resetName">Reset</button><button>OK</button></form>
       </dialog>
     </div>
   </div>
@@ -723,7 +761,8 @@ onBeforeUnmount(() => window.clearInterval(poller));
 .files-info th { padding: 2px 16px 2px 0; text-align: left; vertical-align: top; white-space: nowrap; }
 .files-info td { padding: 2px 0; overflow-wrap: anywhere; }
 .files-info .files-note { margin-bottom: 10px; }
-.files-info form { text-align: right; }
+.files-info form { display: flex; justify-content: flex-end; gap: 8px; }
+.files-info .files-rename { width: 100%; min-width: 280px; box-sizing: border-box; }
 .files-info button { font-size: 14px; }
 .files-rename { flex: 1; min-width: 120px; padding: 0 4px; border: 1px solid #9a9a93; border-radius: 4px; background: #fff; color: var(--ink); font: inherit; }
 </style>
