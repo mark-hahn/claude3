@@ -420,6 +420,7 @@ Ctrl-wheel: text size.
 
 @Snips
 The title line says which Snips these are: the project's own or the global ones.
+The global ones also list the projects whose own Snips aren't empty.
 Ctrl+Enter with a selection: add it to the prompt (sent at once if the box was empty), take it out of the Snips and close them.
 Ctrl+Enter with no selection: a blank line.
 Esc: close the Snips.

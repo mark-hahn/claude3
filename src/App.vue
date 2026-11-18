@@ -109,6 +109,8 @@ async function onPreviousTab<T>(shot: () => Promise<T>): Promise<T> {
   }
 }
 provide("onPreviousTab", onPreviousTab);
+// Every project, for the global Snips' per-project character counts.
+provide("allTabs", sorted);
 const tabsDialog = ref<InstanceType<typeof Tabs>>();
 provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.openWith(host, folder));
 </script>

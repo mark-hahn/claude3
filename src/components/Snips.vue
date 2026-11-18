@@ -8,7 +8,7 @@
 // to the end of the prompt and the cursor there (an empty prompt sends it at once), takes the blank lines around the removed text
 // down to one and closes the Snips; with nothing selected it types two bare newlines, no margin or dash. A Monaco editor with
 // claude2's editing (src/monaco.ts).
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, type Ref } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
 import { extraBlankLines } from "../blankLines.ts";
@@ -34,8 +34,24 @@ let saveTimer = 0;
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+// The global Snips list, for each project (any host, closed ones too), how many non-space characters
+// its own Snips hold, when more than none. App provides the tabs; each answer lands as it arrives, so
+// a backend that is down doesn't hold up the rest, and it is named in countNote.
+const allTabs = inject<Ref<Tab[]>>("allTabs", ref([]));
+const counts = reactive<Record<string, number>>({});
+const countNote = ref("");
+async function loadCounts(): Promise<void> {
+  const failed: string[] = [];
+  await Promise.all(allTabs.value.map((tab) => post<{ text: string }>(tab, "projectSnips", {}).then(
+    (reply) => (counts[tab.id] = [...reply.text.replace(/\s/g, "")].length),
+    () => void failed.push(`${tab.label} (${tab.host})`),
+  )));
+  countNote.value = failed.length ? `The character counts couldn't be read for: ${failed.join(", ")}` : "";
+}
+
 async function load(): Promise<void> {
   if (saveTimer || !props.shown) return;
+  if (!props.own) void loadCounts();
   const asked = edits;
   try {
     const reply = await post<{ text: string }>(props.tab, action, {});
@@ -142,6 +158,8 @@ onBeforeUnmount(() => {
 <template>
   <div v-show="shown" class="snips">
     <div class="snips-title">{{ own ? `Snips of ${tab.label}` : "Global Snips" }}</div>
+    <div v-if="!own && allTabs.some((t) => counts[t.id] > 0)" class="snips-counts" title="Projects whose own Snips aren't empty"><span v-for="t in allTabs.filter((t) => counts[t.id] > 0)" :key="t.id">{{ t.label }}</span></div>
+    <div v-if="!own && countNote" class="snips-note">{{ countNote }}</div>
     <div v-if="note" class="snips-note">{{ note }}</div>
     <div class="snips-text" data-help="Snips" data-mode="Snips"><div ref="host"></div></div>
   </div>
@@ -150,6 +168,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .snips { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--page); }
 .snips-title { font-weight: 600; }
+.snips-counts { display: flex; flex-wrap: wrap; gap: 2px 14px; }
 .snips-note { background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 4px 8px; }
 .snips-text { position: relative; flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 .snips-text:focus-within { outline: 2px solid var(--ink); outline-offset: -1px; border-color: transparent; }
