@@ -407,14 +407,18 @@ async function describe(): Promise<void> {
     error.value = messageOf(problem);
   }
   describing.value = false;
+  void focusBox();
 }
 
 // ↓ puts the newest session's name in the box, each click after it an older one, and ↑ goes back
 // up the list. Clr and opening the popup start it over.
 const named = ref(-1);
+// After the ↑, ↓ and AI buttons put text in the box, the box takes the focus (a button that disables itself has lost it).
+const focusBox = (): Promise<void> => nextTick(() => messageBox.value?.focus());
 function walkNames(by: number): void {
   named.value = Math.min(Math.max(named.value + by, 0), props.sessionNames.length - 1);
   if (named.value >= 0) setMessage(props.sessionNames[named.value]!);
+  void focusBox();
 }
 function clearMessage(): void {
   named.value = -1;

@@ -264,16 +264,16 @@ A picture already sent is shown only.
 Click: close.
 
 @Git ↑ button
-Click: back to a newer session's name in the message.
+Click: back to a newer session's name in the message. The message box takes the focus.
 
 @Git ↓ button
-Click: the newest session's name in the message; each click an older one.
+Click: the newest session's name in the message; each click an older one. The message box takes the focus.
 
 @Git Clr button
-Click: clear the message.
+Click: clear the message. The message box takes the focus.
 
 @Git AI button
-Click: Opus 5.5 writes the message from the changes.
+Click: Opus 5.5 writes the message from the changes. The message box takes the focus.
 
 @Git Commit button
 Click: add every change, commit with the message, and push.
