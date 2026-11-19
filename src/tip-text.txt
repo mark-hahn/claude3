@@ -275,6 +275,9 @@ Click: clear the message. The message box takes the focus.
 @Git AI button
 Click: Opus 5.5 writes the message from the changes. The message box takes the focus.
 
+@Git Web button
+Click: open the project's GitHub page (the origin remote) in the Windows default browser. A failure shows in the popup.
+
 @Git Push button
 Click: push the branch, for a commit whose push failed. A failure shows in the popup.
 

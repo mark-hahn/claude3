@@ -12,6 +12,7 @@
 //        deleteProject -> {} (the project, its sessions and what they keep on disk; never its folder)
 //        prompt  { prompt, images?, files? } -> { sessionId } (an empty sessionId starts a session; images are PNG data URIs, files AttachedFiles with a dataUri)
 //        capture { hideWindow } -> { dataUri } (a shot of the desktop; laptop backends only)
+//        openUrl { url } -> {} (an http(s) address in the Windows default browser, through explorer.exe; laptop backends only)
 //        image { turnId, index } -> { dataUri } (a sent picture)
 //        stop | rename { name } | trash { trashed } | ctx -> { table }
 //        fork { turnId } -> { warning } (copy the session, then drop every run after that one; warning is "" when Claude's transcript went along)
@@ -29,7 +30,7 @@
 //        gitCommit { hash } -> { files: [{ x, y, path, from?, full }] } (the files that commit changed, against its first parent, as status entries)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
 //        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
-//        commit { message } -> {} (add everything, commit, push) | push {} -> {} (git push, for a commit whose push failed) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
+//        commit { message } -> {} (add everything, commit, push) | push {} -> {} (git push, for a commit whose push failed) | gitWeb {} -> { url } (origin's https page) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
 //        each with term, 0 to 2: which of the tab's terminals, and cwd, the folder its shell starts in (the tab needn't be this host's). termRead { id, at, cols, rows } -> { id, at, text, reset, idle, exited } (its pty, started on first ask: its output past at, waiting up to 2s for some; reset: the whole last 1000 lines; idle: ms since the last output or key)
 //        termSend { data } -> {} (keys as typed) | termResize { cols, rows } -> {} | termClear {} -> {} (the buffer down to the prompt line) | termClose {} -> {} (a terminal the page took out, by its Close or its shell's exit: forgotten, a pty still running ended) (server/term.ts)
 //        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
@@ -62,7 +63,7 @@ import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cheapestModel, ClaudeCliRunner, copySessionTranscript, swapSessionTranscripts, truncateSessionTranscript, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
 import { fileActions, upload } from "./files.ts";
-import { commitFiles, GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "./gitGraph.ts";
+import { commitFiles, GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead, webUrl } from "./gitGraph.ts";
 import { cancelLogin, loginResult, sendLoginCode, startLogin } from "./login.ts";
 import { checkCosts, QuotaService, speechmaticsCost, type QuotaState } from "./quota.ts";
 import { FROZEN_LINE, stampProblem, stampTime } from "./stamp.ts";
@@ -685,6 +686,14 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (name === "capture") {
     return { dataUri: await captureScreen(body.hideWindow === true) };
   }
+  if (name === "openUrl") {
+    const url = String(body.url ?? "");
+    if (!/^https?:\/\/[^\s"]+$/.test(url)) throw new Error("Not a web address.");
+    // explorer.exe hands the address to the Windows default browser, and no shell parses it (& is safe). It exits 1 even
+    // when that worked, so only a failure to start (a string code) is an error.
+    await new Promise<void>((resolve, reject) => execFile(WINDOWS_EXPLORER, [url], { timeout: 15_000 }, (error) => (error && typeof error.code !== "number" ? reject(error) : resolve())));
+    return {};
+  }
   if (name === "snips") {
     return await snips(body.text);
   }
@@ -826,6 +835,10 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (name === "push") {
     await git(project, "push");
     return {};
+  }
+  if (name === "gitWeb") {
+    // ponytail: origin only; pick the upstream's remote if a project ever pushes elsewhere.
+    return { url: webUrl(await git(project, "remote", "get-url", "origin")) };
   }
   if (name === "revert") {
     // Status paths are from the repo's top, the project may be below it, and a name may hold * or [.
@@ -1198,6 +1211,9 @@ async function describeChanges(project: Project): Promise<string> {
   if (text.length > 300_000) text = `${text.slice(0, 300_000)}\n\n(The changes were cut off here: there are more.)`;
   return await runner.describeChanges(text, project.tab.path);
 }
+
+// Windows' own explorer: on WSL through interop, as capture.ts reaches PowerShell.
+const WINDOWS_EXPLORER = process.platform === "win32" ? "explorer.exe" : "/mnt/c/Windows/explorer.exe";
 
 function git(project: Project, ...args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {

@@ -11,7 +11,7 @@
 // not modal (no gray cover, no click-outside close), so a click on another log line shows that commit.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
-import { post } from "../api.ts";
+import { post, postHost } from "../api.ts";
 import { pick } from "../pick.ts";
 import { modifiedLine } from "../diffLine.ts";
 import { MessageHistory } from "../messageHistory.ts";
@@ -412,6 +412,18 @@ async function push(): Promise<void> {
   committing.value = pushing.value = false;
 }
 
+// Web: the origin's page in the Windows default browser. The project's own backend knows the remote; opening is done
+// by a laptop backend (a srv project's goes through WSL's, as Cap's does), which hands it to Windows, not to this page's browser.
+async function web(): Promise<void> {
+  error.value = "";
+  try {
+    const { url } = await post<{ url: string }>(props.tab, "gitWeb", {});
+    await postHost(props.tab.host === "srv" ? "wsl" : props.tab.host, "openUrl", { url });
+  } catch (problem) {
+    error.value = messageOf(problem);
+  }
+}
+
 // Like VS Code's generate button: Opus 5.5 writes the commit message, replacing what's in the box.
 async function describe(): Promise<void> {
   describing.value = true;
@@ -520,6 +532,7 @@ function onMessageKey(event: KeyboardEvent): void {
         <button data-help="Git ↓ button" :disabled="describing || committing || named >= sessionNames.length - 1" @click="walkNames(1)">↓</button>
         <button data-help="Git Clr button" :disabled="describing || committing" @click="clearMessage">Clr</button>
         <button data-help="Git AI button" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "AI…" : "AI" }}</button>
+        <button data-help="Git Web button" @click="web">Web</button>
         <button data-help="Git Push button" :disabled="describing || committing" @click="push">{{ pushing ? "Pushing…" : "Push" }}</button>
         <button class="git-commit" data-help="Git Commit button" :disabled="!canCommit" @click="commit">{{ committing ? "Committing…" : "Commit" }}</button>
         </template>

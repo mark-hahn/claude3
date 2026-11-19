@@ -13,7 +13,7 @@ import { byName, folderName, foldersBetween, nextTab, parentFolder, sameName } f
 import { findBack, STAMP } from "./termFind.ts";
 import { wheelZoom } from "./wheelZoom.ts";
 import { fileActions, numberedName } from "../server/files.ts";
-import { headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead } from "../server/gitGraph.ts";
+import { headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead, webUrl } from "../server/gitGraph.ts";
 import { modelScopedWindow } from "../server/quota.ts";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -514,6 +514,13 @@ assert.equal(modelScopedWindow(undefined).pct, null);
   const stamps = (line) => [...line.matchAll(STAMP)].map((match) => match[0]);
   for (const stamp of ["11-11 16:02:27", "2026-11 16:02:27", "26-11 16:02", "11-11 16:02", "2026-11 16:02", "11/11 16:02:27", "2026/11 16:02:27", "26/11 16:02", "11/11 16:02", "2026/11 16:02", "2026-11-11 16:02:27", "2026-11-11T16:02:27.123", "Nov 11", "November 11", "Nov 11 2026", "November 11 2026", "Nov 11, 2026", "Sept 9", "Nov 11 16:02:27", "May 1 2026 16:02", "Nov  7 16:37", "Nov  7  2026", "11-11   16:02"]) assert.deepEqual(stamps(`at ${stamp}: ok`), [stamp]);
   assert.deepEqual(stamps("x11-11 16:02 1-11 16:02 11-11 1602 11-11 16:02am 11.11 16:02 nov 11 Novel 11 xNov 11 Nov 111 Nov 2026"), []);
+}
+
+// The Git popup's Web button: every form of a remote becomes the repo's https page; a local path has none.
+{
+  for (const remote of ["git@github.com:mark-hahn/claude3.git", "git@github.com:mark-hahn/claude3.git\n", "ssh://git@github.com/mark-hahn/claude3.git", "ssh://git@github.com:22/mark-hahn/claude3", "https://github.com/mark-hahn/claude3.git", "https://tok@github.com/mark-hahn/claude3/"]) assert.equal(webUrl(remote), "https://github.com/mark-hahn/claude3", remote);
+  assert.equal(webUrl("git@gitlab.example.com:group/sub/repo.git"), "https://gitlab.example.com/group/sub/repo");
+  for (const remote of ["/srv/repo.git", "C:\\repo", "../repo", ""]) assert.throws(() => webUrl(remote), /no web page/, remote);
 }
 
 console.log("render checks passed");

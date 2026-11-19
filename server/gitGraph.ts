@@ -61,6 +61,24 @@ export async function commitFiles(git: (...args: string[]) => Promise<string>, h
   return files;
 }
 
+// A remote's web page: git@host:owner/repo.git, ssh://git@host/owner/repo.git or https://host/owner/repo.git, all as
+// https://host/owner/repo. A local path has none.
+export function webUrl(remote: string): string {
+  const text = remote.trim().replace(/\/$/, "").replace(/\.git$/, "");
+  const scp = /^(?:[^@/\s]+@)?([^:/\s]+):(?!\/\/)(\S+)$/.exec(text);
+  let host = scp?.[1] ?? "";
+  let path = `/${scp?.[2] ?? ""}`;
+  if (!scp) {
+    try {
+      ({ hostname: host, pathname: path } = new URL(text));
+    } catch {
+      // Not a URL either: host stays empty.
+    }
+  }
+  if (!host.includes(".")) throw new Error(`The remote "${remote.trim()}" has no web page.`);
+  return `https://${host}${path}`;
+}
+
 // A new subject for the checked-out branch's newest commit, pushed. The body stays, and --only keeps
 // staged files out of the commit. A failed push puts the old commit back, because no later plain
 // push could follow the amended one.
