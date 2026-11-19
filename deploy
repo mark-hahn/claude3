@@ -110,22 +110,33 @@ pm2_rows() {
 # holds the user's other skills. rsync copies only what changed and prints a line for each.
 sync_skills() {
   case $1 in
-  wsl) rsync -rtO --out-format="== wsl skills: %n" skills/ /root/.claude/skills/ ;;
-  win) rsync -rtO --out-format="== win skills: %n" skills/ /mnt/c/Users/mark/.claude/skills/ ;;
-  srv) rsync -rtO --out-format="== srv skills: %n" skills/ "$REMOTE:.claude/skills/" ;;
+  wsl) rsync -rtO "${@:2}" --out-format="== wsl skills: %n" skills/ /root/.claude/skills/ ;;
+  win) rsync -rtO "${@:2}" --out-format="== win skills: %n" skills/ /mnt/c/Users/mark/.claude/skills/ ;;
+  srv) rsync -rtO "${@:2}" --out-format="== srv skills: %n" skills/ "$REMOTE:.claude/skills/" ;;
   esac
+}
+
+# Whether every target already holds this repo: each backend answers this version and its skills
+# have nothing left to copy (a dry run), so ./run would find nothing to do.
+all_current() {
+  local host out
+  for host in "${ALL[@]}"; do
+    [ "$(running "$host")" = "$(wanted "$host")" ] || return 1
+    out=$(sync_skills "$host" --dry-run) || return 1
+    [ -z "$out" ] || return 1
+  done
 }
 
 # Writes .deployed: claude3's page warns before a prompt when a file under those paths is newer
 # than it. Its time is set back to when this script started, since a file saved while it ran may
-# have missed the copy. Only a run over every target stamps: after one of named hosts the others
-# may still be behind, so the warning stays up until a full run (./run) finds nothing stale. That
-# goes for the hosts --if-stale deploys as their own processes too (silently: it stamps for them),
-# so one of them failing really does leave the stamp old.
+# have missed the copy. A run over every target stamps. After one of named hosts the others may
+# still be behind, so it stamps only when all_current finds none is, else the warning stays up until
+# a full run (./run) has been over every target. The hosts --if-stale deploys as their own processes
+# don't stamp: it does for them after the last, so one of them failing really does leave the stamp old.
 stamp() {
   if [ ${#HOSTS[@]} -lt ${#ALL[@]} ]; then
-    [ -n "${DEPLOY_NESTED:-}" ] || echo "== only ${HOSTS[*]} deployed: the deploy warning stays up until ./run has been over every target"
-    return 0
+    [ -z "${DEPLOY_NESTED:-}" ] || return 0
+    all_current || { echo "== only ${HOSTS[*]} deployed, and the others differ: the deploy warning stays up until ./run has been over every target"; return 0; }
   fi
   printf '%s\n' "${SOURCES[@]}" > .deployed
   touch -d "@$STARTED" .deployed

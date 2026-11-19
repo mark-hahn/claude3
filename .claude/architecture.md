@@ -160,9 +160,10 @@ on the laptop, and talks to each backend directly.
   and `shared/`, which the backend answers at `GET /version`; `deploy --if-stale` redeploys only
   the hosts that don't answer with the repo's hash. The WSL deploy builds the page first, so a
   type error anywhere in `src/` fails it. A failed host leaves `.deployed` unstamped (the deploy
-  warning stays up) and makes `deploy --if-stale`, and so `run`, exit 1. Only a run over every
-  target stamps (`stamp`): `./deploy wsl` leaves the stamp alone, the other hosts maybe still
-  being behind. The stamp's time is set back to when the script started, so a file saved while it
+  warning stays up) and makes `deploy --if-stale`, and so `run`, exit 1. A run over every
+  target stamps (`stamp`); one over named hosts (`./deploy wsl`) stamps only when `all_current` finds
+  every host already on this version with no skills left to copy, else the other hosts may still
+  be behind and the stamp is left alone. The stamp's time is set back to when the script started, so a file saved while it
   ran still counts as undeployed.
 - `skills/deployable/SKILL.md`: a Claude Code skill for every other project: how its `./run` must
   behave for the Run button on each host and how its deploy skips what is already there, including

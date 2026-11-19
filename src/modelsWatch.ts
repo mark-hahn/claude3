@@ -48,6 +48,8 @@ export async function checkModels(opened = false): Promise<Record<HostName, Host
   });
   localStorage.setItem(KEY, JSON.stringify(s));
   modelsChanged.value = differs(s);
+  // Debug: what lit the red, per host (seen = what the pane last showed, latest = this check).
+  if (modelsChanged.value) console.log("modelsWatch differs", opened ? "(pane open)" : "(hourly)", JSON.stringify(hosts.filter((h) => s.seen[h] !== s.latest[h]).map((h) => ({ host: h, seen: s.seen[h], latest: s.latest[h] }))));
   return Object.fromEntries(hosts.map((host, i) => [host, got[i]])) as Record<HostName, HostModels | Error>;
 }
 
