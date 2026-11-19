@@ -537,7 +537,7 @@ function onMessageKey(event: KeyboardEvent): void {
         <button data-help="Git Push button" :disabled="describing || committing" @click="push">{{ pushing ? "Pushing…" : "Push" }}</button>
         <button class="git-commit" data-help="Git Commit button" :disabled="!canCommit" @click="commit">{{ committing ? "Committing…" : "Commit" }}</button>
         </template>
-        <button :disabled="committing" data-help="Git Close button" @click="dialog?.close()">Close</button>
+        <button v-if="!committing" data-help="Git Close button" @click="dialog?.close()">Close</button>
       </div>
       <template v-if="!review">
       <input v-if="editing" v-model="draft" v-focus class="git-last-edit" data-help="Git last commit" spellcheck="false" :readonly="committing" @keydown.enter.prevent="saveLast" @keydown.esc.prevent="stopEditing" />

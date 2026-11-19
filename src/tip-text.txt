@@ -288,7 +288,7 @@ Click: add every change, commit with the message, and push.
 Ctrl+Enter in the message box does the same.
 
 @Git Close button
-Click: close the popup.
+Click: close the popup. Hidden while a commit is running.
 
 @Git last commit
 The newest commit's message.
