@@ -34,14 +34,15 @@ async function loadHost(host: HostName): Promise<HostModels> {
 }
 
 // Asks every host. `opened`: the pane is showing this, so it counts as seen. A host that didn't answer
-// (an Error, or a CLI version of "?") leaves its last state alone, so an outage is no change.
+// (an Error, a CLI version of "?", or a failed token-limits read) leaves its last state alone, so an outage is no change.
 export async function checkModels(opened = false): Promise<Record<HostName, HostModels | Error>> {
   const got = await Promise.all(hosts.map((host) => loadHost(host).catch((error) => (error instanceof Error ? error : new Error(String(error))))));
   const s = saved();
   s.at = Date.now();
   hosts.forEach((host, i) => {
     const m = got[i];
-    if (m instanceof Error || m.version === "?") return;
+    // A failed token-limits read (limitsError) leaves every Tokens cell empty, which would look like a change.
+    if (m instanceof Error || m.version === "?" || m.limitsError) return;
     s.latest[host] = JSON.stringify([m.version, m.rows]);
     if (opened || s.seen[host] === undefined) s.seen[host] = s.latest[host];
   });
