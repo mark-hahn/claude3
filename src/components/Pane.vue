@@ -1006,7 +1006,7 @@ function setBigPrompt(on: boolean): void {
 // toggles it while the box is big; leaving the big box leaves it too. Ctrl+Enter there sends, as
 // it would from the text.
 const promptMarkdown = ref(false);
-const promptHtml = computed(() => (promptMarkdown.value ? renderMarkdown(draft.value) : ""));
+const promptHtml = computed(() => (promptMarkdown.value ? renderMarkdown(draft.value, true) : ""));
 function setPromptMarkdown(on: boolean): void {
   if (on === promptMarkdown.value) return;
   promptMarkdown.value = on;

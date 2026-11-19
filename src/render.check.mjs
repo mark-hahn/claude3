@@ -201,6 +201,7 @@ assert.deepEqual(crop(-50, 0, 900, 900), [0, 0, 200, 100]);
 assert.equal(renderMarkdown("# Title ##"), "<h1>Title</h1>");
 assert.equal(renderMarkdown("a **b** *c* `<d>` [e](https://x.y)"), '<p>a <strong>b</strong> <em>c</em> <code>&lt;d&gt;</code> <a href="https://x.y" target="_blank" rel="noreferrer">e</a></p>');
 assert.equal(renderMarkdown("line one\nline two\n\nnext"), "<p>line one<br>line two</p><p>next</p>");
+assert.equal(renderMarkdown("line one\nline two  \nline three\n\n- a\n  b\n\n> q\n> r", true), "<p>line one line two<br>line three</p><ul><li><p>a b</p></li></ul><blockquote><p>q r</p></blockquote>");
 assert.equal(renderMarkdown("```js\nif (a < b) {}\n```"), '<pre data-help="code block"><code>if (a &lt; b) {}</code></pre>');
 assert.equal(renderMarkdown("- a\n  - b\n- c"), "<ul><li>a<ul><li>b</li></ul></li><li>c</li></ul>");
 assert.equal(renderMarkdown("1. one\n2. two"), "<ol><li>one</li><li>two</li></ol>");

@@ -213,7 +213,7 @@ function listItemOf(line: string): ListItem | null {
   return null;
 }
 
-function buildList(items: (Omit<ListItem, "text"> & { lines: string[] })[]): string {
+function buildList(items: (Omit<ListItem, "text"> & { lines: string[] })[], soft = false): string {
   const parts: string[] = [];
   let index = 0;
   while (index < items.length) {
@@ -225,8 +225,8 @@ function buildList(items: (Omit<ListItem, "text"> & { lines: string[] })[]): str
       next++;
     }
     const body = item.lines.join("\n");
-    let inner = item.lines.length > 1 ? renderMarkdown(body) : inline(body);
-    if (nested.length) inner += buildList(nested);
+    let inner = item.lines.length > 1 ? renderMarkdown(body, soft) : inline(body);
+    if (nested.length) inner += buildList(nested, soft);
     parts.push("<li>" + inner + "</li>");
     index = next;
   }
@@ -239,13 +239,16 @@ function tableRow(line: string): string[] {
   return trimmed.split("|").map((cell) => cell.trim());
 }
 
-export function renderMarkdown(text: string): string {
+// soft: a single newline is a space, as in a markdown file (two trailing spaces still break), so
+// lines wrap at the box's edge; off, every newline is a break, as in a response.
+export function renderMarkdown(text: string, soft = false): string {
   const lines = String(text).replace(/\r\n/g, "\n").split("\n");
   const out: string[] = [];
   let paragraph: string[] = [];
   const flush = (): void => {
     if (!paragraph.length) return;
-    out.push("<p>" + inline(paragraph.join("\n")).replace(/\n/g, "<br>") + "</p>");
+    const html = inline(paragraph.join("\n"));
+    out.push("<p>" + (soft ? html.replace(/ {2,}\n/g, "<br>").replace(/\n/g, " ") : html.replace(/\n/g, "<br>")) + "</p>");
     paragraph = [];
   };
   let index = 0;
@@ -291,7 +294,7 @@ export function renderMarkdown(text: string): string {
         quoted.push(lines[index]!.replace(/^\s*>\s?/, ""));
         index++;
       }
-      out.push("<blockquote>" + renderMarkdown(quoted.join("\n")) + "</blockquote>");
+      out.push("<blockquote>" + renderMarkdown(quoted.join("\n"), soft) + "</blockquote>");
       continue;
     }
     const next = lines[index + 1];
@@ -340,7 +343,7 @@ export function renderMarkdown(text: string): string {
         }
         break;
       }
-      out.push(buildList(items));
+      out.push(buildList(items, soft));
       continue;
     }
     paragraph.push(line);

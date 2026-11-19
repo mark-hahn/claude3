@@ -15,7 +15,7 @@ defineExpose({ focus: () => el.value?.focus() });
 <template>
   <!-- Inside a .pane for Pane.vue's global markdown styles. -->
   <div class="pane md-view" :style="{ fontSize: (size ?? 14) + 'px' }" @click.capture="copyCodeBlock">
-    <div ref="el" class="response markdown" tabindex="-1" data-help="markdown view" data-mode="markdown view" v-html="renderMarkdown(text)"></div>
+    <div ref="el" class="response markdown" tabindex="-1" data-help="markdown view" data-mode="markdown view" v-html="renderMarkdown(text, true)"></div>
   </div>
 </template>
 
