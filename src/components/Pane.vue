@@ -57,6 +57,9 @@ let boxOpen = true;
 // The open box hides its tool groups by default and a ctrl-click toggles them. The streaming box
 // always shows them.
 let toolsBox = false;
+// A ctrl-shift-click opens that same view with the text left unrendered. Only means anything
+// while toolsBox is on, which every other reset of it ends.
+let rawBox = false;
 let initialized = false;
 let pendingTurnCount = 0;
 let shownActiveTurn: string | null = null;
@@ -221,10 +224,11 @@ function render(): void {
       // answers no clicks but a tool line's.
       const locked = active && status!.turnId === turn.id;
       const tools = locked || toolsBox;
+      const raw = !locked && toolsBox && rawBox;
       const response = document.createElement("div");
-      response.className = "response markdown" + (turn.error ? " error" : "");
+      response.className = (raw ? "response raw" : "response markdown") + (turn.error ? " error" : "");
       response.dataset.help = "box";
-      fillResponse(response, turn, tools);
+      fillResponse(response, turn, tools, raw);
       // The tool line a press landed on. The streaming box is rebuilt as text arrives, so by the
       // click that line can have been swapped for a fresh copy.
       let pressedCall: HTMLElement | null = null;
@@ -251,8 +255,10 @@ function render(): void {
           return;
         }
         // Any other plain click is left to text selection; only a ctrl-click toggles.
-        if (locked || !event.ctrlKey || target.closest("a") || !window.getSelection()?.isCollapsed) return;
+        // (A shift-click extends the selection, so a ctrl-shift-click can't be told from a drag.)
+        if (locked || !event.ctrlKey || target.closest("a") || (!event.shiftKey && !window.getSelection()?.isCollapsed)) return;
         toolsBox = !toolsBox;
+        rawBox = toolsBox && event.shiftKey;
         // The two views shape the text differently, so every toggle starts from the top.
         boxScrollNext = "top";
         render();
@@ -278,8 +284,9 @@ function render(): void {
 
 // The whole box: a run that failed part way still wrote everything up to that point, so the text
 // stays and the reason goes underneath it rather than in its place.
-function fillResponse(box: HTMLElement, turn: ClaudeTurn, tools: boolean): void {
-  fillBox(box, turn.response || "", tools, turn.id, openToolCalls, searchNeedle());
+function fillResponse(box: HTMLElement, turn: ClaudeTurn, tools: boolean, raw = false): void {
+  if (raw) box.textContent = (turn.response || "").replace(/[⁢⁣⁤]/g, "");
+  else fillBox(box, turn.response || "", tools, turn.id, openToolCalls, searchNeedle());
   if (!turn.error) return;
   const note = document.createElement("div");
   note.className = "error-note";
@@ -1648,6 +1655,7 @@ onBeforeUnmount(() => {
 .pane .response { margin: 4px 0 8px; border-left: 3px solid var(--border); padding: 8px 10px; background: var(--surface); overflow-wrap: anywhere; overflow-x: hidden; }
 .pane .response.error { border-left-color: #c62828; }
 .pane .response.markdown { font: 1em/1.5 Aptos, "Segoe UI", sans-serif; white-space: normal; }
+.pane .response.raw { font: 1em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
 .pane .response.markdown > :first-child { margin-top: 0; }
 .pane .response.markdown h1, .pane .response.markdown h2 { font-size: 1em; font-weight: 700; margin: 14px 0 6px; padding-bottom: 3px; border-bottom: 1px solid var(--border); }
 .pane .response.markdown h3, .pane .response.markdown h4, .pane .response.markdown h5, .pane .response.markdown h6 { font-size: 1em; font-weight: 700; margin: 12px 0 5px; }

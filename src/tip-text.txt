@@ -184,6 +184,7 @@ Click: details of the file sent with this prompt.
 @box
 Click: select text.
 Ctrl-click: switch between the answer and the tool steps.
+Ctrl-Shift-click: the same, but the text is shown raw, not rendered as markdown.
 Alt-click: copy the whole box as shown.
 Enter (outside a text box): open or close the last block's box; with another block selected, select the last one first.
 Ctrl-wheel: text size.
