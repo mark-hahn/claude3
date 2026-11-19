@@ -1127,9 +1127,10 @@ async function deployNeeded(project: Project): Promise<{ script: string; files: 
     // -t: "H path" for a tracked file, "? path" for an untracked one.
     listed = (await git(project, "ls-files", "-z", "-t", "--cached", "--others", "--exclude-standard", "--", ...paths)).split("\0").filter(Boolean);
   } catch (error) {
-    // A new project's ./run can come before its `git init`: no repo, no warning, as with no stamp.
-    if (/not a git repository/i.test(String(error))) return { script, files: [] };
-    throw error;
+    // No repo (a new project's ./run can come before its `git init`): git lists nothing, so only the
+    // plain files the stamp names are checked, below; a stamp with no paths means no warning.
+    if (!/not a git repository/i.test(String(error))) throw error;
+    listed = [];
   }
   // Each file that is on disk, with its time; the tracked ones are what the stamp covers.
   const times = new Map<string, number>();

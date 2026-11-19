@@ -279,7 +279,7 @@ on the laptop, and talks to each backend directly.
   `./deploy` (or `./run` when it has none) touches `.deployed` (gitignored) when it finishes, and
   any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Deploy
   (same as the Run button below, the prompt stays unsent in the box), Continue or Cancel. No script or no
-  stamp yet, or no git repo (a new project), means no warning. The touch lines live in each project's own
+  stamp yet means no warning, and neither does a git repo missing (a new project) unless the stamp names paths: then only those plain files are checked (no globs, no deleted-file check), so a repo-less project like winsnap still lights R. The touch lines live in each project's own
   script (claude3, claude2, tv, finance on hahnca.com). A script can write paths into the stamp
   and then only those count (one git pathspec per line, so spaces work; written with
   `printf '%s\n'`, and deployCheck fails an `echo` into it): claude3's writes `SOURCES` from
