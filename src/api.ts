@@ -18,11 +18,12 @@ async function answer<T>(host: HostName, res: Response): Promise<T> {
   return data;
 }
 
-export async function postHost<T = Record<string, unknown>>(host: HostName, action: string, body: Record<string, unknown>): Promise<T> {
+export async function postHost<T = Record<string, unknown>>(host: HostName, action: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${HOSTS[host].url}/api/${action}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   return await answer<T>(host, res);
 }
@@ -33,8 +34,8 @@ export async function upload(host: HostName, folder: string, file: File): Promis
   await answer(host, await fetch(`${HOSTS[host].url}/upload?${query}`, { method: "POST", headers: { "content-type": "application/octet-stream" }, body: file }));
 }
 
-export function post<T = Record<string, unknown>>(tab: Tab, action: string, body: Record<string, unknown>): Promise<T> {
-  return postHost<T>(tab.host, action, { tab: tab.id, ...body });
+export function post<T = Record<string, unknown>>(tab: Tab, action: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+  return postHost<T>(tab.host, action, { tab: tab.id, ...body }, signal);
 }
 
 interface Listener {

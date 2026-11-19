@@ -123,7 +123,8 @@ const folderOf = (path: string): string => path.slice(0, Math.max(path.lastIndex
 // (any commit or amend, wherever it was made) means new old messages.
 async function refresh(): Promise<void> {
   try {
-    const status = await post<{ files: GitFile[]; log?: GitLog }>(props.tab, "git", { log: dialog.value?.open });
+    // A request that never answers would leave poll()'s `polling` set for good, so it is cut off.
+    const status = await post<{ files: GitFile[]; log?: GitLog }>(props.tab, "git", { log: dialog.value?.open }, AbortSignal.timeout(15000));
     files.value = status.files;
     failure.value = "";
     if (status.log) {
