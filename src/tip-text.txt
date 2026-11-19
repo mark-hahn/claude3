@@ -240,7 +240,7 @@ Fix it (when claude3's deploy stopped on tip-text.txt): a new session where Clau
 
 @deploy warning
 Deploy: run ./run first; the prompt stays in the box.
-Continue: send anyway.
+Continue: send anyway (the Enter key).
 Cancel: don't send; the prompt stays in the box.
 
 @deploy setup
@@ -252,7 +252,7 @@ Cancel: don't send; the prompt stays in the box.
 
 @commit warning
 +: send the prompt as a new session (not on a session's first prompt, which is warned about files waiting to be committed).
-Continue: send it to this session.
+Continue: send it to this session (the Enter key).
 Cancel: don't send; the prompt stays in the box.
 
 @file details

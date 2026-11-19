@@ -1582,7 +1582,7 @@ onBeforeUnmount(() => {
     </dialog>
     <dialog ref="deployPopEl" closedby="any" class="run-pop">
       <pre>{{ deployText }}</pre>
-      <form method="dialog" data-help="deploy warning"><button value="deploy">Deploy</button> <button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
+      <form method="dialog" data-help="deploy warning"><button value="deploy">Deploy</button> <button value="continue" autofocus>Continue</button> <button value="">Cancel</button></form>
     </dialog>
     <dialog ref="setupPopEl" closedby="any" class="run-pop">
       <pre>{{ setupText }}</pre>
@@ -1590,7 +1590,7 @@ onBeforeUnmount(() => {
     </dialog>
     <dialog ref="commitPopEl" closedby="any" class="run-pop">
       <pre>{{ commitText }}</pre>
-      <form method="dialog" data-help="commit warning"><template v-if="turns().length"><button value="new" aria-label="New session"><svg class="plus-icon" viewBox="2 2 12 12"><path d="M8 3v10M3 8h10" /></svg></button> </template><button value="continue">Continue</button> <button value="" autofocus>Cancel</button></form>
+      <form method="dialog" data-help="commit warning"><template v-if="turns().length"><button value="new" aria-label="New session"><svg class="plus-icon" viewBox="2 2 12 12"><path d="M8 3v10M3 8h10" /></svg></button> </template><button value="continue" autofocus>Continue</button> <button value="">Cancel</button></form>
     </dialog>
     <dialog ref="filePopEl" closedby="any" class="run-pop">
       <pre>{{ fileText }}</pre>

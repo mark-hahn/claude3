@@ -101,7 +101,8 @@ on the laptop, and talks to each backend directly.
 - `src/modelsWatch.ts`: the Models pane's data for every host (`models` + `cliVersion` actions), used by Settings' Models button (`checkModels(true)`, the pane fills from this tab's host) and by App's hourly `watchModels` (first check an hour after the last, kept in localStorage `claude3.models` with each host's `seen` and `latest` string). `modelsChanged` (any host's rows or CLI version differ from `seen`; the Default box isn't compared; a host that didn't answer, or whose token-limits read failed, is skipped) lights the gear and the Models button light red until the Models button is clicked.
 - `server/quota.ts`: claude2's QuotaService and its stats-server calls. The account's one history
   and the poll lease live on claude-stats, one for all three backends; local
-  fallback files in `~/.claude3/quota-*.json`. `sendQuota` in main.ts broadcasts each reading as a host-wide `quota` event
+  fallback files in `~/.claude3/quota-*.json`. Its one timer, `armFinalReading`, takes a lease-gated reading 2 minutes before
+  the soonest window reset, since the endpoint forgets a window's final value once it resets. `sendQuota` in main.ts broadcasts each reading as a host-wide `quota` event
   (on stream connect, at each turn's end, after the Quotas pane's reading); the page keeps the newest from any host in
   `quotaUse` (`src/api.ts`), and every footer's `quotaSpend` (`shared/types.ts`) puts a red `$0.00` in place of the
   ponytail stat once a window not yet reset is at 95%, the month's extra-usage spend from 100%. The pane's Fable line (`modelScopedWindow`) adds up every weekly limit on a Fable model.
@@ -279,7 +280,7 @@ on the laptop, and talks to each backend directly.
 - **Deploy warning.** Before sending a prompt the pane asks `deployNeeded`: the project's
   `./deploy` (or `./run` when it has none) touches `.deployed` (gitignored) when it finishes, and
   any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Deploy
-  (same as the Run button below, the prompt stays unsent in the box), Continue or Cancel. No script or no
+  (same as the Run button below, the prompt stays unsent in the box), Continue or Cancel; Enter is Continue (`autofocus`). No script or no
   stamp yet means no warning, and neither does a git repo missing (a new project) unless the stamp names paths: then only those plain files are checked (no globs, no deleted-file check), so a repo-less project like winsnap still lights R. The touch lines live in each project's own
   script (claude3, claude2, tv, finance on hahnca.com). A script can write paths into the stamp
   and then only those count (one git pathspec per line, so spaces work; written with
@@ -317,7 +318,7 @@ on the laptop, and talks to each backend directly.
 - **Commit warning.** After the deploy check, a prompt to a session with turns asks `lastCommit`
   (HEAD's `%ct` and subject); HEAD newer than the last turn's `createdAt` opens a `<dialog>`:
   New session (the prompt starts one, as from the draft, and leaves the running one alone),
-  Continue or Cancel. The Snips' auto-send into an empty box opens the same dialog whenever the session has turns, commit or not
+  Continue or Cancel; Enter is Continue (`autofocus`). The Snips' auto-send into an empty box opens the same dialog whenever the session has turns, commit or not
   (`commitChoice(snips)`), since nobody looked at the conversation for it. A session's first prompt
   instead asks `git` for the status and, with files waiting to be committed, opens the same dialog
   without New session (a failed status, as with no repo, means no warning). The "/compact" auto-send (`keepDraft`) skips both checks.
