@@ -12,7 +12,8 @@ import { inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, typ
 import type { Tab } from "../../shared/config.ts";
 import { post } from "../api.ts";
 import { extraBlankLines } from "../blankLines.ts";
-import { addLineDots, addListKeys, addWheelZoom, applyWheelZoom, editorOptions, monaco, typeEdits, untab } from "../monaco.ts";
+import { addLineDots, addListKeys, addWheelZoom, applyWheelZoom, editorOptions, followFontSize, monaco, typeEdits, untab } from "../monaco.ts";
+import MdView from "./MdView.vue";
 
 // addToPrompt answers whether the prompt took the text: a trashed session's doesn't. own: this
 // project's Snips, not the global ones.
@@ -28,6 +29,27 @@ const note = ref("");
 const host = ref<HTMLElement>();
 let editor: monaco.editor.IStandaloneCodeEditor | null = null;
 const text = (): string => editor?.getValue() ?? "";
+// Ctrl-Alt-X: the text rendered as markdown over the editor. mdText is a copy taken when it goes
+// on and again whenever a read changes the text; the view is read-only, so nothing is typed in it.
+const md = ref(false);
+const mdText = ref("");
+const mdSize = ref(14);
+const mdView = ref<InstanceType<typeof MdView>>();
+async function setMd(on: boolean): Promise<void> {
+  md.value = on;
+  if (on) mdText.value = text();
+  await nextTick();
+  if (on) mdView.value?.focus();
+  else editor?.focus();
+}
+// Capture phase, so Monaco never sees the press. Esc closes the Snips from the markdown view too.
+function onKey(event: KeyboardEvent): void {
+  if (md.value && event.key === "Escape") return void emit("close");
+  if (!event.ctrlKey || !event.altKey || event.metaKey || event.shiftKey || event.code !== "KeyX") return;
+  event.preventDefault();
+  event.stopPropagation();
+  void setMd(!md.value);
+}
 // Typing since a read started makes its answer stale.
 let edits = 0;
 let saveTimer = 0;
@@ -67,6 +89,7 @@ async function load(): Promise<void> {
     const view = editor.saveViewState();
     editor.setValue(next);
     editor.restoreViewState(view);
+    if (md.value) mdText.value = next;
   } catch (error) {
     note.value = `The Snips couldn't be read: ${messageOf(error)}`;
   }
@@ -95,6 +118,7 @@ let closedView: monaco.editor.ICodeEditorViewState | null = null;
 watch(() => props.shown, async (shown) => {
   const ed = editor!;
   if (!shown) {
+    md.value = false;
     closedView = ed.saveViewState();
     if (saveTimer) save();
     return;
@@ -115,6 +139,7 @@ onMounted(() => {
   addLineDots(editor);
   addListKeys(editor);
   addWheelZoom(editor, FONT_KEY);
+  followFontSize(editor, (size) => (mdSize.value = size));
   // A load's setValue is an edit too, but not typing: only user edits count and get saved.
   editor.onDidChangeModelContent((event) => !event.isFlush && typed());
   // Esc is left to Monaco while it has something of its own up to close.
@@ -161,7 +186,7 @@ onBeforeUnmount(() => {
     <div v-if="!own && allTabs.some((t) => counts[t.id] > 0)" class="snips-counts" title="Projects whose own Snips aren't empty"><span v-for="t in allTabs.filter((t) => counts[t.id] > 0)" :key="t.id">{{ t.label }}</span></div>
     <div v-if="!own && countNote" class="snips-note">{{ countNote }}</div>
     <div v-if="note" class="snips-note">{{ note }}</div>
-    <div class="snips-text" data-help="Snips" data-mode="Snips"><div ref="host"></div></div>
+    <div class="snips-text" data-help="Snips" data-mode="Snips" @keydown.capture="onKey"><div ref="host"></div><MdView v-show="md" ref="mdView" :text="mdText" :size="mdSize" /></div>
   </div>
 </template>
 

@@ -192,16 +192,27 @@ export function applyWheelZoom(editor: Editor, key: string): void {
   if (saved) editor.updateOptions({ fontSize: saved });
 }
 
-export function addWheelZoom(editor: Editor, key: string): void {
+// enabled: for an editor that only zooms in some state (the big prompt box); the caller applies the
+// saved size when it comes on. Whatever else sits in the frame beside the editor (a markdown view
+// laid over it) zooms it too, and followFontSize carries the size over to that.
+export function addWheelZoom(editor: Editor, key: string, enabled: () => boolean = () => true): void {
   const { fontSize } = monaco.editor.EditorOption;
-  applyWheelZoom(editor, key);
+  if (enabled()) applyWheelZoom(editor, key);
   editor.getContainerDomNode().parentElement!.addEventListener("wheel", (event) => {
-    if (!event.ctrlKey) return;
+    if (!event.ctrlKey || !enabled()) return;
     event.preventDefault();
     event.stopPropagation();
     editor.updateOptions({ fontSize: editor.getOption(fontSize) + (event.deltaY < 0 ? 1 : -1) });
     localStorage.setItem(key, String(editor.getOption(fontSize)));
   }, true);
+}
+
+// Calls show with the editor's text size now and whenever it changes, for a markdown view drawn
+// over the editor to be at the same size.
+export function followFontSize(editor: Editor, show: (size: number) => void): void {
+  const { fontSize } = monaco.editor.EditorOption;
+  show(editor.getOption(fontSize));
+  editor.onDidChangeConfiguration((event) => event.hasChanged(fontSize) && show(editor.getOption(fontSize)));
 }
 
 // No tab char ever goes in the box: Tab itself makes list items, and text arriving with tabs

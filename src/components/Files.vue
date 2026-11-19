@@ -18,9 +18,8 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, 
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import type { FileEntry } from "../../shared/types.ts";
 import { post, postHost, upload } from "../api.ts";
-import { copy, copyCodeBlock } from "../copy.ts";
+import { copy } from "../copy.ts";
 import { pick } from "../pick.ts";
-import { renderMarkdown } from "../render.ts";
 import { foldersBetween, parentFolder, sameName, withSeparator } from "../tabList.ts";
 import { wheelZoom } from "../wheelZoom.ts";
 import FileEditor from "./FileEditor.vue";
@@ -32,7 +31,7 @@ const props = defineProps<{ tab: Tab; active: boolean; fileMode: boolean }>();
 // attach: Ctrl+Enter on the one selected file, for the pane to add to its prompt.
 const emit = defineEmits<{ openFile: []; attach: [path: string, host: HostName] }>();
 const newProjectAt = inject("newProjectAt") as (host: HostName, folder: string) => void;
-// Sizes the tree and rendered markdown; FileEditor's editor keeps a size of its own.
+// Sizes the tree; FileEditor's editor, and the markdown view over it, keep a size of their own.
 const zoom = wheelZoom("files-font-size");
 
 const roots = computed(() => props.tab.roots ?? []);
@@ -78,7 +77,7 @@ function select(...paths: string[]): void {
 
 const note = ref("");
 const listProblem = ref("");
-// host: the one it is on. rendered: shown as markdown, read-only, instead of in the editor. line: the line the editor opens
+// host: the one it is on. rendered: opens with the editor's markdown view on (Ctrl-Alt-X flips it). line: the line the editor opens
 // centered on, with line numbers in place of its line dots (a file opened from the Git popup's diff,
 // which has them); 0 for a file opened in the tree.
 const file = ref<{ host: HostName; path: string; text: string; mtime: number; rendered: boolean; line: number } | null>(null);
@@ -546,23 +545,6 @@ async function openPath(path: string, line: number): Promise<void> {
 }
 defineExpose({ openPath });
 
-// The rendered view follows the file, as the editor does. An unchanged file answers with no text.
-// One request at a time, or a backend that stopped answering would use up the browser's connections to it.
-let rereading = false;
-async function rereadRendered(): Promise<void> {
-  if (rereading) return;
-  rereading = true;
-  const shown = file.value!;
-  try {
-    const reply = await postHost<{ mtime: number; text?: string | null }>(shown.host, "readFile", { path: shown.path, known: shown.mtime });
-    listProblem.value = "";
-    if (typeof reply.text === "string" && file.value === shown) file.value = { ...shown, text: reply.text, mtime: reply.mtime };
-  } catch (problem) {
-    listProblem.value = messageOf(problem);
-  }
-  rereading = false;
-}
-
 function doubleClickRow(row: Row, event: MouseEvent): void {
   const rendered = event.ctrlKey && !row.dir && /\.md$/i.test(row.name);
   if ((event.ctrlKey && !rendered) || event.altKey || event.shiftKey) return;
@@ -638,7 +620,6 @@ onMounted(async () => {
   poller = window.setInterval(() => {
     if (document.hidden || !props.active) return;
     if (!props.fileMode) void refresh();
-    else if (file.value?.rendered) void rereadRendered();
   }, 2000);
   // Back to where the tree was left; the selection is scrolled to only for a root never scrolled.
   const saved = scrolls[rootKey.value];
@@ -651,14 +632,8 @@ onBeforeUnmount(() => window.clearInterval(poller));
 </script>
 
 <template>
-  <div class="files" @wheel="(!fileMode || file?.rendered) && zoom($event)" @dragover.prevent="dragOver" @dragleave="dragLeave" @drop.prevent="drop">
-    <div v-if="fileMode && file?.rendered" class="files-root">{{ file.host }}: {{ file.path }}</div>
-    <div v-if="fileMode && file?.rendered && listProblem" class="files-note">{{ listProblem }}</div>
-    <!-- Inside a .pane for Pane.vue's global markdown styles. -->
-    <div v-if="fileMode && file?.rendered" class="pane files-rendered" data-help="rendered markdown" @click.capture="copyCodeBlock">
-      <div class="response markdown files-rendered-text" v-html="renderMarkdown(file.text)"></div>
-    </div>
-    <FileEditor v-else-if="fileMode && file" :active="active" :file="file" />
+  <div class="files" @wheel="!fileMode && zoom($event)" @dragover.prevent="dragOver" @dragleave="dragLeave" @drop.prevent="drop">
+    <FileEditor v-if="fileMode && file" :active="active" :file="file" />
     <div v-show="!fileMode" ref="treeArea" class="files-mode" tabindex="-1" data-mode="Files tree" @keydown="keyDown">
       <div class="files-bar">
         <button data-help="Files New button" aria-label="New file" :disabled="many" @click="newFile($event.ctrlKey)"><svg class="files-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg></button>
@@ -737,10 +712,6 @@ onBeforeUnmount(() => window.clearInterval(poller));
 
 <style scoped>
 .files { min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--page); }
-.files-rendered { flex: 1; min-height: 0; }
-.files-rendered-text { overflow-y: auto; }
-/* Pane.vue fixes its markdown at 14px; here the ctrl-wheel sizes it. */
-.files .pane .files-rendered-text, .files .pane .files-rendered-text :deep(:is(h1, h2, h3, h4, h5, h6, code, table)) { font-size: var(--files-font-size, 14px); }
 .files-mode { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; outline: none; }
 .files-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .files-find { flex: none; display: flex; align-items: center; gap: 6px; }

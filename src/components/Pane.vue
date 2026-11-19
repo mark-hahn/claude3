@@ -10,7 +10,7 @@ import type { HostName, Tab } from "../../shared/config.ts";
 import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, modelChoice, quotaSpend, shortModel, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
 import { modelPicks, post, postHost, quotaUse } from "../api.ts";
 import { cropRect } from "../cropRect.ts";
-import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
+import { addLineDots, addListKeys, addWheelZoom, editorOptions, followFontSize, monaco, untab } from "../monaco.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
 import { MessageHistory } from "../messageHistory.ts";
 import { answerText, fillBox, occurrences, renderMarkdown, shownText, textHits, withoutDetails } from "../render.ts";
@@ -985,6 +985,12 @@ function fitPrompt(): void {
 // the same layout; a session started from the new-session draft takes the draft's.
 // ponytail: flags of deleted sessions stay in localStorage; a few bytes each.
 const bigPrompt = ref(false);
+// Ctrl-wheel sizes the big box, remembered under BIG_FONT_KEY, and the markdown view over it draws at
+// the editor's size (promptSize). The small box stays at the default size.
+const BIG_FONT_KEY = "claude3.bigPromptFontSize";
+const promptSize = ref(14);
+const applyBigFont = (): void => promptBox?.updateOptions({ fontSize: bigPrompt.value ? Number(localStorage.getItem(BIG_FONT_KEY)) || 14 : 14 });
+watch(bigPrompt, applyBigFont);
 const bigKey = (id: string): string => `bigPrompt:${props.tab.id}:${id}`;
 function storeBig(id: string, on: boolean): void {
   if (on) localStorage.setItem(bigKey(id), "1");
@@ -1031,7 +1037,8 @@ function onPageKey(event: KeyboardEvent): void {
     event.stopPropagation();
     setBigPrompt(!bigPrompt.value);
     promptBox?.focus();
-  } else if (event.code === "KeyX" && bigPrompt.value) {
+  } else if (event.code === "KeyX" && bigPrompt.value && !(event.target as HTMLElement).closest?.(".snips-text, .file-text")) {
+    // (In Snips and the file editor the same key is their own markdown view's.)
     event.preventDefault();
     event.stopPropagation();
     const on = !promptMarkdown.value;
@@ -1510,6 +1517,8 @@ onMounted(() => {
   // measuring is always right.
   const box = (promptBox = monaco.editor.create(promptHostEl.value!.firstElementChild as HTMLElement, { ...editorOptions, disableMonospaceOptimizations: true, value: draft.value }));
   box.onDidContentSizeChange(fitPrompt);
+  addWheelZoom(box, BIG_FONT_KEY, () => bigPrompt.value);
+  followFontSize(box, (size) => (promptSize.value = size));
   fitPrompt();
   addLineDots(box);
   addListKeys(box);
@@ -1602,7 +1611,7 @@ onBeforeUnmount(() => {
     <div class="dock">
       <div ref="promptHostEl" class="prompt" data-help="prompt box" data-mode="prompt box" @pointerdown.capture="onPromptPointer" @mousedown.capture="onPromptMouse" @paste.capture="pasteFiles">
         <div v-show="!promptMarkdown"></div>
-        <div v-show="promptMarkdown" ref="promptMdEl" class="prompt-md response markdown" tabindex="-1" data-help="prompt markdown view" data-mode="prompt markdown view" @keydown="onMdKey" v-html="promptHtml"></div>
+        <div v-show="promptMarkdown" ref="promptMdEl" class="prompt-md response markdown" :style="{ fontSize: promptSize + 'px' }" tabindex="-1" data-help="prompt markdown view" data-mode="prompt markdown view" @keydown="onMdKey" v-html="promptHtml"></div>
       </div>
       <div class="dock-controls">
         <div class="footer">

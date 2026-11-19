@@ -9,9 +9,11 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import type { HostName } from "../../shared/config.ts";
 import { postHost } from "../api.ts";
-import { addLineDots, addWheelZoom, monaco } from "../monaco.ts";
+import { addLineDots, addWheelZoom, followFontSize, monaco } from "../monaco.ts";
+import MdView from "./MdView.vue";
 
-const props = defineProps<{ active: boolean; file: { host: HostName; path: string; text: string; mtime: number; line?: number } }>();
+// file.rendered: opened with the markdown view on (Files' ctrl-double-click on a .md).
+const props = defineProps<{ active: boolean; file: { host: HostName; path: string; text: string; mtime: number; line?: number; rendered?: boolean } }>();
 
 const note = ref("");
 const refused = ref(false);
@@ -32,6 +34,27 @@ let following = false;
 let saves: Promise<void> = Promise.resolve();
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+// Ctrl-Alt-X: the text rendered as markdown over the editor. mdText is a copy taken when it goes
+// on and again whenever a read changes the text; the view is read-only, so nothing is typed in it.
+const md = ref(false);
+const mdText = ref("");
+const mdSize = ref(14);
+const mdView = ref<InstanceType<typeof MdView>>();
+async function setMd(on: boolean): Promise<void> {
+  md.value = on;
+  if (on) mdText.value = editor!.getValue();
+  await nextTick();
+  if (on) mdView.value?.focus();
+  else editor?.focus();
+}
+// Capture phase, so Monaco never sees the press.
+function onKey(event: KeyboardEvent): void {
+  if (!event.ctrlKey || !event.altKey || event.metaKey || event.shiftKey || event.code !== "KeyX") return;
+  event.preventDefault();
+  event.stopPropagation();
+  void setMd(!md.value);
+}
 
 async function saveNow(text: string): Promise<void> {
   if (!dirty || refused.value) return;
@@ -78,6 +101,7 @@ function show(reply: { mtime: number; text?: string | null }): void {
     editor.restoreViewState(view);
     if (tail.value) editor.setScrollTop(editor.getContentHeight() - editor.getLayoutInfo().height);
     settingText = false;
+    if (md.value) mdText.value = reply.text;
   }
 }
 
@@ -143,6 +167,7 @@ onMounted(() => {
     });
   } else addLineDots(editor);
   addWheelZoom(editor, "claude3.fileFontSize");
+  followFontSize(editor, (size) => (mdSize.value = size));
   editor.createContextKey("stockEditor", true);
   // A read's setValue is an edit too, but not typing.
   editor.onDidChangeModelContent((event) => !event.isFlush && typed());
@@ -156,6 +181,7 @@ onMounted(() => {
   tail.value = atBottom();
   void follow();
   poller = window.setInterval(() => void (tail.value ? follow() : poll()), 2000);
+  if (props.file.rendered) void setMd(true);
 });
 onBeforeUnmount(() => {
   window.clearInterval(poller);
@@ -170,7 +196,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="file-path" :class="{ tail }">{{ file.host }}: {{ file.path }}</div>
   <div v-if="note" class="file-note">{{ note }} <button v-if="refused" data-help="Files editor Reload" @click="reload">Reload</button></div>
-  <div class="file-text" data-help="Files editor" data-mode="Files editor"><div ref="host"></div></div>
+  <div class="file-text" data-help="Files editor" data-mode="Files editor" @keydown.capture="onKey"><div ref="host"></div><MdView v-show="md" ref="mdView" :text="mdText" :size="mdSize" /></div>
 </template>
 
 <style scoped>
