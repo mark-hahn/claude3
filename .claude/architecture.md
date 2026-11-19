@@ -275,7 +275,7 @@ on the laptop, and talks to each backend directly.
 - **Deploy warning.** Before sending a prompt the pane asks `deployNeeded`: the project's
   `./deploy` (or `./run` when it has none) touches `.deployed` (gitignored) when it finishes, and
   any `git ls-files` file newer than it means a deploy is due; a `<dialog>` then asks Deploy
-  (same as "r" below, the prompt stays unsent in the box), Continue or Cancel. No script or no
+  (same as the Run button below, the prompt stays unsent in the box), Continue or Cancel. No script or no
   stamp yet, or no git repo (a new project), means no warning. The touch lines live in each project's own
   script (claude3, claude2, tv, finance on hahnca.com). A script can write paths into the stamp
   and then only those count (one git pathspec per line, so spaces work; written with
@@ -305,7 +305,7 @@ on the laptop, and talks to each backend directly.
   "started"; Check runs `deployCheck` again and an alert gives the result; Not needed sets "none"
   and sends; Continue sends and leaves the flag. Set up, Check and Cancel leave the prompt in the
   box. With "started" the dialog comes with no check first, Check focused, except for a prompt to the setup session itself (its first prompt is `SETUP_PROMPT`), which just goes. The flag comes back to the page in a `projects` event.
-  A `./run` (Run, "r", "v") asks the same first (`runScript`, `deploySetupOk("run")`), where Continue and Not needed start it; the deploy warning's Deploy skips the question, which its prompt already passed.
+  A `./run` (the Run button) asks the same first (`runScript`, `deploySetupOk("run")`), where Continue and Not needed start it; the deploy warning's Deploy skips the question, which its prompt already passed.
   A "done" project is checked again before each `./run` (not each prompt), and `deployCheck` drops the flag when it no longer passes, so a script broken since, or a rule the check gained, brings the question back.
 - **Commit warning.** After the deploy check, a prompt to a session with turns asks `lastCommit`
   (HEAD's `%ct` and subject); HEAD newer than the last turn's `createdAt` opens a `<dialog>`:
@@ -315,8 +315,8 @@ on the laptop, and talks to each backend directly.
   instead asks `git` for the status and, with files waiting to be committed, opens the same dialog
   without New session (a failed status, as with no repo, means no warning). The "/compact" auto-send (`keepDraft`) skips both checks.
   Either check failing (a stale backend answers "No such session.") shows an alert, then the prompt is sent.
-- **"r".** A prompt of just `r`, or the tab row's R (Run) button, which Project teleports after G (Git) and which calls Pane's exposed `runScript` (ctrl-click for `v`), goes to `POST /api/run` instead of claude: the backend runs the
-  project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. Terminal colour codes are stripped from the output first (`plain`; pm2 prints them even into a file). A failed ./run (non-zero exit, or no result) also opens a red-bordered error dialog on top (`.run-error`): the failure line plus the output's `!!` lines, kept in sessionStorage (`runFail:`) until its OK. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); a prompt of just `v` does the same as `r` with RESTART_VITE=1, which makes claude3's `./run` restart vite (reloading the page). Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On win it runs as `bash ./run` inside Git Bash (`C:\Program Files\Git\bin\bash.exe -c`), since Windows can't start a script by its `#!` line (every project's `./run` is bash); on WSL and srv it runs through `systemd-run`
+- **Run.** The tab row's R (Run) button, which Project teleports after G (Git) and which calls Pane's exposed `runScript`, goes to `POST /api/run`: the backend runs the
+  project's `./run` and the page shows its output in a `<dialog>` (`.run-pop`) as it goes, asking `runResult` once a second (OK hides it, the result opens it again), the final text kept in sessionStorage until OK so a page reload doesn't lose it. Terminal colour codes are stripped from the output first (`plain`; pm2 prints them even into a file). A failed ./run (non-zero exit, or no result) also opens a red-bordered error dialog on top (`.run-error`): the failure line plus the output's `!!` lines, kept in sessionStorage (`runFail:`) until its OK. It opens only on the tab on show, and a waiting result opens when its tab is picked: a modal `<dialog>` in a hidden tab would leave the whole page inert with nothing to see. `./run` leaves an already-running vite alone (hot update only); the ctrl-click sends `restartVite` (RESTART_VITE=1, which makes claude3's `./run` restart vite, reloading the page) and `force` (FORCE_DEPLOY=1 in the script's environment): claude3's `./run` then runs `./deploy` over every host instead of `--if-stale`, and `deploy` makes rsync `--ignore-times` (a function over `rsync`), so every host is rebuilt, copied and restarted whatever its version or file times. Sessions run in the backends and the page talks to them directly, not through vite, so a vite restart only reloads the page; the event stream reconnects with full state. On win it runs as `bash ./run` inside Git Bash (`C:\Program Files\Git\bin\bash.exe -c`), since Windows can't start a script by its `#!` line (every project's `./run` is bash); on WSL and srv it runs through `systemd-run`
   (`KillMode=process`), outside the backend's cgroup (claude3.service on WSL, pm2-root.service
   on srv), so claude3's own `./run` restarting the WSL backend, or needrestart restarting
   pm2-root after a library upgrade, kills neither the script nor the vite it leaves running. The page's request
@@ -406,7 +406,7 @@ on the laptop, and talks to each backend directly.
 - Windows backend start-up: a logon-triggered scheduled task needs an admin prompt, so logon goes
   through the HKCU Run key instead. The deploy opens a shortcut (`start.lnk`, `conhost.exe
   --headless node.exe ...`) through `explorer.exe`, which outlives the deploy and WSL's interop,
-  shows no window, and is never elevated. Windows programs started under the WSL backend ("r",
+  shows no window, and is never elevated. Windows programs started under the WSL backend (the Run button,
   Claude's shell) run elevated, and a plain terminal gets Access Denied stopping a backend
   started that way. `runas /trustlevel:0x20000` does not drop the elevation.
   ponytail: `conhost --headless` is undocumented.
@@ -414,7 +414,7 @@ on the laptop, and talks to each backend directly.
   left an error, even one silenced with `-ErrorAction SilentlyContinue` (e.g.
   `Get-NetTCPConnection` on a free port). That aborted the Windows step before the start; such
   calls end with `; exit 0`.
-- The WSL backend's systemd PATH has no Windows directories, and "r" runs `./deploy` under it, so
+- The WSL backend's systemd PATH has no Windows directories, and the Run button runs `./deploy` under it, so
   `deploy` appends System32 and PowerShell's folder to PATH itself.
 - Windows writes the env key as `Path`; `childEnv` finds it case-insensitively before prepending
   `~/.local/bin`, where the CLI's installer puts it and where pm2/systemd shells leave it off.

@@ -558,8 +558,8 @@ const latest = computed(() => {
   return turns().at(-1);
 });
 
-// The prompt "r" alone runs the project's ./run on its backend instead of going to claude; "v"
-// does the same with RESTART_VITE=1, which makes claude3's ./run restart a running vite.
+// The tab row's Run button runs the project's ./run on its backend; ctrl-click sets RESTART_VITE=1
+// (claude3's ./run restarts a running vite) and FORCE_DEPLOY=1 (it deploys every host).
 // Its result shows in a <dialog> rather than window.alert so the font can be sized. claude3's own
 // ./run restarts vite, which reloads the page; unlike an alert the dialog doesn't hold that off,
 // so the text waits in sessionStorage until OK and is shown again on mount.
@@ -642,12 +642,12 @@ const runIdKey = (): string => `runId:${props.tab.id}`;
 // One ./run at a time: "asking" while its setup question is out, "going" until its result shows.
 let runState: "" | "asking" | "going" = "";
 
-// Also the footer's Run button (ctrl-click: "v"). It leaves the prompt box's text alone and never
+// The tab row's Run button (ctrl-click: restartVite plus force). It leaves the prompt box's text alone and never
 // takes focus, so the Enter that dismisses the result can't land on it and run ./run again.
 // It asks the deploy-setup question first, as a prompt does, unless the caller already has
 // (the deploy warning's Deploy comes after a prompt's). With a ./run already going it starts no
 // second one: it brings the live output back up, which OK had hidden.
-async function runScript(restartVite: boolean, askSetup = true): Promise<void> {
+async function runScript(restartVite: boolean, askSetup = true, force = false): Promise<void> {
   if (runState === "asking") return;
   if (runState === "going") {
     runLive = true;
@@ -676,7 +676,7 @@ async function runScript(restartVite: boolean, askSetup = true): Promise<void> {
     );
   }, 1000);
   try {
-    const { output } = await post<{ output: string }>(props.tab, "run", { restartVite, id });
+    const { output } = await post<{ output: string }>(props.tab, "run", { restartVite, force, id });
     sessionStorage.removeItem(runIdKey());
     showRun(`./run in ${props.tab.label} finished.\n\n${output}`);
   } catch (error) {
@@ -729,7 +729,7 @@ async function awaitRun(id: string): Promise<void> {
 // except for a prompt to the setup session itself (an answer to its question), which just goes.
 // Enter is Cancel, as in the other dialogs before a prompt (Check once "started", which changes nothing):
 // Set up starts a session that writes scripts into the project, so it takes a click.
-// A ./run (Run, "r", "v") asks the same, for the same flag; `what` is what goes on or doesn't. It
+// A ./run (the Run button) asks the same, for the same flag; `what` is what goes on or doesn't. It
 // also checks a "done" project again, so a script broken since, or a rule the check has gained, is
 // caught where it matters; the backend drops the flag when that fails.
 const SETUP_PROMPT = "Set up deploy for claude3's Run button: use the deployable skill (~/.claude/skills/deployable/SKILL.md) on this project.";
@@ -787,7 +787,7 @@ async function deploySetupOk(what: "prompt" | "run" = "prompt"): Promise<boolean
 }
 
 // Before a prompt: when files changed since the project's ./deploy (or ./run) last finished, a
-// dialog asks Deploy, Continue or Cancel. Deploy does what the prompt "r" does and leaves the
+// dialog asks Deploy, Continue or Cancel. Deploy does what the Run button does and leaves the
 // prompt unsent in the box. A failed check doesn't hold the prompt up.
 async function deployOk(): Promise<boolean> {
   let check: { script: string; files: string[] };
@@ -861,10 +861,6 @@ function checkDeploySoon(): void {
 watch(() => [props.active, props.version], checkDeploySoon, { immediate: true });
 
 async function submit(text = draft.value, keepDraft = false, snips = false): Promise<void> {
-  if ((text.trim() === "r" || text.trim() === "v") && !keepDraft) {
-    draft.value = "";
-    return runScript(text.trim() === "v");
-  }
   // Pictures or files alone are a prompt, not an empty box.
   if ((!text.trim() && (keepDraft || (!images().length && !attached().length))) || (props.session?.trashed ?? false)) return;
   // The checks before a send take a few round trips and the box keeps its text until they pass, so

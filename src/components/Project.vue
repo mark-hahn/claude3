@@ -493,7 +493,7 @@ onBeforeUnmount(() => {
           <svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
         </button>
         <Git ref="gitPopup" :tab="tab" :active="active" :version="version" :session-names="sessionNames" @closed="focusPrompt" @dirty="(dirty) => (gitDirty = dirty)" @no-repo="(none) => emit('noRepo', none)" @open-file="openInFiles" />
-        <button class="tab" :class="{ 'deploy-due': deployDue }" data-help="Run button" @mousedown.prevent @click="pane?.runScript($event.ctrlKey)">R</button>
+        <button class="tab" :class="{ 'deploy-due': deployDue }" data-help="Run button" @mousedown.prevent @click="pane?.runScript($event.ctrlKey, true, $event.ctrlKey)">R</button>
       </span>
     </Teleport>
     <aside class="sidebar">

@@ -14,8 +14,10 @@
 # Usage: ./deploy [stats] [wsl] [win] [srv]              deploy and restart these (none named: all four)
 #        ./deploy --if-stale [stats] [wsl] [win] [srv]   only those not running this version
 # A restart cuts that backend's running turns.
+# FORCE_DEPLOY=1 (the page's Run button, ctrl-click; ./run passes it on) makes rsync copy every file,
+# not only those whose size or time differ.
 set -euo pipefail
-# Whoever started this may go away partway (the page's "r" can run it under the backend it
+# Whoever started this may go away partway (the page's Run button can run it under the backend it
 # restarts). Output goes through tee, which carries on, so a lost reader can't fail an echo here
 # and let set -e stop the deploy before the remaining hosts.
 exec > >(tee --output-error=warn-nopipe /dev/null) 2>&1
@@ -23,8 +25,9 @@ exec > >(tee --output-error=warn-nopipe /dev/null) 2>&1
 # ends with its own, or for the hosts --if-stale runs as their own processes: it comes once, at the end.
 [ -n "${DEPLOY_NESTED:-}" ] || trap 'echo; echo "====== ENDED ======"' EXIT
 cd "$(dirname "$0")"
+[ -z "${FORCE_DEPLOY:-}" ] || rsync() { command rsync --ignore-times "$@"; }
 STARTED=$(date +%s.%N) # the stamp's time: see stamp
-# The prompt box's "r" runs this under the WSL backend's systemd service, whose PATH has none of
+# The Run button runs this under the WSL backend's systemd service, whose PATH has none of
 # WSL's Windows directories, so reg.exe, powershell.exe and conhost.exe weren't found.
 PATH="$PATH:/mnt/c/Windows/System32:/mnt/c/Windows/System32/WindowsPowerShell/v1.0"
 
@@ -235,7 +238,7 @@ EOF
     # Only now: the running backend holds node-pty's DLLs open.
     copy_pty -rt "$WIN_DIR"
     # Opened by Explorer, so the backend outlives this script and is never elevated, same as at
-    # logon. An "r" in the page runs this elevated, and a plain terminal can't stop a backend
+    # logon. The Run button runs this elevated, and a plain terminal can't stop a backend
     # started that way. A shortcut because Explorer takes no arguments for what it opens.
     (cd /mnt/c && powershell.exe -NoProfile -Command "\$s = (New-Object -ComObject WScript.Shell).CreateShortcut('$WIN_DIR_W\\start.lnk'); \$s.TargetPath = 'C:\\Windows\\System32\\conhost.exe'; \$s.Arguments = '--headless $WIN_NODE --experimental-strip-types $WIN_DIR_W\\server\\main.ts win'; \$s.Save(); explorer.exe '$WIN_DIR_W\\start.lnk'; exit 0" | tr -d '\r')
     wait_up win || { tail -n 10 /mnt/c/Users/mark/.claude3/win.log 2>/dev/null; exit 1; }

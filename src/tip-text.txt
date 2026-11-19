@@ -35,8 +35,8 @@ Ctrl-G: open or close it from anywhere.
 The label counts the changed files; highlighted when there are any. Off when the folder is in no git repo.
 
 @Run button
-Click: run the project's ./run (the same as the prompt r); its output shows in a dialog as it goes.
-Ctrl-click: the same as the prompt v: ./run with RESTART_VITE=1, which restarts vite and reloads this page.
+Click: run the project's ./run; its output shows in a dialog as it goes.
+Ctrl-click: force it: ./run with RESTART_VITE=1 and FORCE_DEPLOY=1, which restarts vite (reloading this page) and, in claude3, deploys and restarts every backend, copying every file whatever its version or time.
 Highlighted when files changed since the last deploy.
 
 @Tabs button

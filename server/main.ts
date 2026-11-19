@@ -19,7 +19,7 @@
 //        new { keep } -> { session } (an empty "New session"; sweeps other empty ones, as discard does)
 //        discard { keep } -> {} (drop every session with no turns, except the ids in keep)
 //        open -> { session } (for a page with none open: any empty card, or a new one; sweeps nothing)
-//        run { restartVite, id } -> { output } (the project's ./run, the prompt box's "r"; one at a time; id is the page's name for this run)
+//        run { restartVite, force, id } -> { output } (the project's ./run, the Run button; one at a time; id is the page's name for this run; force is the Run button's ctrl-click: FORCE_DEPLOY=1)
 //        runResult -> { done, code, output, id } (the last ./run's output so far and, when it's over, its exit code; id says whose run it is)
 //        deployNeeded -> { script, files } (project files changed or deleted since .deployed; see deployNeeded)
 //        deploySetup { state } -> {} (the project's deploySetup: "started" or "none")
@@ -851,7 +851,7 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     return {};
   }
   if (name === "run") {
-    return { output: await runScript(project, body.restartVite === true, String(body.id ?? "")) };
+    return { output: await runScript(project, body.restartVite === true, body.force === true, String(body.id ?? "")) };
   }
   if (name === "runResult") {
     return runResult(project);
@@ -973,7 +973,8 @@ function errorText(error: unknown): string {
 // the next backend can answer runResult. The unit needs a fresh name each time: one that leaves
 // vite running stays loaded as long as vite does, so a fixed name would refuse every later ./run.
 // Done at the script's exit, not its pipes' close: a detached child may hold them open.
-// restartVite sets RESTART_VITE=1 for it (the page's "v" prompt); claude3's ./run then restarts vite.
+// restartVite sets RESTART_VITE=1 for it (the Run button's ctrl-click); claude3's ./run then restarts vite.
+// force sets FORCE_DEPLOY=1 (also the ctrl-click): claude3's ./run then deploys every host whatever its version.
 // Windows can't start a script by its #! line, so there ./run goes through Git Bash; every
 // project's ./run is bash on every host. The ~/.claude/skills/deployable skill (skills/ here) is
 // what tells a project's Claude how to write one; keep it in step with this, deployNeeded and deployCheck.
@@ -986,7 +987,7 @@ const isFile = (cwd: string, name: string): boolean => fs.statSync(path.join(cwd
 // launcher, and the script ran on under both.
 const RUN_LIMIT_S = 300;
 const TIMED_OUT = 124;
-function runScript(project: Project, restartVite: boolean, id: string): Promise<string> {
+function runScript(project: Project, restartVite: boolean, force: boolean, id: string): Promise<string> {
   const cwd = project.tab.path;
   if (!isFile(cwd, "run")) {
     return Promise.reject(new Error(`No ./run in ${cwd}.`));
@@ -1006,13 +1007,13 @@ function runScript(project: Project, restartVite: boolean, id: string): Promise<
   const detached = hostName !== "win";
   const limit = String(RUN_LIMIT_S);
   const [command, ...args] = detached
-    ? ["systemd-run", "--quiet", "--collect", "--wait", "--expand-environment=no", "-p", "KillMode=process", "-p", `WorkingDirectory=${cwd}`, "-E", `PATH=${process.env.PATH}`, "-E", `HOME=${os.homedir()}`, ...(restartVite ? ["-E", "RESTART_VITE=1"] : []), "/bin/sh", "-c", 'timeout "$3" ./run > "$1" 2>&1; code=$?; echo $code > "$2"; exit $code', "sh", logFile, statusFile, limit]
+    ? ["systemd-run", "--quiet", "--collect", "--wait", "--expand-environment=no", "-p", "KillMode=process", "-p", `WorkingDirectory=${cwd}`, "-E", `PATH=${process.env.PATH}`, "-E", `HOME=${os.homedir()}`, ...(restartVite ? ["-E", "RESTART_VITE=1"] : []), ...(force ? ["-E", "FORCE_DEPLOY=1"] : []), "/bin/sh", "-c", 'timeout "$3" ./run > "$1" 2>&1; code=$?; echo $code > "$2"; exit $code', "sh", logFile, statusFile, limit]
     : hostName === "win"
       ? [GIT_BASH, "-c", `/usr/bin/timeout ${limit} bash ./run`]
       : ["timeout", limit, "./run"];
   log(`./run in ${cwd}`);
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, env: { ...process.env, ...(restartVite ? { RESTART_VITE: "1" } : {}) }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    const child = spawn(command, args, { cwd, env: { ...process.env, ...(restartVite ? { RESTART_VITE: "1" } : {}), ...(force ? { FORCE_DEPLOY: "1" } : {}) }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     let output = "";
     let exited = false; // something the script left running may hold the pipes and keep writing
     const take = (chunk: Buffer): void => {

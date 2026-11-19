@@ -6,7 +6,7 @@ description: Give this project a ./run (and usually a ./deploy) that claude3's R
 # Make this project deployable from claude3's Run button
 
 claude3 is the user's browser page; each tab is a project on one host. Its footer's **Run** button
-(also a prompt of just `r`, and Deploy in its deploy warning) runs `./run` in the project folder,
+(and Deploy in its deploy warning) runs `./run` in the project folder,
 on the tab's host. This skill says what claude3 expects of `./run` and how to make the deploy do
 only what is needed. The source is `skills/deployable/SKILL.md` in the claude3 repo (WSL,
 /root/apps/claude3), and claude3's `./deploy` copies it to every host; fix it there, not here.
