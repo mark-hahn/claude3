@@ -58,7 +58,16 @@ const stored = JSON.parse(localStorage.getItem(selectKey) ?? "{}") as Record<str
 const selections = reactive<Record<string, string[]>>(Object.fromEntries(Object.entries(stored).map(([folder, paths]) => [folder, [paths].flat()])));
 watch(() => [...opened], (folders) => localStorage.setItem(openKey, JSON.stringify(folders)));
 watch(selections, (all) => localStorage.setItem(selectKey, JSON.stringify(all)), { deep: true });
-const selected = computed(() => new Set(selections[rootKey.value] ?? []));
+// How far the tree was scrolled, per root, so reopening the column shows what was on show, not the selection.
+const scrollKey = `filesScroll:${props.tab.id}`;
+const scrolls = JSON.parse(localStorage.getItem(scrollKey) ?? "{}") as Record<string, number>;
+// Not while the tree is hidden (file mode): a hidden box reports 0.
+function saveScroll(): void {
+  if (!tree.value?.clientHeight) return;
+  scrolls[rootKey.value] = tree.value.scrollTop;
+  localStorage.setItem(scrollKey, JSON.stringify(scrolls));
+}
+const selected =computed(() => new Set(selections[rootKey.value] ?? []));
 // Where shift-click's run starts: the last row selected.
 let anchor = "";
 function select(...paths: string[]): void {
@@ -624,13 +633,19 @@ watch(() => props.fileMode, async (editing) => {
   await nextTick();
   if (!editing) treeArea.value?.focus();
 });
-onMounted(() => {
-  focusTree();
+onMounted(async () => {
+  treeArea.value?.focus();
   poller = window.setInterval(() => {
     if (document.hidden || !props.active) return;
     if (!props.fileMode) void refresh();
     else if (file.value?.rendered) void rereadRendered();
   }, 2000);
+  // Back to where the tree was left; the selection is scrolled to only for a root never scrolled.
+  const saved = scrolls[rootKey.value];
+  await refresh();
+  await nextTick();
+  if (saved !== undefined && tree.value?.clientHeight) tree.value.scrollTop = saved;
+  else void showSelection();
 });
 onBeforeUnmount(() => window.clearInterval(poller));
 </script>
@@ -680,7 +695,7 @@ onBeforeUnmount(() => window.clearInterval(poller));
         <template v-else>{{ withSeparator(root) }}<span class="files-relative">{{ shownBelowRoot }}</span></template>
       </div>
       <div v-if="note || listProblem" class="files-note">{{ note || listProblem }}</div>
-      <div ref="tree" class="files-tree" data-help="Files tree">
+      <div ref="tree" class="files-tree" data-help="Files tree" @scroll="saveScroll">
         <div
           v-for="row in rows"
           :key="row.path"
