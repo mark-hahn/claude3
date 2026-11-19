@@ -21,9 +21,10 @@ export interface TailChunk {
 
 // The processes pm2 runs in the folder or below it: their out and error logs, which pm2 keeps
 // under ~/.pm2/logs, outside the project. Only asked when pm2's daemon is up, as `pm2 jlist` would start it.
+const pm2Home = (): string => process.env.PM2_HOME ?? path.join(os.homedir(), ".pm2");
+
 function pm2Logs(root: string): Promise<string[]> {
-  const home = process.env.PM2_HOME ?? path.join(os.homedir(), ".pm2");
-  if (!fs.existsSync(path.join(home, "pm2.pid"))) {
+  if (!fs.existsSync(path.join(pm2Home(), "pm2.pid"))) {
     return Promise.resolve([]);
   }
   return new Promise((resolve) => {
@@ -73,14 +74,23 @@ async function walkLogs(root: string): Promise<string[]> {
   return found;
 }
 
-// Non-empty logs first, the most recently written of them on top: the first is the one the pane opens on.
-export const byRelevance = (a: LogEntry, b: LogEntry): number => Number(b.size > 0) - Number(a.size > 0) || b.mtime - a.mtime;
+// The first is the one the pane opens on: the biggest of the logs written in the last week (the main log
+// is the one most is added to, and a daily rotation keeps its size about a day's writing; the newest write
+// alone would flip between a project's pm2 processes), then older ones with text, newest first, empty ones last.
+const WEEK = 7 * 86_400_000;
+export const byRelevance = (a: LogEntry, b: LogEntry): number => {
+  const tier = (log: LogEntry): number => (log.size === 0 ? 2 : Date.now() - log.mtime < WEEK ? 0 : 1);
+  return tier(a) - tier(b) || (tier(a) === 0 ? b.size - a.size : 0) || b.mtime - a.mtime;
+};
 
-export async function findLogs(root: string, pm2 = pm2Logs): Promise<{ logs: LogEntry[] }> {
+// A path from the project's folder; pm2's own logs, which are never in it, say `pm2/` in place of the way out to its folder.
+export const logLabel = (root: string, home: string, file: string): string => (isInside(home, file) ? `pm2/${path.relative(home, file)}` : path.relative(root, file)).replaceAll("\\", "/");
+
+export async function findLogs(root: string, pm2 = pm2Logs, home = pm2Home()): Promise<{ logs: LogEntry[] }> {
   const files = [...new Set([...(await pm2(root)), ...(await walkLogs(root))])];
   const entries = await Promise.all(files.map(async (file): Promise<LogEntry | null> => {
     const found = await fs.promises.stat(file).catch(() => null);
-    return found?.isFile() ? { path: file, label: path.relative(root, file).replaceAll("\\", "/"), size: found.size, mtime: found.mtimeMs } : null;
+    return found?.isFile() ? { path: file, label: logLabel(root, home, file), size: found.size, mtime: found.mtimeMs } : null;
   }));
   return { logs: entries.filter((one) => one !== null).sort(byRelevance) };
 }

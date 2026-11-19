@@ -35,7 +35,8 @@ assert.deepEqual(await tailWait(file, last.end, last.ino), { text: "unfinished m
 assert.deepEqual(await tailWait(file, last.end + 100000, last.ino), { reset: true });
 assert.deepEqual(await tailWait(file, last.end, last.ino + 1), { reset: true });
 
-// Which logs: pm2's (outside the folder), the folder's own, not rotated copies, not node_modules, the newest non-empty first.
+// Which logs: pm2's (outside the folder, labelled pm2/ from pm2's own folder), the folder's own, not rotated copies, not node_modules;
+// the biggest written this week first, then older ones with text, then empty ones.
 fs.mkdirSync(path.join(dir, "node_modules"));
 fs.writeFileSync(path.join(dir, "node_modules", "x.log"), "x\n");
 fs.writeFileSync(path.join(dir, "app-out__2026-11-17_00-00-00.log"), "old\n");
@@ -46,9 +47,12 @@ fs.writeFileSync(pm2Out, "hello\n");
 const ago = (name, seconds) => fs.utimesSync(name, new Date(Date.now() - seconds * 1000), new Date(Date.now() - seconds * 1000));
 ago(path.join(dir, "none.log"), 1000);
 ago(file, 3600);
-const { logs } = await findLogs(dir, async () => [pm2Out, path.join(outside, "gone.log"), "/dev/null"]);
-assert.deepEqual(logs.map((one) => one.label), [path.relative(dir, pm2Out), "none.log", "big.log", "empty.log"]);
-assert.equal(logs[0].path, pm2Out);
+fs.writeFileSync(path.join(dir, "old.log"), "x\n");
+ago(path.join(dir, "old.log"), 30 * 86400);
+fs.writeFileSync(path.join(dir, "tiny.log"), "t\n");
+const { logs } = await findLogs(dir, async () => [pm2Out, path.join(outside, "gone.log"), "/dev/null"], outside);
+assert.deepEqual(logs.map((one) => one.label), ["big.log", "none.log", "pm2/app-out.log", "tiny.log", "old.log", "empty.log"]);
+assert.equal(logs[2].path, pm2Out);
 assert.ok(!logs.some((one) => /node_modules|__20/.test(one.label)));
 
 fs.rmSync(dir, { recursive: true, force: true });

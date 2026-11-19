@@ -1,6 +1,6 @@
 // Ctrl-wheel sizes a pane's text, for panes that aren't a Monaco editor (monaco.ts has addWheelZoom
 // for those): the returned handler goes on the pane. As there, the size is remembered and has no
-// limits of ours (CLAUDE.md's one exception to 14-18px, at the user's asking) beyond staying visible.
+// limits of ours beyond staying visible.
 // It lives in the CSS variable --<name> on the root, like --sidebar-width, so the pane in every tab
 // follows at once.
 export function wheelZoom(name: string): (event: WheelEvent) => void {

@@ -9,6 +9,7 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { postHost } from "../api.ts";
+import { wheelZoom } from "../wheelZoom.ts";
 
 const props = defineProps<{ tab: Tab; active: boolean }>();
 interface Chunk {
@@ -108,6 +109,14 @@ function scrolled(): void {
   if (box.value!.scrollTop < 200) void loadUp();
 }
 
+// Ctrl-wheel sizes the text; a view at the bottom stays there, as new lines keep it.
+const zoom = wheelZoom("tail-font-size");
+function onWheel(event: WheelEvent): void {
+  const stick = atBottom();
+  zoom(event);
+  if (event.ctrlKey && stick) toBottom();
+}
+
 const remember = (path: string): void => localStorage.setItem(savedKey, path);
 
 watch(chosen, (path) => void follow(path));
@@ -125,7 +134,7 @@ onBeforeUnmount(() => (alive = false));
 </script>
 
 <template>
-  <div class="tail">
+  <div class="tail" @wheel="onWheel">
     <div class="tail-head">
       <select v-if="logs.length" v-model="chosen" :class="{ following }" aria-label="Log file" data-help="Tail log select" @change="remember(($event.target as HTMLSelectElement).value)"><option v-for="log in logs" :key="log.path" :value="log.path">{{ log.label }}</option></select>
       <span v-else-if="loaded && !note">No log files found in this project's folder, or run by pm2 from it.</span>
@@ -143,5 +152,5 @@ onBeforeUnmount(() => (alive = false));
 .tail-note { flex: none; background: #fbd9d9; border: 1px solid #e4a7a7; border-radius: 8px; padding: 4px 8px; overflow-wrap: anywhere; }
 /* overflow-anchor off: the script keeps the view still when lines are added above it. */
 .tail-text { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
-.tail-text pre { margin: 0; padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink); }
+.tail-text pre { margin: 0; padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: var(--tail-font-size, 14px)/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--ink); }
 </style>

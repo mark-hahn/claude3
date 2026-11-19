@@ -14,7 +14,7 @@ Ctrl-G: open or close the Git popup.
 Ctrl-Alt-Z: the big prompt editor on or off (the prompt box full height left of the history).
 Ctrl-Alt-X: in the big prompt editor, the prompt shown as markdown, and back.
 Enter: anywhere outside a text box or the footer, selects and opens the last block; again, opens or closes its box.
-Ctrl-wheel: text size of the history, Files tree and editor, Log, Snips, terminal and the big prompt editor (each with its markdown view), each remembered.
+Ctrl-wheel: text size of the history, Files tree and editor, Log, Tail, Snips, terminal and the big prompt editor (each with its markdown view), each remembered.
 Alt-click: copies a bar's prompt, a box's text, a code block, a card's name, a Files row's path, a Log row's message.
 In a dialog: Enter presses its default button, Esc or a click on the gray outside closes it.
 Ctrl-R: reload the page (also in the terminal).
@@ -317,12 +317,13 @@ Alt-click: copy its message.
 Ctrl-wheel: text size.
 
 @Tail log select
-Pick the log to show, by its path from the project's folder (pm2's logs are outside it, so start with ../). The most recently written one that has text is picked first; a pick of yours is remembered for this tab.
+Pick the log to show, by its path from the project's folder (pm2's logs, which are in pm2's own folder, start with pm2/). The biggest one written in the last week is picked first; a pick of yours is remembered for this tab.
 Yellow: the view is at the bottom and follows new lines.
 
 @Tail log
 The last 500 whole lines of the log, new ones as they are written. Scroll to the top for 500 older ones, back to the file's start.
 At the bottom it follows new lines (the select goes yellow); scrolled up, it stays where it is.
+Ctrl-wheel: text size.
 
 @Term + button
 Click: add a terminal right below, on the project's host in its folder. Three at most.
