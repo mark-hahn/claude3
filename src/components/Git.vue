@@ -397,6 +397,21 @@ async function commit(): Promise<void> {
   void refresh();
 }
 
+// Push alone: for a commit whose push failed ("Committed, but the push failed"). `committing` is held too, so
+// nothing else (Commit, a reword, Close) runs under it.
+const pushing = ref(false);
+async function push(): Promise<void> {
+  if (committing.value || describing.value) return;
+  committing.value = pushing.value = true;
+  error.value = "";
+  try {
+    await post(props.tab, "push", {});
+  } catch (problem) {
+    error.value = messageOf(problem);
+  }
+  committing.value = pushing.value = false;
+}
+
 // Like VS Code's generate button: Opus 5.5 writes the commit message, replacing what's in the box.
 async function describe(): Promise<void> {
   describing.value = true;
@@ -505,6 +520,7 @@ function onMessageKey(event: KeyboardEvent): void {
         <button data-help="Git ↓ button" :disabled="describing || committing || named >= sessionNames.length - 1" @click="walkNames(1)">↓</button>
         <button data-help="Git Clr button" :disabled="describing || committing" @click="clearMessage">Clr</button>
         <button data-help="Git AI button" :disabled="describing || committing || !files.length" @click="describe">{{ describing ? "AI…" : "AI" }}</button>
+        <button data-help="Git Push button" :disabled="describing || committing" @click="push">{{ pushing ? "Pushing…" : "Push" }}</button>
         <button class="git-commit" data-help="Git Commit button" :disabled="!canCommit" @click="commit">{{ committing ? "Committing…" : "Commit" }}</button>
         </template>
         <button :disabled="committing" data-help="Git Close button" @click="dialog?.close()">Close</button>

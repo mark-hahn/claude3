@@ -29,7 +29,7 @@
 //        gitCommit { hash } -> { files: [{ x, y, path, from?, full }] } (the files that commit changed, against its first parent, as status entries)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
 //        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
-//        commit { message } -> {} (add everything, commit, push) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
+//        commit { message } -> {} (add everything, commit, push) | push {} -> {} (git push, for a commit whose push failed) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
 //        each with term, 0 to 2: which of the tab's terminals, and cwd, the folder its shell starts in (the tab needn't be this host's). termRead { id, at, cols, rows } -> { id, at, text, reset, idle, exited } (its pty, started on first ask: its output past at, waiting up to 2s for some; reset: the whole last 1000 lines; idle: ms since the last output or key)
 //        termSend { data } -> {} (keys as typed) | termResize { cols, rows } -> {} | termClear {} -> {} (the buffer down to the prompt line) | termClose {} -> {} (a terminal the page took out, by its Close or its shell's exit: forgotten, a pty still running ended) (server/term.ts)
 //        reword { hash, message } -> {} (a new subject for the branch's newest commit, pushed)
@@ -822,6 +822,10 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   }
   if (name === "commit") {
     return await commit(project, String(body.message ?? "").trim());
+  }
+  if (name === "push") {
+    await git(project, "push");
+    return {};
   }
   if (name === "revert") {
     // Status paths are from the repo's top, the project may be below it, and a name may hold * or [.

@@ -275,6 +275,9 @@ Click: clear the message. The message box takes the focus.
 @Git AI button
 Click: Opus 5.5 writes the message from the changes. The message box takes the focus.
 
+@Git Push button
+Click: push the branch, for a commit whose push failed. A failure shows in the popup.
+
 @Git Commit button
 Click: add every change, commit with the message, and push.
 Ctrl+Enter in the message box does the same.

@@ -55,7 +55,7 @@ on the laptop, and talks to each backend directly.
   selected session to the pane. Picking a tab focuses its prompt box (the `active` prop), and so does a click on the tab already on show (`focusAsked`) or on a card.
 - `src/components/Git.vue`: the Git button (label counts the changed files, disabled when the project's folder is in no git repo) and its `<dialog>`, which Ctrl-G opens and closes from anywhere on the page (window capture listener, so Monaco's go-to-line never sees it), a
   small VS Code Source Control: message, staged and changed files, Commit (= `add -A`, commit,
-  push on the backend). File rows are picked with `src/pick.ts` (keys are the list's letter plus the path, since a file
+  push on the backend) and Push (the `push` action: a bare `git push`, for a commit whose push failed; errors go in the popup). File rows are picked with `src/pick.ts` (keys are the list's letter plus the path, since a file
   can be in both lists); Delete or Ctrl-Z in the list asks, then `revert` (`git clean -f` the untracked ones, `git restore
   --source=HEAD --staged --worktree` the rest plus a rename's old path, all as `:(top,literal)` pathspecs since status paths
   are from the repo's top), and the dialog stays open. With exactly one row picked the dialog widens to the window's right
