@@ -1359,6 +1359,8 @@ const server = createServer((req, res) => {
 server.listen(host.port, host.bind, () => {
   log(`claude3 ${hostName} backend on ${host.bind}:${host.port} for ${tabList().map((tab) => tab.label).join(", ")}`);
   void loadModels();
+  // Rearms the reading before each quota window resets, which a restart (a deploy) drops.
+  quota.shared(0, "").catch((error) => log(`Quota at start failed: ${errorText(error)}`));
 });
 
 // The CLI processes are children and go with the backend. Their turns keep the text streamed so

@@ -101,8 +101,13 @@ on the laptop, and talks to each backend directly.
 - `src/modelsWatch.ts`: the Models pane's data for every host (`models` + `cliVersion` actions), used by Settings' Models button (`checkModels(true)`, the pane fills from this tab's host) and by App's hourly `watchModels` (first check an hour after the last, kept in localStorage `claude3.models` with each host's `seen` and `latest` string). `modelsChanged` (any host's rows or CLI version differ from `seen`; the Default box isn't compared; a host that didn't answer, or whose token-limits read failed, is skipped) lights the gear and the Models button light red until the Models button is clicked.
 - `server/quota.ts`: claude2's QuotaService and its stats-server calls. The account's one history
   and the poll lease live on claude-stats, one for all three backends; local
-  fallback files in `~/.claude3/quota-*.json`. Its one timer, `armFinalReading`, takes a lease-gated reading 2 minutes before
-  the soonest window reset, since the endpoint forgets a window's final value once it resets. `sendQuota` in main.ts broadcasts each reading as a host-wide `quota` event
+  fallback files in `~/.claude3/quota-*.json`. The lease spaces readings 30 minutes apart (`quotaFreshMs`, claude-stats). Its one timer chain,
+  `armFinalReading` -> `takeFinalReading`, takes the reading 2 minutes before the soonest window reset, since the endpoint
+  forgets a window's final value once it resets: a `final` claim (`POST /quota/claim {final:true}`) passes the 30 minutes and a
+  429 pause, needing only that no reading came in the last minute; each backend retries every 35s until one lands (or a 429,
+  or 10s before the reset), so another backend takes over a failed call. Rearmed by every reading and by `quota.shared` at
+  the backend's start (a deploy drops the timer). Checked by `server/quota.check.mjs`. The page draws each line from 0 at
+  the window's start (`carriedPoints` in Settings.vue). `sendQuota` in main.ts broadcasts each reading as a host-wide `quota` event
   (on stream connect, at each turn's end, after the Quotas pane's reading); the page keeps the newest from any host in
   `quotaUse` (`src/api.ts`), and every footer's `quotaSpend` (`shared/types.ts`) puts a red `$0.00` in place of the
   ponytail stat once a window not yet reset is at 95%, the month's extra-usage spend from 100%. The pane's Fable line (`modelScopedWindow`) adds up every weekly limit on a Fable model.

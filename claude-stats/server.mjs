@@ -9,7 +9,7 @@
 //   GET  /quota                          -> { rows, readAt, pausedUntil, state }
 //   GET  /quota/meta                     -> { readAt, pausedUntil } : open panes poll this every 30s
 //   POST /quota   body: { rows?, readAt?, pausedUntil?, state? } -> merge a reading
-//   POST /quota/claim                    -> { poll } : the right to call the usage endpoint
+//   POST /quota/claim  body: { final? }  -> { poll } : the right to call the usage endpoint; final: the reading before a window resets
 //   GET  /checks                         -> { months: { <YYYY-MM>: { usd, count } } } : the API key's spend as claude2 recorded it; nothing adds to it
 //   GET  /snips                          -> { text } : the Snips' text ({} until first saved)
 //   POST /snips  body: { text }          -> replace it
@@ -39,11 +39,14 @@ try {
   // run from the repo
 }
 
-// Freshness the lease counts from — a touch under the pane's five-minute timer, so a tick
-// that lands a hair early still defers. claimedAt expires on its own: a backend that claims and
-// then dies mid-read costs one skipped cycle, not a stuck fleet.
-const quotaFreshMs = 4.5 * 60 * 1000;
+// The least time between two readings of the usage endpoint, counted from the last one that got
+// through, so the fleet calls it at most twice an hour (Update aside). claimedAt expires on its
+// own: a backend that claims and then dies mid-read costs one skipped cycle, not a stuck fleet.
+const quotaFreshMs = 30 * 60 * 1000;
 const quotaClaimMs = 30 * 1000;
+// The endpoint forgets a window at its reset, so a claim marked final (the backends' reading just
+// before a reset) is held back only by a reading from the last minute, and a 429 pause doesn't stop it.
+const quotaFinalFreshMs = 60 * 1000;
 const emptyQuota = { rows: [], readAt: 0, pausedUntil: 0, claimedAt: 0, state: null };
 
 let data = { quota: { ...emptyQuota }, checks: {}, speechmatics: {}, snips: null, projectSnips: {} };
@@ -191,10 +194,11 @@ async function handle(request, response) {
   if (request.method === "POST" && url.pathname === "/quota/claim") {
     const now = Date.now();
     const quota = data.quota;
-    if (now < quota.pausedUntil) {
+    const final = JSON.parse((await readBody(request)) || "{}")?.final === true;
+    if (!final && now < quota.pausedUntil) {
       return json(200, { poll: false, pausedUntil: quota.pausedUntil });
     }
-    if (now - quota.claimedAt < quotaClaimMs || now - quota.readAt < quotaFreshMs) {
+    if (now - quota.claimedAt < quotaClaimMs || now - quota.readAt < (final ? quotaFinalFreshMs : quotaFreshMs)) {
       return json(200, { poll: false });
     }
     quota.claimedAt = now;

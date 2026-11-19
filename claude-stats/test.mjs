@@ -70,7 +70,42 @@ async function main() {
   await call("POST", "/quota", { pausedUntil: now });
   assert.equal((await claim()).pausedUntil, paused, "nobody can cut another host's pause short");
 
+  await finalClaims();
   console.log("claude-stats checks passed");
+}
+
+// The claim before a window resets, on servers that last read 10 minutes ago: a final claim is
+// not held back by the 30 minutes or a 429 pause, only by a reading from the last minute.
+async function finalClaims() {
+  const now = Date.now();
+  await onServer({ quota: { readAt: now - 600_000, claimedAt: now - 300_000, pausedUntil: now + 600_000 } }, async (post) => {
+    assert.equal((await post("/quota/claim", {})).poll, false, "a normal claim waits out the pause");
+    assert.equal((await post("/quota/claim", { final: true })).poll, true, "the final claim ignores the pause and the 30 minutes");
+    assert.equal((await post("/quota/claim", { final: true })).poll, false, "and still leaves one caller per claim");
+  });
+  await onServer({ quota: { readAt: now - 600_000, claimedAt: now - 300_000 } }, async (post) => {
+    await post("/quota", { readAt: Date.now() });
+    assert.equal((await post("/quota/claim", { final: true })).poll, false, "a reading from the last minute stands in for it");
+  });
+}
+
+async function onServer(seed, run) {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), "claude-stats-final-"));
+  fs.writeFileSync(path.join(folder, "data.json"), JSON.stringify(seed));
+  const other = spawn(process.execPath, [path.join(import.meta.dirname, "server.mjs")], { env: { ...process.env, PORT: "0", CLAUDE_STATS_DIR: folder }, stdio: ["ignore", "pipe", "inherit"] });
+  try {
+    const base = await new Promise((resolve, reject) => {
+      other.stdout.on("data", (chunk) => {
+        const found = /listening on (\d+)/.exec(String(chunk));
+        if (found) resolve(`http://127.0.0.1:${found[1]}`);
+      });
+      other.once("exit", () => reject(new Error("the server stopped before it listened")));
+    });
+    await run(async (urlPath, body) => (await fetch(base + urlPath, { method: "POST", body: JSON.stringify(body) })).json());
+  } finally {
+    other.kill();
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
 }
 
 main().catch((error) => {

@@ -48,7 +48,11 @@ export interface QuotaHistoryPayload {
 const usageUrl = "https://api.anthropic.com/api/oauth/usage";
 const oneMinuteMs = 60 * 1000;
 const fifteenMinutesMs = 15 * 60 * 1000;
+// The reading before a window resets (armFinalReading): first tried 2 minutes ahead, retried every
+// 35s (just past the stats server's 30s hold on a claim) until one lands, and abandoned 10s from the reset.
 const finalReadingLeadMs = 2 * 60 * 1000;
+const finalRetryMs = 35 * 1000;
+const finalGiveUpMs = 10 * 1000;
 // The endpoint rate-limits the whole account (ten calls in five minutes draws a 429), so the only
 // timer is the one reading just before a window resets (armFinalReading): otherwise a reading is
 // taken when a Quotas pane opens or ticks, at a turn's end, or on Update, and the stats server's
@@ -122,6 +126,7 @@ export class QuotaService {
   private lastFailureReason: string | null = null;
   private pausedUntil = 0;
   private finalReadingFor = 0;
+  private rateLimitedAt = 0;
   private finalReadingTimer: NodeJS.Timeout | undefined;
   private readonly dir: string;
   private readonly cwd: string;
@@ -160,7 +165,7 @@ export class QuotaService {
     return { readAt: this.lastReadAt || null, rows: [...this.readings].sort((left, right) => left.at - right.at), state: this.state };
   }
 
-  public async read(force: boolean, why = force ? "Update" : "lease won"): Promise<QuotaState> {
+  public async read(force: boolean, why = force ? "Update" : "lease won", final = false): Promise<QuotaState> {
     await this.ensureLoaded();
     await this.adoptShared();
     if (!force && this.lastReadAt && Date.now() - this.lastReadAt < oneMinuteMs) {
@@ -172,16 +177,17 @@ export class QuotaService {
       }
       await this.inFlight;
     }
-    this.inFlight = this.takeReading(force, why).finally(() => {
+    this.inFlight = this.takeReading(force, why, final).finally(() => {
       this.inFlight = null;
     });
     return await this.inFlight;
   }
 
-  private async takeReading(force: boolean, why: string): Promise<QuotaState> {
+  private async takeReading(force: boolean, why: string, final: boolean): Promise<QuotaState> {
     const now = Date.now();
     // Update (force) always tries the endpoint; a reading that succeeds ends the pause for everyone.
-    if ((!force && this.pausedUntil > now) || !(await this.claim(force))) {
+    // The reading before a window resets (final) tries through a pause too: after the reset the value is gone.
+    if ((!force && !final && this.pausedUntil > now) || !(await this.claim(force, final))) {
       const paused = this.pausedUntil > now;
       this.state = { ...this.state, pausedUntil: this.pausedUntil || null, error: paused ? rateLimitedMessage(this.pausedUntil) : this.state.error };
       return this.state;
@@ -218,6 +224,7 @@ export class QuotaService {
     if (response.statusCode === 429) {
       // Capped: the endpoint has asked for 8-11 hour waits yet answered fine within the hour.
       this.pausedUntil = Math.min(retryAfterMs(response.retryAfter), Date.now() + fifteenMinutesMs);
+      this.rateLimitedAt = Date.now();
       this.log(`quota: 429 from usage endpoint, retry-after ${response.retryAfter ?? "(none)"}, pausing until ${new Date(this.pausedUntil).toLocaleTimeString()}`);
       throw new Error(rateLimitedMessage(this.pausedUntil));
     }
@@ -299,14 +306,15 @@ export class QuotaService {
     await this.probeInFlight;
   }
 
-  // The right to call the endpoint is leased: the server hands out one claim per five-minute cycle
-  // and everyone else paints the winner's reading. Update skips the queue. An unreachable server
+  // The right to call the endpoint is leased: the server hands out one claim per 30 minutes
+  // and everyone else paints the winner's reading. Update skips the queue. A final claim (the reading
+  // before a window resets) is held back only by a reading from the last minute. An unreachable server
   // means no lease to be had: poll anyway.
-  private async claim(force: boolean): Promise<boolean> {
+  private async claim(force: boolean, final: boolean): Promise<boolean> {
     if (force) {
       return true;
     }
-    const reply = await httpJson("POST", "/quota/claim", {}, sharedTimeoutMs, this.log);
+    const reply = await httpJson("POST", "/quota/claim", final ? { final: true } : {}, sharedTimeoutMs, this.log);
     if (reply === null) {
       return true;
     }
@@ -389,20 +397,43 @@ export class QuotaService {
   }
 
   // The endpoint forgets a window once it resets, so a reading just before the soonest reset keeps
-  // that window's final value for the graph. Every backend arms the same moment and the lease lets
-  // one of them call; a reading already taken in the last 4.5 minutes stands in for it.
+  // that window's final value for the graph. Every backend runs the same chain from the same reset
+  // time and the stats server's lease lets one of them call, so a call that fails is retried by all.
+  // The chain is rearmed by every reading and by a backend's start (a deploy drops the timer).
   private armFinalReading(): void {
     const now = Date.now();
-    const soonest = Math.min(...this.state.windows.map((window) => window.resetsAt ?? Infinity).filter((seconds) => seconds * 1000 - finalReadingLeadMs > now));
+    const soonest = Math.min(...this.state.windows.map((window) => window.resetsAt ?? Infinity).filter((seconds) => seconds * 1000 - finalGiveUpMs > now));
     if (!Number.isFinite(soonest) || soonest === this.finalReadingFor) {
       return;
     }
     this.finalReadingFor = soonest;
+    this.scheduleFinalReading(soonest, Math.max(now, soonest * 1000 - finalReadingLeadMs));
+  }
+
+  private scheduleFinalReading(resetSeconds: number, at: number): void {
     clearTimeout(this.finalReadingTimer);
-    this.finalReadingTimer = setTimeout(() => {
-      this.read(false, "before window reset").catch((error) => this.log(`quota: reading before window reset failed: ${errorMessage(error)}`));
-    }, soonest * 1000 - finalReadingLeadMs - now);
+    this.finalReadingTimer = setTimeout(() => void this.takeFinalReading(resetSeconds), at - Date.now());
     this.finalReadingTimer.unref();
+  }
+
+  private async takeFinalReading(resetSeconds: number): Promise<void> {
+    const started = Date.now();
+    const resetMs = resetSeconds * 1000;
+    try {
+      await this.read(false, "before window reset", true);
+    } catch (error) {
+      this.log(`quota: reading before window reset failed: ${errorMessage(error)}`);
+    }
+    // Done when a reading from the last minute exists (ours or another backend's, as the stats server
+    // counts it), or the endpoint answered 429, which another try would only repeat.
+    const got = this.lastReadAt >= started - oneMinuteMs;
+    const limited = this.rateLimitedAt >= started;
+    const next = Date.now() + finalRetryMs;
+    if (got || limited || next > resetMs - finalGiveUpMs) {
+      this.log(`quota: reading before the ${new Date(resetMs).toLocaleTimeString()} reset ${got ? "taken" : limited ? "refused with a 429" : "not taken in time"}`);
+      return;
+    }
+    this.scheduleFinalReading(resetSeconds, next);
   }
 
   private async readSharedMeta(): Promise<{ lastReadAt: number; pausedUntil: number; state: QuotaState | null }> {

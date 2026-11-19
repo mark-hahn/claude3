@@ -373,6 +373,8 @@ function drawSvg(period: any, width: number, height: number): string {
 function carriedPoints(points: { t: number; v: number }[], period: any): { t: number; v: number }[] {
   const sorted = points.slice().sort((left, right) => left.t - right.t);
   if (sorted.length === 0) return sorted;
+  // A window starts at 0, so the line runs from there to the first reading however late that came.
+  if (sorted[0]!.t > period.start) sorted.unshift({ t: period.start, v: 0 });
   const knownTo = Math.min(period.end, payload.readAt || Date.now());
   const last = sorted[sorted.length - 1]!;
   if (last.t < knownTo) sorted.push({ t: knownTo, v: last.v });
