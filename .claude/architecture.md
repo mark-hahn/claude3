@@ -110,7 +110,9 @@ on the laptop, and talks to each backend directly.
   `draft` ref both ways. claude2's big prompt editor: Ctrl-Alt-click in the box or Ctrl-Alt-Z
   (the tab on show only, via the `active` prop) puts the box full height left of the history,
   per session in localStorage (`bigPrompt:<tab>:<session id>`); Ctrl-Alt-X there shows it
-  rendered as markdown. A plain Enter outside the prompt box and the controls (claude2's
+  rendered as markdown. Up at the box's very start and Down at its very end walk the session's
+  prompts (`recallKey`: the Git dialog's `MessageHistory`, rebuilt from the turns when the
+  session or its turn count changes; the typed text waits in its slot). A plain Enter outside the prompt box and the controls (claude2's
   `selectBottomBlock`) selects and opens the last block; pressed again it toggles that box.
 - `server/capture.ts`: claude2's PowerShell screen shot, returned as a PNG data URI.
 - `src/copy.ts`: every alt-click's copy, with its light-red flash.

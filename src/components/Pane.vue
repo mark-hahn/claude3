@@ -12,6 +12,7 @@ import { modelPicks, post, postHost, quotaUse } from "../api.ts";
 import { cropRect } from "../cropRect.ts";
 import { addLineDots, addListKeys, editorOptions, monaco, untab } from "../monaco.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
+import { MessageHistory } from "../messageHistory.ts";
 import { answerText, fillBox, occurrences, renderMarkdown, shownText, textHits, withoutDetails } from "../render.ts";
 import { loadWaiting, saveWaiting, type Waiting } from "../waitingImages.ts";
 import { wheelZoom } from "../wheelZoom.ts";
@@ -932,6 +933,36 @@ function sendKey(): void {
   void submit();
 }
 
+// Up with the caret at the very start of the box loads the session's previous prompt, Down at the
+// very end the next, as the Git dialog's message box does (the same MessageHistory; the text being
+// typed waits in its slot). Monaco itself takes the caret to the start or end on the first press
+// from the first or last line, so the next press is the load. Rebuilt when the session or its
+// prompt count changes.
+let recall = new MessageHistory();
+let recallFor = "";
+function recallKey(box: monaco.editor.IStandaloneCodeEditor, event: monaco.IKeyboardEvent): void {
+  const up = event.keyCode === monaco.KeyCode.UpArrow;
+  if ((!up && event.keyCode !== monaco.KeyCode.DownArrow) || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+  const selection = box.getSelection()!;
+  const edge = up ? new monaco.Position(1, 1) : box.getModel()!.getFullModelRange().getEndPosition();
+  if (!selection.isEmpty() || !selection.getPosition().equals(edge) || box.getOption(monaco.editor.EditorOption.readOnly)) return;
+  const key = `${sessionKey()}:${turns().length}`;
+  if (key !== recallFor) {
+    recallFor = key;
+    recall = new MessageHistory();
+    recall.fill(turns().map((turn) => untab(typedText(turn))).filter((text) => text.trim()).reverse());
+  }
+  const text = up ? recall.previous(box.getValue()) : recall.next(box.getValue());
+  if (text === undefined || text === box.getValue()) return;
+  event.preventDefault();
+  event.stopPropagation();
+  box.setValue(text);
+  // The start after going back and the end after going forward, so the same key keeps going.
+  const place = up ? new monaco.Position(1, 1) : box.getModel()!.getFullModelRange().getEndPosition();
+  box.setPosition(place);
+  box.revealPosition(place);
+}
+
 // The frame grows with the text (--content-h), never below two lines, and the CSS caps it at
 // six. The floor is Monaco's own rounded line height.
 function fitPrompt(): void {
@@ -1475,6 +1506,7 @@ onMounted(() => {
   fitPrompt();
   addLineDots(box);
   addListKeys(box);
+  box.onKeyDown((event) => recallKey(box, event));
   // Ctrl+Enter sends, in place of Monaco's insert-line-below. An action, not addCommand: Monaco's
   // addCommand keys are page-wide, and every tab has its own editor.
   box.addAction({ id: "claude3.submitPrompt", label: "Send Prompt", keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter], run: sendKey });
