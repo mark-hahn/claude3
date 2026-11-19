@@ -10,6 +10,7 @@ import { pipeline } from "stream/promises";
 import { HOSTS } from "../shared/config.ts";
 import type { FileEntry } from "../shared/types.ts";
 import { POWERSHELL } from "./capture.ts";
+import { findLogs, tailRead, tailWait } from "./logs.ts";
 
 export const MAX_EDITABLE = 5_000_000;
 const exists = (item: string): Promise<boolean> => fs.promises.lstat(item).then(() => true, () => false);
@@ -377,6 +378,10 @@ export const fileActions: Record<string, (body: Record<string, unknown>) => Prom
   readFile: (body) => readText(absolute(body.path), Number(body.known)),
   attachFile: (body) => attachFile(absolute(body.path)),
   waitFile: (body) => waitForChange(absolute(body.path), Number(body.known)),
+  // The Tail pane: the project's logs, a log's end (or the lines before byte `before`), and its new lines.
+  tailLogs: (body) => findLogs(absolute(body.root)),
+  tailRead: (body) => tailRead(absolute(body.path), body.before === undefined ? undefined : Number(body.before)),
+  tailWait: (body) => tailWait(absolute(body.path), Number(body.from), Number(body.ino)),
   saveFile: (body) => saveText(absolute(body.path), String(body.text ?? ""), Number(body.mtime)),
   newFile: async (body) => {
     const target = await freePath(absolute(body.folder), body.dir ? "new-dir" : "new-file");

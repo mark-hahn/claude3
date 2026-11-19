@@ -56,6 +56,9 @@ Click: open or close the Files column (a tree of the project's folder). From the
 Click: open or close the Log pane, a graph of the project's commits. Off when the folder is in no git repo.
 A red border: log view mode (a click on a Log row). Opening a file from its diff leaves it on: a click here brings back the log, the popup, its file and diff. Closing the log or the popup, or a click on any other tab or tab row toggle, ends it.
 
+@Tail button
+Click: open or close the Tail pane: the end of the project's main log, live, for a quick check on how it is doing.
+
 @Term button
 Click: open or close the Term pane: up to three bash shells (Git Bash on win), the first in the project's folder.
 
@@ -312,6 +315,14 @@ Click: log view mode: review the commit's changes in the Git popup, or show it i
 Ctrl-click: copy the commit's hash.
 Alt-click: copy its message.
 Ctrl-wheel: text size.
+
+@Tail log select
+Pick the log to show, by its path from the project's folder (pm2's logs are outside it, so start with ../). The most recently written one that has text is picked first; a pick of yours is remembered for this tab.
+Yellow: the view is at the bottom and follows new lines.
+
+@Tail log
+The last 500 whole lines of the log, new ones as they are written. Scroll to the top for 500 older ones, back to the file's start.
+At the bottom it follows new lines (the select goes yellow); scrolled up, it stays where it is.
 
 @Term + button
 Click: add a terminal right below, on the project's host in its folder. Three at most.

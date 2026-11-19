@@ -69,7 +69,7 @@ const noRepo = reactive<Record<string, boolean>>({});
 // Per tab: the name of its selected session, on show in the strip for the tab on show.
 const sessionNames = reactive<Record<string, string>>({});
 // The Files, Git graph, Snips and Settings share the column right of the pane, one at a time: "" (closed),
-// "files" (the tree), "file" (its editor), "git", "term", "snips" (the project's own), "snips-global" (Ctrl-click on the button) or "settings". Each tab has its own, and one
+// "files" (the tree), "file" (its editor), "git", "tail", "term", "snips" (the project's own), "snips-global" (Ctrl-click on the button) or "settings". Each tab has its own, and one
 // toggle each here acts on the tab on show. The toggle's name being "files", the Files button takes
 // the editor back to the tree.
 const sides = reactive<Record<string, string>>({});
@@ -129,6 +129,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
       <span class="session-name">{{ sessionNames[current] }}</span>
       <button class="tab files-toggle" :class="{ active: side.startsWith('file') }" :aria-pressed="side.startsWith('file')" :disabled="!currentTab" data-help="Files button" @click="toggle('files')">Files</button>
       <button class="tab git-toggle" :class="{ active: side === 'git', 'log-view': logView[current] }" :aria-pressed="side === 'git'" :disabled="!currentTab || noRepo[current]" data-help="Log button" @click="toggle('git')">Log</button>
+      <button class="tab tail-toggle" :class="{ active: side === 'tail' }" :aria-pressed="side === 'tail'" :disabled="!currentTab" data-help="Tail button" @click="toggle('tail')">Tail</button>
       <button class="tab term-toggle" :class="{ active: side === 'term' }" :aria-pressed="side === 'term'" :disabled="!currentTab" data-help="Term button" @click="toggle('term')">Term</button>
       <button class="tab snips-toggle" :class="{ active: side.startsWith('snips') }" :aria-pressed="side.startsWith('snips')" data-help="Snips button" @click="toggle($event.ctrlKey ? 'snips-global' : 'snips')">Snips</button>
       <button class="tab" aria-label="Keys" data-help="keys button" @mousedown.prevent @click="showKeys">?</button>
@@ -160,7 +161,7 @@ provide("newProjectAt", (host: HostName, folder: string) => tabsDialog.value?.op
 /* Takes the row's free space, so it is centered between the last tab and Files. A basis of 0 so it never wraps the row. */
 .tabs .session-name { flex: 1 1 0; min-width: 0; align-self: center; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tabs .files-toggle { margin-left: auto; }
-.tabs .files-toggle.active, .tabs .git-toggle.active, .tabs .term-toggle.active, .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
+.tabs .files-toggle.active, .tabs .git-toggle.active, .tabs .tail-toggle.active, .tabs .term-toggle.active, .tabs .snips-toggle.active, .tabs .settings-toggle.active { background: #cfe8ff; border-color: #8fb8e0; }
 /* Light red (the Tabs button's): the Models list or a CLI version changed since the Models pane last showed it. The open pane's blue wins. */
 .tabs .settings-toggle.due:not(.active) { background: #fbd9d9; border-color: #e4a7a7; }
 .tabs .settings-toggle.due:not(.active):hover:not(:disabled) { background: linear-gradient(var(--wash), var(--wash)), #fbd9d9; }

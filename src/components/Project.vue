@@ -18,10 +18,11 @@ import Pane from "./Pane.vue";
 import ReAuth from "./ReAuth.vue";
 import Settings from "./Settings.vue";
 import Snips from "./Snips.vue";
+import Tail from "./Tail.vue";
 import Term from "./Term.vue";
 
 // active: this is the tab on show. side: what this tab has open right of the pane ("", "snips", "snips-global",
-// "settings", "git", "term", "files" for the tree or "file" for its editor), through App's column toggles.
+// "settings", "git", "tail", "term", "files" for the tree or "file" for its editor), through App's column toggles.
 // focusAsked: a change puts the cursor in the prompt box of the tab on show. sidebarAsked: a change
 // toggles the sidebar of the tab on show. logViewEnd: a change (a tab row click other than Log) ends
 // the Git popup's review of a Log pane commit.
@@ -570,6 +571,7 @@ onBeforeUnmount(() => {
     <Snips v-if="globalSnipsOpened" :shown="globalSnipsShown" :tab="tab" :add-to-prompt="(text) => pane?.appendPrompt(text) ?? false" @close="emit('closeSide')" />
     <Settings v-if="side === 'settings'" :tab="tab" :active="active" @close="emit('closeSide')" />
     <GitGraph v-if="side === 'git'" :tab="tab" :active="active" :reviewing="gitPopup?.reviewing" @review="(hash, subject) => gitPopup?.openCommit(hash, subject)" />
+    <Tail v-if="side === 'tail'" :tab="tab" :active="active" />
     <div v-if="side === 'term'" class="terms"><Term v-for="one in terms" :key="one.slot" ref="termPanes" :tab="tab" :active="active" :index="one.slot" :host="one.host" :start="one.cwd" :count="terms.length" @add="(host, cwd) => addTerm(one.slot, host, cwd)" @close="closeTerm(one.slot)" /></div>
     <Files v-if="side.startsWith('file')" ref="filesPane" :tab="tab" :active="active" :file-mode="side === 'file'" @open-file="emit('openFile')" @attach="(path, host) => pane?.attach(path, host)" />
   </div>
