@@ -294,7 +294,10 @@ on the laptop, and talks to each backend directly.
   frozen line (`== sources frozen <epoch ms>`, `FROZEN_LINE`: it wrote its own sources before then
   and copies none until after; tv's unilog reconcile) counts from that line's time instead, read
   from `run-<tab>.log` by `lastRun`. A `./run` from a terminal keeps
-  its stamp's own time; claude3's `deploy` back-dates its stamp itself. The tab row's R (Run) button is highlighted
+  its stamp's own time; claude3's `deploy` back-dates its stamp itself. A project whose script also
+  deploys in part (tv's `./srvr srvr`) stamps after that when a dry run shows the server holds every file
+  (`stamp_if_current`), else R stays lit with nothing for `./run` to copy; saving a file without changing
+  it still lights R until the next Run. The tab row's R (Run) button is highlighted
   while the same check finds files; it is re-read for every project, open or closed, on showing, window focus,
   session events, and a ./run's result.
 - **Deploy setup.** Before the deploy warning, a prompt in a project whose `Tab.deploySetup` (in its

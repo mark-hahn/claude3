@@ -83,7 +83,10 @@ executable (`chmod +x`).
 4. **Stamp at the end, on success only:** write the paths the deploy depends on into `.deployed`,
    one per line, e.g. `printf '%s\n' src server "my dir" package.json > .deployed` (not `echo`,
    which puts them all on one line, read as a single path). Stamp even when every step
-   was skipped, so the warning clears. Add `.deployed` and any hash/version files the deploy keeps
+   was skipped, so the warning clears. A script that can also deploy part of the project (one app
+   of several) stamps after that too, when a dry run then shows the target holds every file: `touch
+   -d "@$(date +%s.%N)"` taken before that check, on the existing `.deployed` (it keeps the
+   paths); else the Run button stays lit after a partial deploy that `./run` would find nothing left to copy. Add `.deployed` and any hash/version files the deploy keeps
    to `.gitignore`, and to the packaging ignore list if the project builds a package from the folder.
 5. **End the output with** `trap 'echo; echo "====== ENDED ======"' EXIT` near the top of the
    script that runs last. A trap in `./run` is lost if `./run` `exec`s `./deploy`, so put it in
