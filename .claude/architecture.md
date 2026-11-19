@@ -226,7 +226,7 @@ on the laptop, and talks to each backend directly.
   Each session's unsent text is saved on every edit in localStorage (`draft:<tab>:<session id>`,
   '' for the new-session draft, removed on send), so it is back in its box after a reload and
   `Pane.drafted` still spares its session from the sweep. Ctrl+Enter in an empty box (no text, no pictures) puts the last bar's prompt in it as ordinary draft text, and does nothing in a session with no prompt yet; edited, it sends as any prompt, but while it still matches the last prompt (trimmed) Ctrl+Enter only empties the box (`sendKey`). When the settling `session` event arrives and the page lacks focus
-  (`document.hasFocus()`), Project shows a browser notification (a Windows toast) named for the project and beeps (`src/beep.ts`, Web Audio, one context for the page). Permission is asked on the first click after a load (`src/main.ts`); only `localhost`-style origins can have it, which `ORIGINS` already are.
+  (`document.hasFocus()`), Project shows a browser notification (a Windows toast) named for the project and beeps (`src/beep.ts`, Web Audio, one context for the page); clicking the toast calls `window.focus()` to raise the page's window. Permission is asked on the first click after a load (`src/main.ts`); only `localhost`-style origins can have it, which `ORIGINS` already are.
 - **Screen capture.** The footer's Cap → `POST /api/capture`, always on a laptop backend (a tab on
   srv asks WSL's), which runs PowerShell and answers a PNG data URI. Plain click minimizes the
   foreground window (the page's) for the shot; ctrl-click leaves it up; alt-click calls App's

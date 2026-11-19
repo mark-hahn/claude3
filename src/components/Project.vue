@@ -133,7 +133,12 @@ function onEvent(event: ServerEvent): void {
     const turn = event.session.turns.at(-1);
     // tag: a second page open on the same browser replaces this one's notification, not adds to it.
     if (turn?.finished && before?.id === turn.id && !before.finished && !document.hasFocus() && Notification.permission === "granted") {
-      new Notification(`${props.tab.label}: turn finished`, { body: event.session.name, tag: turn.id });
+      const toast = new Notification(`${props.tab.label}: turn finished`, { body: event.session.name, tag: turn.id });
+      // Clicking the toast brings the page's window to the front.
+      toast.onclick = () => {
+        window.focus();
+        toast.close();
+      };
       beep();
     }
     if (at >= 0) sessions[at] = event.session;
