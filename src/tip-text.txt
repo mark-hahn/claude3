@@ -172,7 +172,7 @@ Drop files from Explorer: they join the prompt.
 Click: select this block and open its box; on the selected bar, open or close the box.
 Ctrl-click: show the whole prompt, or one line again.
 Alt-click: copy the prompt.
-Hover: model and time it ran with, and the prompt.
+Hover: model and time it ran with, PLAN first when it was a plan turn, and the prompt.
 Enter (outside a text box): open or close the last block's box; with another block selected, select the last one first.
 
 @fork mark

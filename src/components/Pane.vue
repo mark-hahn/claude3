@@ -157,7 +157,7 @@ function render(): void {
     // is set to now, and when it was sent.
     const ranAs = [shortModel(turn.model), turn.effort, turn.advisor && `advisor ${shortModel(turn.advisor)}`, shortModel(turn.modelId)].filter(Boolean).join(" / ");
     const sent = new Date(turn.createdAt).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
-    bar.title = `${ranAs}   ${sent}\n${typed}`;
+    bar.title = `${turn.plan ? "PLAN   " : ""}${ranAs}   ${sent}\n${typed}`;
     bar.dataset.help = "bar";
     const boxShown = index === anchorIndex && boxOpen;
     // A running turn whose box is closed says so with a blinking arrow; the delay is set from the
@@ -1509,10 +1509,12 @@ watch(
 );
 watch(
   () => props.status,
-  (next) => {
+  (next, prev) => {
     status = next;
     statusAt = Date.now();
     if (!next?.active || next.turnId !== stopping.value) stopping.value = "";
+    // A response that ends (finished, stopped or failed) hands the keyboard back to the prompt box.
+    if (props.active && prev?.active && !next?.active) focusPrompt();
   },
 );
 watch(() => props.search, () => {
@@ -1778,6 +1780,8 @@ onBeforeUnmount(() => {
 .pane .run-pop pre { margin: 0 0 10px; white-space: pre-wrap; font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .pane .run-pop form { text-align: right; }
 .pane .run-pop button { font-size: 14px; }
+/* The default button (the one Enter presses) is drawn bold whatever started the dialog; :focus-visible alone skips it after a mouse click. */
+.pane .run-pop button:focus { outline: 2px solid #000; outline-offset: 1px; }
 .pane .run-error { margin-top: 20vh; border: 3px solid #c00; }
 /* The icons leading a prompt, one per picture, in the prompt box and on a bar. */
 .pane .img-char { cursor: pointer; }

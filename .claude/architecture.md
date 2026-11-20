@@ -132,7 +132,10 @@ on the laptop, and talks to each backend directly.
   rendered as markdown. Up at the box's very start and Down at its very end walk the session's
   prompts (`recallKey`: the Git dialog's `MessageHistory`, rebuilt from the turns when the
   session or its turn count changes; the typed text waits in its slot). A plain Enter outside the prompt box and the controls (claude2's
-  `selectBottomBlock`) selects and opens the last block; pressed again it toggles that box.
+  `selectBottomBlock`) selects and opens the last block; pressed again it toggles that box. When the
+  selected session's status goes from active to not (response finished, stopped or failed) on the tab on show, the
+  prompt box takes focus (the `props.status` watcher). Every `.run-pop` dialog draws its focused button (the
+  `autofocus` default) with a 2px black outline on `:focus`, not just the browser's `:focus-visible` ring.
 - `server/capture.ts`: claude2's PowerShell screen shot, returned as a PNG data URI.
 - `src/copy.ts`: every alt-click's copy, with its light-red flash.
 - `src/tooltip.ts` (`#tip` in `style.css`): every `title` on the page drawn as the page's own bubble, since a native one can't be sized. One delegated `mouseover`, nothing to add per element. A host's title sits in `data-tip` only while the mouse is on it. A manual popover, so it shows above modal `<dialog>`s.
