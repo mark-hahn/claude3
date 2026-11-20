@@ -91,6 +91,11 @@ export interface ClaudeTurn {
   images?: string[];
   // The files sent with this prompt.
   files?: AttachedFile[];
+  // A plan turn: it ran in the CLI's plan mode (read-only), so its response is a plan.
+  plan?: boolean;
+  // The plan box was changed by hand after this plan turn: that ended the planning, so ticking the box
+  // again never brings this plan back to wait for an answer.
+  planClosed?: boolean;
 }
 
 export interface ClaudeSession {
@@ -104,6 +109,8 @@ export interface ClaudeSession {
   graftSavedUsd?: number;
   // The footer's bestModel box; see modelChoice. Absent is unchecked.
   bestModel?: boolean;
+  // The footer's plan box: while checked every prompt is a plan turn (see modelChoice and awaitingPlan).
+  planMode?: boolean;
 }
 
 // The CLI's model list: each value's effort levels, its Anthropic name and its resolved id.
@@ -126,20 +133,37 @@ export function ownModel(list: ModelList, model: string, id: string): string | u
 // A model value or id as shown on the page: no "claude-" prefix, no date suffix (a number past 100).
 export const shortModel = (model: string) => model.replace(/^claude-/, "").replace(/-\d{3,}$/, "");
 
-// Weakest family first. A model's "next better" one is the newest of the next family up the list has,
-// by resolved version: an alias is the CLI's own pointer, named differently and lagging by host, and the
-// list's order means nothing. With no list yet, the family's alias itself.
+// Every family, weakest first: the order sortModels keeps the Models tab in.
 const FAMILIES = ["haiku", "sonnet", "opus", "fable"];
+// The families a run can climb, weakest first. Opus is the top: Fable is never anyone's "next better"
+// and never plans, since on a Pro plan it always bills usage credits.
+const LADDER = ["haiku", "sonnet", "opus"];
+// A model's "next better" one is the newest of the next family up the LADDER the list has, by resolved
+// version: an alias is the CLI's own pointer, named differently and lagging by host, and the list's
+// order means nothing. With no list yet, the family's alias itself.
 function nextBetter(value: string, models: ModelMap, ids: Record<string, string> = {}): string {
-  const own = FAMILIES.findIndex((family) => value.includes(family));
+  const own = LADDER.findIndex((family) => value.includes(family));
   const listed = Object.keys(models);
-  const pool = listed.length ? listed : FAMILIES;
-  for (const family of own === -1 ? [] : FAMILIES.slice(own + 1)) {
+  const pool = listed.length ? listed : LADDER;
+  for (const family of own === -1 ? [] : LADDER.slice(own + 1)) {
     const hit = sortModels(pool.filter((id) => id.includes(family)), ids).at(-1);
     if (hit) return hit;
   }
   return "";
 }
+// The LADDER's top: the newest model of its highest family the list has, which a plan turn runs on
+// whatever the Default is. With no list yet, the family's alias itself.
+function topModel(models: ModelMap, ids: Record<string, string> = {}): string {
+  const listed = Object.keys(models);
+  const pool = listed.length ? listed : LADDER;
+  for (const family of [...LADDER].reverse()) {
+    const hit = sortModels(pool.filter((id) => id.includes(family)), ids).at(-1);
+    if (hit) return hit;
+  }
+  return "";
+}
+// False when the Default is already the top, so the footer's bestModel box has nothing to choose.
+export const hasBetter = (pick: ModelPick = { default: "sonnet", models: {}, names: {}, ids: {} }): boolean => nextBetter(pick.default, pick.models, pick.ids) !== "";
 
 // The hosts whose CLI version is below the newest one shown. A "?" (the CLI wouldn't answer) or a host
 // not heard from yet has no version to compare.
@@ -167,17 +191,30 @@ export function sortModels(values: string[], ids: Record<string, string>): strin
 
 // What a session's turns run on, in every tab on every host. Bestmodel unchecked: the Default model
 // with the next better one as advisor; checked: the next better one alone (the Default itself when
-// nothing is better). An advisor takes a model only: neither the CLI nor the API has an effort for it.
-// Effort is xhigh where the model has it, else its highest; none for a model with no levels.
-export function modelChoice(bestModel: boolean | undefined, pick: ModelPick = { default: "sonnet", models: {}, names: {}, ids: {} }) {
+// nothing is better). A plan turn (plan: the footer's plan box is checked) runs on the LADDER's top
+// alone, with no advisor, whatever the other box says; the turn after its approval is an ordinary one.
+// An advisor takes a model only: neither the CLI nor the API has an effort for it.
+// Effort is xhigh where the model has it, else its highest below max; none for a model with no levels.
+// Max is never used: it cost 2.3x xhigh for no better result.
+export function modelChoice(bestModel: boolean | undefined, pick: ModelPick = { default: "sonnet", models: {}, names: {}, ids: {} }, plan = false) {
   const base = pick.default;
   const better = nextBetter(base, pick.models, pick.ids);
-  const run = bestModel ? better || base : base;
-  const advisor = bestModel ? "" : better;
-  const efforts = pick.models[run];
-  const effort = !efforts || efforts.includes("xhigh") ? "xhigh" : efforts.at(-1) ?? "";
+  const run = plan ? topModel(pick.models, pick.ids) || base : bestModel ? better || base : base;
+  const advisor = plan || bestModel ? "" : better;
+  const levels = pick.models[run]?.filter((level) => level !== "max");
+  const effort = !levels || levels.includes("xhigh") ? "xhigh" : levels.at(-1) ?? "";
   const name = (value: string) => pick.names[value] || value;
   return { model: pick.ids[run] || run, effort, advisor, title: `${name(run)}${effort ? " " + effort : ""}, ${advisor ? "advisor " + name(advisor) : "no advisor"}` };
+}
+
+// What Enter on an empty prompt sends to approve a plan, and the line under a plan that waits for it.
+export const PLAN_APPROVED = "The plan is approved. Implement it.";
+export const PLAN_WAIT = "======= Response to this plan is needed =======";
+// A plan waits for an answer while the plan box is still checked and the last turn was a plan turn that
+// ended well. Typed text then makes another plan turn, Enter approves, unchecking the box ends the planning.
+export function awaitingPlan(session: ClaudeSession | null | undefined): boolean {
+  const last = session?.turns.at(-1);
+  return !!session?.planMode && !!last?.plan && !last.planClosed && last.finished && !last.stopped && !last.error;
 }
 
 export interface RunningStatus {

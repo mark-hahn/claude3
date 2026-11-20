@@ -66,6 +66,21 @@ const olderHosts = computed(() => olderCli(cliVersions.value));
 // The list value whose Default box is checked: when bestModel is off the run is on it with the next better model
 // as advisor, when on the run is on that next better model alone (shared/types.ts's modelChoice).
 const defaultModel = ref("");
+// The aliases in this host's CLI binary (server/cliAliases.ts, asked at each open; src/modelsWatch.ts lights
+// the gear when any host's change), shown for documentation only: after the list's own rows come the
+// aliases it lacks (a [1m] size, opusplan, best, whatever a new release adds), in the binary's order and
+// with no description. They have no Default box and are no part of the list a run picks from
+// (modelsWatch and shared/types.ts never see them: "opusplan" would pass for an Opus model there).
+const aliases = ref<string[]>([]);
+type TableRow = ModelRow & { alias: boolean };
+const tableRows = computed<TableRow[]>(() => [
+  ...modelRows.value.map((row) => ({ ...row, alias: false })),
+  ...aliases.value.filter((model) => !modelRows.value.some((row) => row.model === model)).map((model) => ({ model, id: "", name: "", effort: "", tokens: "", alias: true })),
+]);
+// Fable bills usage credits on a Pro plan, so it is never a Default; neither are the aliases, nor opusplan
+// and best should a CLI's list ever carry them.
+const NO_DEFAULT = ["opusplan", "best"];
+const canDefault = (row: TableRow): boolean => !row.alias && !NO_DEFAULT.includes(row.model) && !row.model.includes("fable") && !row.id.includes("fable");
 // Asks every host (src/modelsWatch.ts), which also counts the pane as seen, clearing its light red; this tab's host fills the table.
 async function openModels(): Promise<void> {
   view.value = "models";
@@ -82,6 +97,8 @@ async function openModels(): Promise<void> {
   }
   defaultModel.value = mine.defaultModel;
   if (mine.limitsError) window.alert("Could not load the models' token limits: " + mine.limitsError);
+  if (mine.aliasesError) window.alert("Could not read the CLI's model aliases: " + mine.aliasesError);
+  aliases.value = mine.aliases;
   modelRows.value = mine.rows;
 }
 
@@ -473,7 +490,7 @@ onBeforeUnmount(() => {
       <div class="cli-versions"><span v-for="host in (Object.keys(HOSTS) as HostName[])" :key="host" :class="{ warn: olderHosts.includes(host) || cliVersions[host] === '?' }">{{ host }}: {{ cliVersions[host] ?? '…' }}</span></div>
       <table>
         <thead><tr><th>Model</th><th>Descr</th><th>Effort</th><th>Tokens</th><th>Default</th></tr></thead>
-        <tbody><tr v-for="row in modelRows" :key="row.model"><td>{{ shortModel(row.model) }}</td><td>{{ row.name }}</td><td>{{ row.effort }}</td><td>{{ row.tokens }}</td><td><input type="checkbox" data-help="Settings Default" :checked="row.model === defaultModel" @change="setDefault(row.model, row.id, $event)" /></td></tr></tbody>
+        <tbody><tr v-for="row in tableRows" :key="row.model"><td>{{ shortModel(row.model) }}</td><td>{{ row.name }}</td><td>{{ row.effort }}</td><td>{{ row.tokens }}</td><td><input v-if="canDefault(row)" type="checkbox" data-help="Settings Default" :checked="row.model === defaultModel" @change="setDefault(row.model, row.id, $event)" /></td></tr></tbody>
       </table>
       <div>{{ modelsNote }}</div>
     </div>

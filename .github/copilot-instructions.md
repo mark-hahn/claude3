@@ -62,5 +62,5 @@
   - a pane does not include the prompt box or the stats/buttons to the right of it
 - the prompt box is the text box where prompt text is entered
 - the footer is the stats/buttons to the right of the prompt box
-  - the nav row is the top row in the footer with the status indicator, the stop and Cap buttons, and the bestModel check box
+  - the nav row is the top row in the footer with the status indicator, the stop and Cap buttons, and the plan and bestModel check boxes (labelled PB)
   - the stats row is the second bottom row with stats and no buttons

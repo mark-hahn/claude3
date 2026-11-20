@@ -8,7 +8,8 @@ import { sortModels, type ModelPick } from "../shared/types.ts";
 import { postHost } from "./api.ts";
 
 export type ModelRow = { model: string; id: string; name: string; effort: string; tokens: string };
-export type HostModels = { rows: ModelRow[]; version: string; defaultModel: string; limitsError: string };
+// aliases: the names in the CLI's binary (server/cliAliases.ts), aliasesError why there are none ("" when read).
+export type HostModels = { rows: ModelRow[]; version: string; defaultModel: string; limitsError: string; aliases: string[]; aliasesError: string };
 
 const KEY = "claude3.models";
 const HOUR = 3600e3;
@@ -20,9 +21,10 @@ const differs = (s: Saved): boolean => hosts.some((host) => s.seen[host] !== s.l
 export const modelsChanged = ref(differs(saved()));
 
 async function loadHost(host: HostName): Promise<HostModels> {
-  const [reply, version] = await Promise.all([
+  const [reply, version, found] = await Promise.all([
     postHost<{ payload: ModelPick & { contextTokens: Record<string, number>; limitsError: string } }>(host, "models", {}),
     postHost<{ version: string }>(host, "cliVersion", {}).then((r) => r.version, () => "?"),
+    postHost<{ aliases: string[] }>(host, "modelAliases", {}).then((r) => ({ aliases: r.aliases, aliasesError: "" }), (error) => ({ aliases: [] as string[], aliasesError: error instanceof Error ? error.message : String(error) })),
   ]);
   const { models, names, ids, contextTokens, limitsError, default: defaultModel } = reply.payload;
   // The CLI lists a model's efforts weakest first, so the last is its max (none for Haiku 4.5).
@@ -30,11 +32,12 @@ async function loadHost(host: HostName): Promise<HostModels> {
     const tokens = contextTokens[ids[model] ?? ""];
     return { model, id: ids[model] || "", name: names[model] || "", effort: models[model].at(-1) ?? "", tokens: !tokens ? "" : tokens >= 1e6 ? `${tokens / 1e6}M` : `${tokens / 1000}K` };
   });
-  return { rows, version, defaultModel, limitsError };
+  return { rows, version, defaultModel, limitsError, ...found };
 }
 
 // Asks every host. `opened`: the pane is showing this, so it counts as seen. A host that didn't answer
-// (an Error, a CLI version of "?", or a failed token-limits read) leaves its last state alone, so an outage is no change.
+// (an Error, a CLI version of "?", a failed token-limits read, or aliases it couldn't read: an older
+// backend, or a binary with no table) leaves its last state alone, so an outage is no change.
 export async function checkModels(opened = false): Promise<Record<HostName, HostModels | Error>> {
   const got = await Promise.all(hosts.map((host) => loadHost(host).catch((error) => (error instanceof Error ? error : new Error(String(error))))));
   const s = saved();
@@ -42,9 +45,11 @@ export async function checkModels(opened = false): Promise<Record<HostName, Host
   hosts.forEach((host, i) => {
     const m = got[i];
     // A failed token-limits read (limitsError) leaves every Tokens cell empty, which would look like a change.
-    if (m instanceof Error || m.version === "?" || m.limitsError) return;
-    s.latest[host] = JSON.stringify([m.version, m.rows]);
-    if (opened || s.seen[host] === undefined) s.seen[host] = s.latest[host];
+    if (m instanceof Error || m.version === "?" || m.limitsError || m.aliasesError) return;
+    s.latest[host] = JSON.stringify([m.version, m.rows, m.aliases]);
+    // A copy saved before the aliases were part of it (two parts) is taken as seen, not as a change.
+    const before = s.seen[host] === undefined ? undefined : (JSON.parse(s.seen[host]!) as unknown[]).length;
+    if (opened || before === undefined || before < 3) s.seen[host] = s.latest[host];
   });
   localStorage.setItem(KEY, JSON.stringify(s));
   modelsChanged.value = differs(s);

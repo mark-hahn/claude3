@@ -80,6 +80,7 @@ interface RunningProcess {
   model: string;
   effort: string;
   advisor: string;
+  permissionMode: string;
   // Hands the live process to a new prompt's block while it waits on a background task.
   followUp: ((next: RunPromptOptions) => Promise<ClaudeRunResult>) | null;
 }
@@ -158,14 +159,14 @@ export class ClaudeCliRunner {
 
   // True while the pill shows B and this prompt could go into the waiting process, which keeps
   // the background task alive, rather than stopping it.
-  public canFollowUp(sessionId: string, model: string, effort: string, advisor: string): boolean {
+  public canFollowUp(sessionId: string, model: string, effort: string, advisor: string, permissionMode: string): boolean {
     const running = this.running.get(sessionId);
-    return !!running?.followUp && !running.stopped && running.status.phase === "background" && running.model === model && running.effort === effort && running.advisor === advisor;
+    return !!running?.followUp && !running.stopped && running.status.phase === "background" && running.model === model && running.effort === effort && running.advisor === advisor && running.permissionMode === sanitizePermissionMode(permissionMode);
   }
 
   public async runPrompt(options: RunPromptOptions): Promise<ClaudeRunResult> {
     const live = this.running.get(options.sessionId);
-    if (live?.followUp && this.canFollowUp(options.sessionId, options.model, options.effort, options.advisor)) {
+    if (live?.followUp && this.canFollowUp(options.sessionId, options.model, options.effort, options.advisor, options.limits.permissionMode)) {
       return await live.followUp(options);
     }
     if (live) {
@@ -213,6 +214,7 @@ export class ClaudeCliRunner {
     // The prompt goes in on stdin so that text beginning with "-" is never parsed as a CLI option,
     // as a stream-json message rather than raw text so that stdin stays open as a control channel
     // for the interrupt `stop` sends.
+    const permissionMode = sanitizePermissionMode(options.limits.permissionMode);
     const args = [
       "-p",
       "--output-format",
@@ -229,9 +231,9 @@ export class ClaudeCliRunner {
       mode === "resume" ? "--resume" : "--session-id",
       options.sessionId,
       "--permission-mode",
-      sanitizePermissionMode(options.limits.permissionMode),
+      permissionMode,
       "--append-system-prompt",
-      claude3SystemPrompt(options.contextWindow),
+      claude3SystemPrompt(options.contextWindow, permissionMode === "plan"),
     ];
     if (options.limits.maxBudgetUsd > 0) {
       args.push("--max-budget-usd", String(options.limits.maxBudgetUsd));
@@ -279,7 +281,7 @@ export class ClaudeCliRunner {
         .catch((error) => this.log(`Debug record failed: ${errorText(error)}`));
     };
     debugLog({ spawn: { mode, cwd: options.workspacePath, args, env: { GRAFT_DIR: env.GRAFT_DIR, CLAUDE_CODE_AUTO_COMPACT_WINDOW: env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, CLAUDE_CODE_DISABLE_FAST_MODE: env.CLAUDE_CODE_DISABLE_FAST_MODE, CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION } } });
-    const running: RunningProcess = { child, status, stopped: false, killTimer: null, model: options.model, effort: options.effort, advisor: options.advisor, followUp: null };
+    const running: RunningProcess = { child, status, stopped: false, killTimer: null, model: options.model, effort: options.effort, advisor: options.advisor, permissionMode, followUp: null };
     this.running.set(options.sessionId, running);
     child.stdin.on("error", (error) => this.log(`Claude stdin error: ${error.message}`));
     // Left open on purpose: under stream-json input the CLI reads stdin for the whole run, and
@@ -924,10 +926,15 @@ function mainModelWindow(modelUsage: Record<string, unknown> | undefined, modelI
   return window !== null && window > 0 ? window : null;
 }
 
-function claude3SystemPrompt(contextWindow: number): string {
+function claude3SystemPrompt(contextWindow: number, planning = false): string {
   return [
     "You are running in the claude3 web app, a browser page of tabs, one per project.",
     `The UI tracks a ${contextWindow.toLocaleString()} token context window for this session.`,
+    // A -p run has no ExitPlanMode tool, so a plan is only ever what the final message says. Without
+    // this the final message is a summary that points at the plan file, which the page can't show.
+    ...(planning
+      ? ["This turn is in plan mode and the session has no ExitPlanMode tool (do not search for one). Make the complete plan your final message, in full, never a summary of a plan file. The user approves it in the claude3 page."]
+      : []),
     // The sidebar's tool line is the Bash description; without one it falls back to the raw
     // command, which the user reads as a bug. The model drops the field for a whole session
     // once its first Bash call lacks it, so the rule names the first call in particular.
@@ -1107,6 +1114,10 @@ export function sanitizeModel(model: string): string {
 export function effortArgs(effort: string): string[] {
   if (effort && !/^[a-z]+$/.test(effort)) {
     throw new Error(`Malformed effort: ${JSON.stringify(effort)}`);
+  }
+  // Max cost 2.3x xhigh for no better result on a real task, so no path may send it.
+  if (effort === "max") {
+    throw new Error("The max effort is blocked: it costs 2.3x xhigh for no better result. Use xhigh.");
   }
   return effort ? ["--effort", effort] : [];
 }

@@ -68,7 +68,7 @@ Ctrl-click: the same for the global Snips, shared with claude2 and every project
 
 @Settings button
 Click: open or close the Settings pane (quotas, models).
-Light red: the models list, or a CLI version on a host, changed since the Models tab last showed it (checked once an hour). Opening the Models tab clears it.
+Light red: the models list, the model aliases in a CLI's program, or a CLI version on a host, changed since the Models tab last showed it (checked once an hour). Opening the Models tab clears it.
 
 @Tabs host
 Pick the host the new project is on; Path then picks a folder there.
@@ -206,8 +206,9 @@ Tab / Shift-Tab: make list items, or step them back. Enter: the next list item. 
 Ctrl-J: join lines. Ctrl-D: delete the line. Ctrl-Shift-D: duplicate. Ctrl-Shift-Alt-U / L: upper / lower case. Shift-Alt-Left / Right: cursor undo / redo.
 Ctrl-click: add or remove a cursor. Ctrl-Shift-drag: column selection.
 Line dot: click selects the line, drag selects lines, shift-click extends.
-Ctrl-V: paste text, or a copied picture or files. Drop files from Explorer on the pane: same.
+Ctrl-V: paste text, or a copied picture or files. Drop files from Explorer on the pane: same. Pictures, PDFs and text, up to 20MB; the Files tree's Ctrl+Enter adds its selected file.
 Picture or file icon: click shows it, ctrl-click removes it.
+Enter in an empty box while a plan waits for an answer (the plan box is checked): approve the plan.
 
 @prompt markdown view
 The big prompt shown as markdown.
@@ -222,13 +223,15 @@ Ctrl-click: the same, with this window left up.
 Alt-click: the previous tab is shown for the shot.
 The picture waits in the prompt box; click its icon to see or crop it, ctrl-click to remove it.
 
-@footer File button
-Click: add a file to this prompt, picked on this project's host.
-Ctrl-click: picked on the Windows PC, from C:\Users\mark.
-Pictures, PDFs and text, up to 20MB.
+@plan box
+PB: plan, then best. Check: plan first. Every prompt becomes a read-only plan turn on the top model (Opus, no advisor, whatever the Default is); the response is the plan, with a yellow line under it saying it waits for an answer.
+Enter in the empty prompt box: approve the plan. This unchecks the box and starts the turn that carries it out, on what the best box picks.
+Typed text and Ctrl+Enter: another plan turn, to change the plan.
+Uncheck by hand: the planning is over and the next prompt is an ordinary one.
 
 @bestModel box
-Check: run this session on the next better model than the Default (the hover says which) with no advisor; unchecked it runs on the Default with that better model as advisor. The Default is set in Settings, Models.
+PB: plan, then best. Check: run this session on the next better model than the Default (the hover says which) with no advisor; unchecked it runs on the Default with that better model as advisor. The Default is set in Settings, Models.
+Grayed out when nothing is better than the Default (Opus). While the plan box is checked it changes only the turn that carries out the plan, not the plan turn.
 
 @context stat
 Context used / where the CLI compacts it, in thousands of tokens. Red past it.
@@ -462,8 +465,8 @@ Ctrl-wheel: text size.
 Click: show the quota graphs.
 
 @Settings Models
-Click: show the models the CLI lists now (asked each time): name, description, max effort and context window in tokens (from the Models API). A line above the table shows the CLI version on each host, in red (host name and version) for any host older than another, or showing ? because it didn't answer.
-Light red: something in it changed on any host since you last opened it (checked once an hour; the Default box doesn't count). Clicking it asks all three hosts and clears the colour.
+Click: show the models the CLI lists now (asked each time): name, description, max effort and context window in tokens (from the Models API). Rows at the bottom with only a name are the CLI's other aliases (opusplan, best, the 1M sizes, in the order its program lists them), read from the program: documentation, with no Default box. A line above the table shows the CLI version on each host, in red (host name and version) for any host older than another, or showing ? because it didn't answer.
+Light red: something in it changed on any host since you last opened it (the models, the aliases, a CLI version; checked once an hour; the Default box doesn't count). Clicking it asks all three hosts and clears the colour.
 
 @Settings Default
 Check: make this the default model, and clear the others. A tab's bestModel box unchecked runs on it with the next better model as advisor; checked, it runs on the next better model with no advisor.

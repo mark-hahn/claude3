@@ -7,7 +7,7 @@
 // prompt editor.
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { HostName, Tab } from "../../shared/config.ts";
-import { COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, modelChoice, quotaSpend, shortModel, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
+import { awaitingPlan, COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, hasBetter, modelChoice, PLAN_APPROVED, PLAN_WAIT, quotaSpend, shortModel, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
 import { modelPicks, post, postHost, quotaUse } from "../api.ts";
 import { cropRect } from "../cropRect.ts";
 import { addLineDots, addListKeys, addWheelZoom, editorOptions, followFontSize, monaco, untab } from "../monaco.ts";
@@ -16,7 +16,6 @@ import { MessageHistory } from "../messageHistory.ts";
 import { answerText, fillBox, occurrences, renderMarkdown, shownText, textHits, withoutDetails } from "../render.ts";
 import { loadWaiting, saveWaiting, type Waiting } from "../waitingImages.ts";
 import { wheelZoom } from "../wheelZoom.ts";
-import FolderPicker from "./FolderPicker.vue";
 
 // active: this pane's tab is the one on show, so the page-wide keys are its. search: the sidebar's
 // search text; while non-empty, every bar holding it gets a light-blue wash.
@@ -287,6 +286,13 @@ function render(): void {
 function fillResponse(box: HTMLElement, turn: ClaudeTurn, tools: boolean, raw = false): void {
   if (raw) box.textContent = (turn.response || "").replace(/[⁢⁣⁤]/g, "");
   else fillBox(box, turn.response || "", tools, turn.id, openToolCalls, searchNeedle());
+  // A plan that waits for an answer says so under itself in every view: tools hidden, shown or raw.
+  if (awaitingPlan(props.session) && props.session?.turns.at(-1)?.id === turn.id) {
+    const wait = document.createElement("div");
+    wait.className = "plan-wait";
+    wait.textContent = PLAN_WAIT;
+    box.appendChild(wait);
+  }
   if (!turn.error) return;
   const note = document.createElement("div");
   note.className = "error-note";
@@ -558,6 +564,35 @@ function setBestModel(event: Event): void {
     box.checked = !!props.session?.bestModel;
     report(error);
   });
+}
+
+// The plan box: while it is checked every prompt is a read-only plan turn. The backend keeps it with
+// the session; a failed save puts it back.
+function setPlanMode(event: Event): void {
+  const box = event.target as HTMLInputElement;
+  post(props.tab, "planMode", { sessionId: props.session?.id, on: box.checked }).catch((error) => {
+    box.checked = !!props.session?.planMode;
+    report(error);
+  });
+}
+
+// Enter on an empty prompt while a plan waits approves it: the backend unchecks the plan box with the
+// prompt, so the turn that implements the plan is an ordinary one (the best box picks its model).
+async function approvePlan(): Promise<void> {
+  if (sending) return;
+  sending = true;
+  try {
+    await send(PLAN_APPROVED, true, false, true);
+  } finally {
+    sending = false;
+  }
+}
+function approveKey(event: monaco.IKeyboardEvent): void {
+  if (event.keyCode !== monaco.KeyCode.Enter || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+  if (!awaitingPlan(props.session) || props.session?.trashed || props.status?.active || draft.value.trim() || images().length || attached().length) return;
+  event.preventDefault();
+  event.stopPropagation();
+  void approvePlan();
 }
 
 const active = computed(() => !!props.status?.active);
@@ -883,7 +918,9 @@ async function submit(text = draft.value, keepDraft = false, snips = false): Pro
 }
 let sending = false;
 
-async function send(text: string, keepDraft: boolean, snips: boolean): Promise<void> {
+// approve: Enter on an empty prompt with a plan waiting (keepDraft is then true too, so it goes into
+// this session as it stands); the backend unchecks the plan box with it.
+async function send(text: string, keepDraft: boolean, snips: boolean, approve = false): Promise<void> {
   if (!keepDraft && !(await deploySetupOk())) return;
   if (!keepDraft && !(await deployOk())) return;
   const choice = keepDraft ? "continue" : await commitChoice(snips);
@@ -907,7 +944,7 @@ async function send(text: string, keepDraft: boolean, snips: boolean): Promise<v
   }
   pendingTurnCount = fresh ? 1 : turns().length + 1;
   try {
-    const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: fresh ? "" : props.session!.id, prompt: text, images: sending.map((stack) => stack.at(-1)), files: sendingFiles });
+    const { sessionId } = await post<{ sessionId: string }>(props.tab, "prompt", { sessionId: fresh ? "" : props.session!.id, prompt: text, images: sending.map((stack) => stack.at(-1)), files: sendingFiles, ...(approve ? { approve: true } : {}) });
     if (fresh) {
       storeBig(sessionId, bigPrompt.value);
       emit("started", sessionId);
@@ -1160,20 +1197,13 @@ function deleteWaitingImage(index: number): void {
   storeImages();
 }
 
-// ---- files: the File button, its picker, and a mark's details ----
+// ---- files: a file added to the prompt, and a mark's details ----
 
-const filePicker = ref<InstanceType<typeof FolderPicker>>();
-let fileHost: HostName = "wsl";
-// The picker opens on the project's host at its folder; a ctrl-click opens it on the Windows PC.
-function pickFile(event: MouseEvent): void {
-  fileHost = event.ctrlKey ? "win" : props.tab.host;
-  filePicker.value!.open(event.ctrlKey ? "C:\\Users\\mark" : props.tab.path, fileHost);
-}
 // A picture joins the prompt as a screenshot does (a PNG, shown for cropping); text or a PDF as a
-// <file> mark. The backend refuses anything else, and its reason shows in a dialog. The host is the
-// picker's, or the one given: the Files tree's Ctrl+Enter adds its selected file. Once added the
-// focus is in the prompt box, set before the picture's dialog opens, which hands it back there.
-async function attach(file: string, host: HostName = fileHost): Promise<void> {
+// <file> mark. The backend refuses anything else, and its reason shows in a dialog. The Files tree's
+// Ctrl+Enter adds its selected file, on the host it is showing. Once added the focus is in the
+// prompt box, set before the picture's dialog opens, which hands it back there.
+async function attach(file: string, host: HostName): Promise<void> {
   if (props.session?.trashed) return;
   const key = sessionKey();
   try {
@@ -1522,7 +1552,10 @@ onMounted(() => {
   fitPrompt();
   addLineDots(box);
   addListKeys(box);
-  box.onKeyDown((event) => recallKey(box, event));
+  box.onKeyDown((event) => {
+    approveKey(event);
+    recallKey(box, event);
+  });
   // Ctrl+Enter sends, in place of Monaco's insert-line-below. An action, not addCommand: Monaco's
   // addCommand keys are page-wide, and every tab has its own editor.
   box.addAction({ id: "claude3.submitPrompt", label: "Send Prompt", keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter], run: sendKey });
@@ -1596,7 +1629,6 @@ onBeforeUnmount(() => {
       <pre>{{ fileText }}</pre>
       <form method="dialog" data-help="file details"><button autofocus>OK</button></form>
     </dialog>
-    <FolderPicker ref="filePicker" :host="tab.host" :project="tab" files @pick="attach" />
     <dialog ref="imagePopEl" closedby="any" class="img-pop" @close="popSrc = ''">
       <div class="img-title">
         <strong>{{ popLabel }}</strong>
@@ -1619,8 +1651,9 @@ onBeforeUnmount(() => {
           <div class="group">
             <button class="stop" data-help="stop button" :class="{ stopping: stopping && active }" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
             <button data-help="Cap button" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
-            <button data-help="footer File button" :disabled="session?.trashed" @mousedown.prevent @click="pickFile">File</button>
-            <input type="checkbox" aria-label="bestModel" data-help="bestModel box" :title="modelChoice(session?.bestModel, modelPicks[tab.host]).title" :checked="!!session?.bestModel" :disabled="!session || session.trashed" @mousedown.prevent @change="setBestModel" />
+            <span class="pb-label">PB</span>
+            <span class="tick" data-help="plan box" :title="'Plan first: plan turns run on ' + modelChoice(false, modelPicks[tab.host], true).title"><input type="checkbox" aria-label="plan" :checked="!!session?.planMode" :disabled="!session || session.trashed" @mousedown.prevent @change="setPlanMode" /></span>
+            <span class="tick" data-help="bestModel box" :title="hasBetter(modelPicks[tab.host]) ? modelChoice(session?.bestModel, modelPicks[tab.host]).title : 'Nothing is better than the Default, so this box has nothing to choose'"><input type="checkbox" aria-label="bestModel" :checked="!!session?.bestModel" :disabled="!session || session.trashed || !hasBetter(modelPicks[tab.host])" @mousedown.prevent @change="setBestModel" /></span>
           </div>
         </div>
         <div class="stats">
@@ -1690,6 +1723,12 @@ onBeforeUnmount(() => {
 .pane .response.markdown .tool-call.has-detail { cursor: pointer; }
 .pane .response.markdown .tool-call.has-detail:hover { background: var(--wash); }
 .pane .error-note { margin-top: 10px; background: #fdecec; border: 1px solid #f0bcbc; border-radius: 6px; padding: 8px 10px; }
+/* Stuck to the bottom of the box's visible part, so a long plan still shows that it waits for an answer. */
+.pane .plan-wait { position: sticky; bottom: 0; margin-top: 10px; background: #ffe9a8; border: 1px solid #d9a400; border-radius: 6px; padding: 6px 10px; color: #000; font-size: 14px; font-weight: 700; text-align: center; }
+.pane .pb-label { color: #000; font-size: 14px; font-weight: 700; }
+.pane .tick { display: inline-flex; align-items: center; }
+/* A disabled box lets the press through to its wrapper, which carries the hover text and the help. */
+.pane .tick input:disabled { pointer-events: none; }
 .pane .run-arrow { font-weight: 700; margin-right: 6px; animation: run-blink 0.6s steps(1) infinite; }
 @keyframes run-blink { 50% { visibility: hidden; } }
 /* The prompt box: a frame around a Monaco editor. It grows with the text (--content-h, set by the

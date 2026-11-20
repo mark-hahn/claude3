@@ -1,7 +1,7 @@
 // Self-check for the markdown renderer, answer text and trash-list picking ported from claude2: `node src/render.check.mjs`.
 // The ports un-doubled every backslash of claude2's template-literal source, so a missed one shows here.
 import assert from "node:assert/strict";
-import { AUTH_FAILED, imageNote, modelChoice, olderCli, ownModel, quotaSpend, shortModel, sortModels, typedPrompt } from "../shared/types.ts";
+import { AUTH_FAILED, awaitingPlan, hasBetter, imageNote, modelChoice, olderCli, ownModel, quotaSpend, shortModel, sortModels, typedPrompt } from "../shared/types.ts";
 import { extraBlankLines, headingEnter, joinLines } from "./blankLines.ts";
 import { cropRect } from "./cropRect.ts";
 import { modifiedLine } from "./diffLine.ts";
@@ -467,23 +467,43 @@ assert.equal(modelScopedWindow(undefined).pct, null);
   assert.equal(ownModel(older, "nope", ""), undefined);
   // A page from before ids were sent: the value alone, when the list has it.
   assert.equal(ownModel(older, "opus", ""), "opus");
-  // Unchecked: the Default with the next family up as advisor. Checked: that one alone. Nothing above Fable.
-  const choice = (best, base, from = newer) => { const { model, effort, advisor } = modelChoice(best, { ...from, default: base }); return [model, effort, advisor].join(" "); };
+  // Unchecked: the Default with the next family up as advisor. Checked: that one alone. Opus is the top:
+  // Fable is never the next one up (it bills usage credits on a Pro plan), and max effort is never used.
+  const choice = (best, base, from = newer, plan = false) => { const { model, effort, advisor } = modelChoice(best, { ...from, default: base }, plan); return [model, effort, advisor].join(" "); };
   assert.equal(choice(false, "sonnet"), "claude-sonnet-5-5 xhigh opus");
   assert.equal(choice(true, "sonnet"), "claude-opus-5-5 xhigh ");
-  assert.equal(choice(false, "opus"), "claude-opus-5-5 xhigh fable");
-  assert.equal(choice(true, "opus", older), "claude-fable-5-2 xhigh ");
+  assert.equal(choice(false, "opus"), "claude-opus-5-5 xhigh ");
+  assert.equal(choice(true, "opus", older), "claude-opus-5-5 xhigh ");
+  // A Default of Fable (set before it was kept out of the Models tab's boxes) runs as it is: nothing is above it.
   assert.equal(choice(false, "fable"), "claude-fable-5-2 xhigh ");
   assert.equal(choice(true, "claude-fable-5-2", older), "claude-fable-5-2 xhigh ");
   // The next family's newest by resolved version, wherever the list puts it and whatever its alias says.
-  const lateAlias = list({ ...shared, "claude-fable-5-1": "claude-fable-5-1", "fable[1m]": "claude-fable-5-2" });
-  const staleAlias = list({ ...shared, fable: "claude-fable-5-1", "claude-fable-5-2": "claude-fable-5-2" });
-  assert.equal(choice(true, "opus", lateAlias), "claude-fable-5-2 xhigh ");
-  assert.equal(choice(false, "opus", staleAlias), "claude-opus-5-5 xhigh claude-fable-5-2");
-  assert.equal(choice(false, "claude-opus-4-6"), "claude-opus-4-6 max fable");
+  const lower = { sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5" };
+  const lateAlias = list({ ...lower, "claude-opus-5-1": "claude-opus-5-1", "opus[1m]": "claude-opus-5-5" });
+  const staleAlias = list({ ...lower, opus: "claude-opus-5-1", "claude-opus-5-5": "claude-opus-5-5" });
+  assert.equal(choice(true, "sonnet", lateAlias), "claude-opus-5-5 xhigh ");
+  assert.equal(choice(false, "sonnet", staleAlias), "claude-sonnet-5-5 xhigh claude-opus-5-5");
+  // A model with no xhigh gets its highest level below max, never max.
+  assert.equal(choice(false, "claude-opus-4-6"), "claude-opus-4-6 high ");
+  assert.equal(modelChoice(false, { ...list({ x: "claude-sonnet-9" }), models: { x: ["low", "max"] }, default: "x" }).effort, "low");
+  assert.equal(modelChoice(false, { ...list({ x: "claude-sonnet-9" }), models: { x: ["max"] }, default: "x" }).effort, "");
   assert.equal(modelChoice(false, { ...newer, default: "sonnet" }).title, "Sonnet 5.5 xhigh, advisor Opus 5.5");
+  // A plan turn runs on the top model alone, whatever the Default and the best box say.
+  assert.equal(choice(false, "haiku", newer, true), "claude-opus-5-5 xhigh ");
+  assert.equal(choice(false, "sonnet", newer, true), "claude-opus-5-5 xhigh ");
+  assert.equal(choice(true, "sonnet", newer, true), "claude-opus-5-5 xhigh ");
+  assert.equal(choice(false, "opus", newer, true), "claude-opus-5-5 xhigh ");
+  assert.equal(modelChoice(false, undefined, true).model, "opus");
+  // The best box has nothing to choose when the Default is the top.
+  assert.deepEqual([hasBetter({ ...newer, default: "haiku" }), hasBetter({ ...newer, default: "sonnet" }), hasBetter({ ...newer, default: "opus" }), hasBetter()], [true, true, false, true]);
   // No list yet (a backend still asking its CLI): the family names themselves.
   assert.equal(modelChoice(false).model + " " + modelChoice(false).advisor + " " + modelChoice(true).model, "sonnet opus opus");
+  // A plan waits for an answer while its box is checked and the last turn was a plan turn that ended well.
+  const planTurn = (extra = {}) => ({ plan: true, finished: true, stopped: false, error: null, ...extra });
+  const planned = (turns, planMode = true) => awaitingPlan({ planMode, turns });
+  assert.deepEqual([planned([planTurn()]), planned([{ ...planTurn(), plan: undefined }, planTurn()]), planned([planTurn(), planTurn()])], [true, true, true]);
+  assert.deepEqual([planned([planTurn()], false), planned([planTurn(), planTurn({ plan: false })]), planned([planTurn({ error: "x" })]), planned([planTurn({ stopped: true })]), planned([planTurn({ finished: false })]), planned([]), planned([planTurn({ planClosed: true })])], [false, false, false, false, false, false, false]);
+  assert.equal(awaitingPlan(undefined), false);
   assert.equal(shortModel("claude-haiku-4-5-20251001") + " " + shortModel("claude-sonnet-4-6") + " " + shortModel("opus"), "haiku-4-5 sonnet-4-6 opus");
   // Hosts' CLI versions: any below the newest is old (compared by number, so 2.1.9 < 2.1.325); "?" and unanswered ones are left out.
   assert.deepEqual(olderCli({ wsl: "2.1.325", win: "2.1.325", srv: "2.1.325" }), []);
