@@ -30,7 +30,7 @@ function finish(state: Login, error: string, account = ""): void {
 }
 
 async function signedInAccount(cwd: string): Promise<string> {
-  const status = JSON.parse(await collectProcess("claude", ["auth", "status"], cwd, 15000, null)) as { loggedIn?: boolean; email?: string; subscriptionType?: string };
+  const status = JSON.parse(await collectProcess("claude", ["auth", "status"], cwd, 15000, null, "auth status")) as { loggedIn?: boolean; email?: string; subscriptionType?: string };
   if (status.loggedIn !== true) {
     throw new Error("claude auth status still reports logged out.");
   }
@@ -41,7 +41,7 @@ async function signedInAccount(cwd: string): Promise<string> {
 // needed: the CLI opens a browser of its own where it can, and approving there finishes it.
 export function startLogin(cwd: string, onSignedIn: () => void, log: (line: string) => void): Promise<string> {
   cancelLogin();
-  // DEBUG makes the CLI keep its own log of the sign-in in ~/.claude/debug/, which is where a
+  // DEBUG makes the CLI keep its own log of the sign-in in ~/.claude/debug/ (on win, CLI_DEBUG_DIR), which is where a
   // stuck one shows what it was waiting on. Everything it prints goes to the backend's log too.
   const child = spawn("claude", ["auth", "login"], { cwd, env: { ...childEnv(), DEBUG: "1" }, stdio: ["pipe", "pipe", "pipe"] });
   const state: Login = { child, result: { done: false, account: "", error: "" }, said: "", log };

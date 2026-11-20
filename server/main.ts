@@ -64,7 +64,7 @@ import { FIRST_TABS, HOSTS, ORIGINS, STATS_URL, type HostName, type Tab } from "
 import { ANSWER_MARK, AUTH_FAILED, awaitingPlan, CLI_MISSING, DEFAULT_CONTEXT_WINDOW, fileNote, imageNote, modelChoice, ownModel, PLAN_APPROVED, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type ModelList, type ModelMap, type ModelPick, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
 import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cliAliases } from "./cliAliases.ts";
-import { cheapestModel, ClaudeCliRunner, copySessionTranscript, swapSessionTranscripts, truncateSessionTranscript, type RunLimits } from "./claudeCli.ts";
+import { cheapestModel, ClaudeCliRunner, copySessionTranscript, pruneCliDebug, setCliLog, swapSessionTranscripts, truncateSessionTranscript, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
 import { fileActions, upload } from "./files.ts";
 import { commitFiles, GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead, webUrl } from "./gitGraph.ts";
@@ -105,6 +105,7 @@ function log(line: string): void {
 }
 
 const runner = new ClaudeCliRunner(log);
+setCliLog(log);
 
 interface Project {
   tab: Tab;
@@ -297,6 +298,10 @@ const quota = new QuotaService(DATA_DIR, DATA_DIR, () => models, log);
 async function sendQuota(state?: QuotaState): Promise<void> {
   try {
     state ??= await quota.read(false);
+    // A CLI that has lost its login (the Windows one did, 2026-11-16 and -19) shows Re-Auth.
+    if (await quota.signedOut()) {
+      setAuthNeeded(true);
+    }
     if (state.at) {
       broadcast({ type: "quota", use: { at: state.at, windows: state.windows.map(({ pct, resetsAt }) => ({ pct, resetsAt })), spentUsd: state.credits?.spentUsd ?? null } });
     }
@@ -726,10 +731,11 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
   if (name === "models") {
     // A fresh ask of the CLI each time the pane opens; a failure comes back as the pane's error.
     let limitsError = "";
-    const [list, contextTokens] = await Promise.all([
-      runner.listModels([...projects.values()][0]?.tab.path ?? os.homedir()),
-      quota.modelLimits().catch((error) => { limitsError = errorText(error); return {} as Record<string, number>; }),
-    ]);
+    // One after the other: the list's CLI refreshes an expired login, so the limits need no probe of their
+    // own. The Windows CLI signed out (2026-11-19) as the two started together, though the CLI locks its
+    // refresh across processes, so that may not have been the cause.
+    const list = await runner.listModels([...projects.values()][0]?.tab.path ?? os.homedir());
+    const contextTokens = await quota.modelLimits().catch((error) => { limitsError = errorText(error); return {} as Record<string, number>; });
     setModels(list);
     return { payload: { ...modelPick(), contextTokens, limitsError } };
   }
@@ -1391,6 +1397,11 @@ server.listen(host.port, host.bind, () => {
   void loadModels();
   // Rearms the reading before each quota window resets, which a restart (a deploy) drops.
   quota.shared(0, "").catch((error) => log(`Quota at start failed: ${errorText(error)}`));
+  quota.watchCredentials(() => setAuthNeeded(true));
+  if (process.platform === "win32") {
+    pruneCliDebug();
+    setInterval(pruneCliDebug, 24 * 60 * 60 * 1000).unref();
+  }
 });
 
 // The CLI processes are children and go with the backend. Their turns keep the text streamed so

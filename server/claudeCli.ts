@@ -272,6 +272,7 @@ export class ClaudeCliRunner {
       env,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    noteCliStart(`turn of session ${options.sessionId}`, child, options.workspacePath);
     // The debugging record: the CLI's transcript keeps neither what it was started with nor its
     // init message, and the two are what a "why did this session behave differently" hunt needs.
     const debugFile = path.join(options.debugDir, `${options.sessionId}.jsonl`);
@@ -771,7 +772,7 @@ export class ClaudeCliRunner {
       "You write concise conversation titles.",
     ];
 
-    const output = await collectProcess("claude", args, workspacePath, 25000, titlePrompt);
+    const output = await collectProcess("claude", args, workspacePath, 25000, titlePrompt, "title");
     try {
       const parsed = JSON.parse(output) as unknown;
       const result = isRecord(parsed) ? stringOf(parsed.result) : "";
@@ -786,7 +787,7 @@ export class ClaudeCliRunner {
   public async describeChanges(diff: string, workspacePath: string): Promise<string> {
     const args = ["-p", "--output-format", "json", "--model", "claude-opus-5-5", "--max-budget-usd", "1", "--tools", "", "--setting-sources", "", "--no-session-persistence", "--system-prompt", "You write git commit messages."];
     const prompt = `Write a very short commit message for these changes: at most 2 plain sentences of at most 12 words each, describing only the 2 biggest changes. Return only the message, with no quotes, headings or lists.\n\n${diff}`;
-    const output = await collectProcess("claude", args, workspacePath, 180000, prompt);
+    const output = await collectProcess("claude", args, workspacePath, 180000, prompt, "describe changes");
     const parsed = JSON.parse(output) as unknown;
     return (isRecord(parsed) ? stringOf(parsed.result) : "").trim() || output;
   }
@@ -797,7 +798,7 @@ export class ClaudeCliRunner {
   // does "opus[1m]" say "Opus 5.5 with 1M context"), else its display name, e.g. "Sonnet 5".
   public async listModels(workspacePath: string): Promise<{ models: ModelMap; names: Record<string, string>; ids: Record<string, string> }> {
     const request = JSON.stringify({ type: "control_request", request_id: "models", request: { subtype: "initialize" } });
-    const output = await collectProcess("claude", ["-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose"], workspacePath, 30000, request + "\n");
+    const output = await collectProcess("claude", ["-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose"], workspacePath, 30000, request + "\n", "models");
     for (const line of output.split("\n")) {
       const parsed = line.includes('"control_response"') ? (JSON.parse(line) as { response?: { response?: { models?: { value?: unknown; resolvedModel?: unknown; supportedEffortLevels?: unknown; description?: unknown; displayName?: unknown }[] } } }) : undefined;
       const models: ModelMap = {};
@@ -866,6 +867,7 @@ function controlChannel(args: string[], env: NodeJS.ProcessEnv, workspacePath: s
   exited: Promise<void>;
 } {
   const child = spawn("claude", ["-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose", ...args], { cwd: workspacePath, env, stdio: ["pipe", "pipe", "ignore"] });
+  noteCliStart("context", child, workspacePath);
   const waiting = new Map<string, (response: Record<string, unknown> | undefined) => void>();
   let closed = false;
   let markExited = (): void => undefined;
@@ -945,8 +947,39 @@ function claude3SystemPrompt(contextWindow: number, planning = false): string {
   ].join("\n");
 }
 
+// One log line per CLI run the backend starts (main.ts hands over its log), to set beside the CLI's
+// own session-env folders and debug files when a login is lost.
+let cliLog: (line: string) => void = () => undefined;
+export function setCliLog(log: (line: string) => void): void {
+  cliLog = log;
+}
+export function noteCliStart(kind: string, child: ChildProcess, cwd: string): void {
+  cliLog(`cli: ${kind} started, pid ${child.pid ?? "none"}, in ${cwd}`);
+}
+
+// On win every CLI run keeps its debug log here (DEBUG, CLAUDE_CODE_DEBUG_LOGS_DIR), for 7 days: the
+// Windows CLI lost its login twice (2026-11-16, -19) with no record of why, and only that log has it.
+export const CLI_DEBUG_DIR = path.join(os.homedir(), ".claude3", "cli-debug");
+const cliDebugKeepMs = 7 * 24 * 60 * 60 * 1000;
+export function pruneCliDebug(): void {
+  fs.mkdirSync(CLI_DEBUG_DIR, { recursive: true });
+  const cutoff = Date.now() - cliDebugKeepMs;
+  for (const name of fs.readdirSync(CLI_DEBUG_DIR)) {
+    const file = path.join(CLI_DEBUG_DIR, name);
+    try {
+      if (fs.lstatSync(file).mtimeMs < cutoff) fs.rmSync(file, { force: true });
+    } catch {
+      // gone already
+    }
+  }
+}
+
 export function childEnv(autoCompactWindow: number | null = null): NodeJS.ProcessEnv {
   const env = { ...process.env };
+  if (process.platform === "win32") {
+    env.DEBUG = "1";
+    env.CLAUDE_CODE_DEBUG_LOGS_DIR = CLI_DEBUG_DIR;
+  }
   // A stray key would divert billing from the subscription to the API.
   delete env.ANTHROPIC_API_KEY;
   delete env.ANTHROPIC_AUTH_TOKEN;
@@ -1324,9 +1357,10 @@ function countCodeLines(text: string): number {
   return codeMatches.reduce((total, block) => total + block.split("\n").length - 2, 0);
 }
 
-export function collectProcess(command: string, args: string[], workspacePath: string, timeoutMs: number, stdinText: string | null): Promise<string> {
+export function collectProcess(command: string, args: string[], workspacePath: string, timeoutMs: number, stdinText: string | null, kind = `${command} ${args[0] ?? ""}`): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd: workspacePath, env: childEnv(), stdio: ["pipe", "pipe", "pipe"] });
+    noteCliStart(kind, child, workspacePath);
     child.stdin.on("error", () => undefined);
     child.stdin.end(stdinText ?? "");
     let stdoutText = "";

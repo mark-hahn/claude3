@@ -40,9 +40,10 @@ try {
 }
 
 // The least time between two readings of the usage endpoint, counted from the last one that got
-// through, so the fleet calls it at most twice an hour (Update aside). claimedAt expires on its
+// through: a touch under the pane's five-minute timer, so a tick that lands a hair early still
+// polls, and the fleet calls it about 13 times an hour at most (Update aside). claimedAt expires on its
 // own: a backend that claims and then dies mid-read costs one skipped cycle, not a stuck fleet.
-const quotaFreshMs = 30 * 60 * 1000;
+const quotaFreshMs = 4.5 * 60 * 1000;
 const quotaClaimMs = 30 * 1000;
 // The endpoint forgets a window at its reset, so a claim marked final (the backends' reading just
 // before a reset) is held back only by a reading from the last minute, and a 429 pause doesn't stop it.

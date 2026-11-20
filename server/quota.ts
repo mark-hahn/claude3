@@ -3,12 +3,13 @@
 // and claude2's Windows-side VS Code storage; the local history and meta files live in ~/.claude3 instead. The stats server
 // (claude-stats/server.mjs, STATS_URL) holds the account's one history and the lease, for every backend.
 import { spawn } from "child_process";
+import { watchFile } from "fs";
 import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
 import { STATS_URL } from "../shared/config.ts";
 import type { ModelMap } from "../shared/types.ts";
-import { cheapestModel, childEnv } from "./claudeCli.ts";
+import { cheapestModel, childEnv, noteCliStart } from "./claudeCli.ts";
 
 export interface QuotaReadingRow {
   at: number;
@@ -58,6 +59,7 @@ const finalGiveUpMs = 10 * 1000;
 // taken when a Quotas pane opens or ticks, at a turn's end, or on Update, and the stats server's
 // lease shares one reading across every window.
 const fetchTimeoutMs = 5000;
+const SIGNED_OUT = "Claude is signed out on this host";
 const sharedTimeoutMs = 3000;
 
 interface HttpJsonResponse {
@@ -225,7 +227,7 @@ export class QuotaService {
       // Capped: the endpoint has asked for 8-11 hour waits yet answered fine within the hour.
       this.pausedUntil = Math.min(retryAfterMs(response.retryAfter), Date.now() + fifteenMinutesMs);
       this.rateLimitedAt = Date.now();
-      this.log(`quota: 429 from usage endpoint, retry-after ${response.retryAfter ?? "(none)"}, pausing until ${new Date(this.pausedUntil).toLocaleTimeString()}`);
+      this.log(`quota: 429 from usage endpoint, retry-after ${response.retryAfter ?? "(none)"}, pausing until ${new Date(this.pausedUntil).toLocaleTimeString()}: ${response.rawBody.slice(0, 300)}`);
       throw new Error(rateLimitedMessage(this.pausedUntil));
     }
     if (response.statusCode === 401 && !retried) {
@@ -253,18 +255,51 @@ export class QuotaService {
     return Object.fromEntries((body.data ?? []).flatMap((model) => (model.id && model.max_input_tokens ? [[model.id, model.max_input_tokens]] : [])));
   }
 
+  // Read from the file each time, so a sign-in shows at once; main.ts raises the page's Re-Auth on it.
+  public async signedOut(): Promise<boolean> {
+    return await this.credentials().then(() => false, (error: unknown) => errorMessage(error).startsWith(SIGNED_OUT));
+  }
+
+  // Logs each change to .credentials.json (never the token itself), so a lost login has its time to a
+  // couple of seconds whoever caused it; onSignedOut raises the page's Re-Auth at once.
+  public watchCredentials(onSignedOut: () => void, intervalMs = 2000): void {
+    let last = "";
+    const look = (): void => {
+      void this.credentials().then(
+        ({ expiresAt }) => `token expires ${expiresAt === null ? "(no expiry)" : Number.isNaN(new Date(expiresAt).getTime()) ? expiresAt : new Date(expiresAt).toISOString()}`,
+        (error: unknown) => (errorMessage(error).startsWith(SIGNED_OUT) ? "signed out (no token)" : `unreadable (${(error as NodeJS.ErrnoException).code ?? "mid-write?"})`),
+      ).then((summary) => {
+        if (summary === last) return;
+        last = summary;
+        this.log(`credentials: ${summary}`);
+        if (summary.startsWith("signed out")) onSignedOut();
+      }).catch((error: unknown) => this.log(`credentials: watch failed: ${errorMessage(error)}`));
+    };
+    look();
+    watchFile(credentialsPath(), { interval: intervalMs }, look);
+  }
+
   private async credentials(): Promise<{ accessToken: string; expiresAt: number | null }> {
-    const credentialsPath = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), ".credentials.json");
-    const parsed = JSON.parse(await fs.readFile(credentialsPath, "utf8")) as unknown;
+    const file = credentialsPath();
+    const text = await fs.readFile(file, "utf8");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // Not the parser's message: it quotes the text around the fault, which can be part of a token.
+      throw new Error(`${file} is not valid JSON (caught mid-write?).`);
+    }
     const oauth = recordOf(recordOf(parsed)?.claudeAiOauth);
     const accessToken = stringOf(oauth?.accessToken);
     if (!accessToken) {
-      throw new Error(`Claude is signed out on this host (no OAuth access token in ${credentialsPath}). Run \`claude\` there and use /login.`);
+      throw new Error(`${SIGNED_OUT} (no OAuth access token in ${file}). Run \`claude\` there and use /login.`);
     }
     return { accessToken, expiresAt: numberOf(oauth?.expiresAt) };
   }
 
-  // A one-turn CLI run refreshes the expired OAuth token in .credentials.json.
+  // A one-turn CLI run refreshes the expired OAuth token in .credentials.json. It is done when the file
+  // holds a token that hasn't expired, not at the CLI's first output: that comes before the new token is
+  // written, and a usage call made in between, with the old token, drew a 429 (every 429 to 2026-11-20).
   private async probeQuotaRefresh(): Promise<void> {
     if (this.probeInFlight) {
       await this.probeInFlight;
@@ -277,15 +312,24 @@ export class QuotaService {
         env: childEnv(),
         stdio: ["ignore", "pipe", "pipe"],
       });
+      noteCliStart("quota probe", child, this.cwd);
       let settled = false;
       let stderrText = "";
       const timeout = setTimeout(() => finish(new Error("Claude quota token refresh probe timed out.")), 20000);
+      const poll = setInterval(() => {
+        this.credentials().then(({ expiresAt }) => {
+          if (expiresAt === null || expiresAt > Date.now()) finish(null);
+        }, () => {
+          // mid-write, or no token yet: look again
+        });
+      }, 250);
       const finish = (error: Error | null): void => {
         if (settled) {
           return;
         }
         settled = true;
         clearTimeout(timeout);
+        clearInterval(poll);
         child.kill("SIGTERM");
         if (error) {
           reject(error);
@@ -293,7 +337,7 @@ export class QuotaService {
           resolve();
         }
       };
-      child.stdout.on("data", () => finish(null));
+      child.stdout.resume();
       child.stderr.setEncoding("utf8");
       child.stderr.on("data", (chunk: string) => {
         stderrText += chunk;
@@ -306,7 +350,7 @@ export class QuotaService {
     await this.probeInFlight;
   }
 
-  // The right to call the endpoint is leased: the server hands out one claim per 30 minutes
+  // The right to call the endpoint is leased: the server hands out one claim per 4.5 minutes
   // and everyone else paints the winner's reading. Update skips the queue. A final claim (the reading
   // before a window resets) is held back only by a reading from the last minute. An unreachable server
   // means no lease to be had: poll anyway.
@@ -594,6 +638,10 @@ function normalizeRow(value: unknown): QuotaReadingRow | null {
 
 function emptyState(error: string | null): QuotaState {
   return { at: null, available: false, subscription: null, credits: null, windows: [], error, pausedUntil: null };
+}
+
+function credentialsPath(): string {
+  return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), ".credentials.json");
 }
 
 function rateLimitedMessage(until: number): string {

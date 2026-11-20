@@ -103,12 +103,22 @@ on the laptop, and talks to each backend directly.
 - `src/modelsWatch.ts`: the Models pane's data for every host (`models` + `cliVersion` + `modelAliases` actions), used by Settings' Models button (`checkModels(true)`, the pane fills from this tab's host) and by App's hourly `watchModels` (first check an hour after the last, kept in localStorage `claude3.models` with each host's `seen` and `latest` string). `modelsChanged` (any host's rows, aliases or CLI version differ from `seen`, a string of all three; a `seen` saved before the aliases joined it, two parts, is adopted rather than counted as a change; the Default box isn't compared; a host that didn't answer, whose token-limits read failed, or whose aliases couldn't be read, is skipped) lights the gear and the Models button light red until the Models button is clicked.
 - `server/quota.ts`: claude2's QuotaService and its stats-server calls. The account's one history
   and the poll lease live on claude-stats, one for all three backends; local
-  fallback files in `~/.claude3/quota-*.json`. The lease spaces readings 30 minutes apart (`quotaFreshMs`, claude-stats). Its one timer chain,
+  fallback files in `~/.claude3/quota-*.json`. The lease spaces readings 4.5 minutes apart (`quotaFreshMs`, claude-stats). Its one timer chain,
   `armFinalReading` -> `takeFinalReading`, takes the reading 2 minutes before the soonest window reset, since the endpoint
-  forgets a window's final value once it resets: a `final` claim (`POST /quota/claim {final:true}`) passes the 30 minutes and a
+  forgets a window's final value once it resets: a `final` claim (`POST /quota/claim {final:true}`) passes the 4.5 minutes and a
   429 pause, needing only that no reading came in the last minute; each backend retries every 35s until one lands (or a 429,
   or 10s before the reset), so another backend takes over a failed call. Rearmed by every reading and by `quota.shared` at
-  the backend's start (a deploy drops the timer). Checked by `server/quota.check.mjs`. The page draws each line from 0 at
+  the backend's start (a deploy drops the timer). An expired token (8 hours) is refreshed by `probeQuotaRefresh`, a `claude -p quota` run that counts as
+  done only once `.credentials.json` holds an unexpired token: a usage call made before the CLI wrote it drew every 429 up
+  to 2026-11-20. The CLI locks its token refresh across processes, so CLIs from anywhere (other projects, VS Code)
+  may start together. The Windows CLI still signed out twice (2026-11-16, -19; cause unknown, the second as two CLIs
+  started together), so the `models` action lists models before `modelLimits`, and `sendQuota` raises Re-Auth when
+  `quota.signedOut()`.
+  For the next lost login: `quota.watchCredentials` logs each change to `.credentials.json` (`credentials: ...`, never
+  the token) and raises Re-Auth at once; every CLI run the backend starts logs `cli: <kind> started, pid ...`
+  (`noteCliStart` in claudeCli.ts); on win every run keeps the CLI's debug log in `~/.claude3/cli-debug`
+  (`childEnv` sets DEBUG and CLAUDE_CODE_DEBUG_LOGS_DIR; `pruneCliDebug` keeps 7 days).
+  Checked by `server/quota.check.mjs`. The page draws each line from 0 at
   the window's start (`carriedPoints` in Settings.vue). `sendQuota` in main.ts broadcasts each reading as a host-wide `quota` event
   (on stream connect, at each turn's end, after the Quotas pane's reading); the page keeps the newest from any host in
   `quotaUse` (`src/api.ts`), and every footer's `quotaSpend` (`shared/types.ts`) puts a red `$0.00` in place of the
