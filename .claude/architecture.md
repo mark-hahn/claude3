@@ -448,6 +448,7 @@ on the laptop, and talks to each backend directly.
 - Pane history elements are built by script, so they get no Vue scope attribute: the pane's and
   sidebar's styles are global, prefixed `.pane` / `.sidebar`.
 - A tab must never be hidden with `display:none` / `v-show`: the browser loses every scroll position in it, and the pane's ResizeObserver runs at 0x0, drops the box's height clamp and sends the box to its bottom on return. `.offstage` keeps it laid out.
+- Whether the open box is following its bottom is remembered (Pane's `boxPinned`, set at the end of each `syncSelectedBlock` and by the box's scroll events while its `scrollHeight` is unchanged), never measured live in the resize observer, `applyDelta` or `render`: a resize (the right column opening) rewraps the text taller before the observer runs, so a live `atBottom` reads a followed box as unfollowed and leaves it behind.
 - Vue runs a `flush: "post"` watcher on a prop before that update's `v-show` hook (Snips' column), and a pre-flush watcher before the update's patch, so what is being shown can't take focus there yet. Project's `focusPrompt` awaits `nextTick`.
 - Session objects are plain (not reactive) and mutated in place as text streams in; `version`
   tells Vue the shape changed. A delta goes to `Pane.applyDelta`, which refills only the growing

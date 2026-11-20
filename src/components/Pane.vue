@@ -79,6 +79,16 @@ let searchHit: SearchHit | null = null;
 // Set by a step until the hit has been scrolled to, so a later render leaves the box alone.
 let searchHitMoved = false;
 let programmaticScroll = false;
+// Whether the open box was at its bottom, as of its last sync or scroll (boxPinHeight: its
+// scrollHeight then). A resize reflows the text before its observer runs, so measuring then calls a
+// followed box unfollowed; a scroll event arriving after a reflow (another scrollHeight) isn't trusted.
+let boxPinned = false;
+let boxPinHeight = 0;
+function notePinned(response: HTMLElement): void {
+  if (!response.clientHeight) return;
+  boxPinned = atBottom(response);
+  boxPinHeight = response.scrollHeight;
+}
 // Unsent text per session; '' is the new-session draft. Every edit is saved in localStorage, as
 // claude2 keeps its drafts beside the sessions, so a reload puts each one back in its session's box.
 // ponytail: drafts of deleted sessions stay in localStorage; prune them if the 5MB quota ever matters.
@@ -142,7 +152,7 @@ function render(): void {
   // pinned to the bottom when it was there (how a streaming box follows its text).
   const selectedResponse = history.querySelector<HTMLElement>(`[data-index="${anchorIndex}"] .response`);
   const selectedTop = selectedResponse ? selectedResponse.scrollTop : 0;
-  const selectedAtBottom = selectedResponse ? atBottom(selectedResponse) : false;
+  const selectedAtBottom = selectedResponse ? boxPinned : false;
   history.replaceChildren();
   list.forEach((turn, index) => {
     const wrapper = document.createElement("div");
@@ -264,6 +274,7 @@ function render(): void {
       });
       response.addEventListener("scroll", () => {
         boxScrolls[turn.id] = atBottom(response) ? "bottom" : response.scrollTop;
+        if (response.scrollHeight === boxPinHeight) notePinned(response);
       });
       wrapper.appendChild(response);
     }
@@ -401,13 +412,14 @@ function syncSelectedBlock(boxScroll: BoxScroll): void {
   }
   if (response) {
     response.scrollTop = boxScroll === "bottom" ? response.scrollHeight : boxScroll === "top" ? 0 : boxScroll;
+    notePinned(response);
   }
   paintSearchHit();
 }
 
 function resyncSelectedBlock(): void {
   const response = historyEl.value?.querySelector<HTMLElement>(`[data-index="${anchorIndex}"] .response`);
-  syncSelectedBlock(response ? (atBottom(response) ? "bottom" : response.scrollTop) : 0);
+  syncSelectedBlock(response ? (boxPinned ? "bottom" : response.scrollTop) : 0);
 }
 
 // Streamed text has already been spliced into the turn: only the one growing box is refilled. The
@@ -421,7 +433,7 @@ function applyDelta(turnId: string, next: RunningStatus | null): void {
   const node = historyEl.value?.querySelector<HTMLElement>(`[data-turn-id="${turnId}"]`);
   const response = node?.querySelector<HTMLElement>(".response");
   if (!node || !response) return;
-  const pinned = atBottom(response);
+  const pinned = boxPinned;
   const top = response.scrollTop;
   fillResponse(response, turn, true);
   if (Number(node.dataset.index) === anchorIndex) requestAnimationFrame(() => syncSelectedBlock(pinned ? "bottom" : top));
