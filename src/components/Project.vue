@@ -629,7 +629,7 @@ onBeforeUnmount(() => {
 .sidebar .card-name { display: block; overflow-wrap: anywhere; padding-right: 24px; }
 .sidebar .card-rename { display: block; width: 100%; font: inherit; color: var(--ink); background: #fff; border: 1px solid #9a9a93; border-radius: 6px; padding: 1px 4px; }
 .sidebar .card-meta { display: block; }
-.sidebar .card-from { display: block; overflow-wrap: anywhere; padding-right: 28px; }
+.sidebar .card-from { display: block; overflow-wrap: anywhere; }
 /* Every card whose name holds the search text at once, over the card's own yellow. */
 .sidebar .card-name.search-hit { background: #ffc9c9; }
 .sidebar .card-hits { display: block; color: #0b5ed7; }
