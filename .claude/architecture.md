@@ -42,7 +42,7 @@ on the laptop, and talks to each backend directly.
   `FileEditor.vue` in its place in file mode. Path's picker has a host selector left of its box (as the Term pane's: another host only moves it to `HOSTS[host].home`, nothing changes until Ok); Ok on another host's folder makes it a new root, kept in `tab.roots` as `<host>:<path>` (no path starts so: a drive letter is one letter; the tab's own host's roots stay bare paths, so the server's `setRoots` is unchanged). Everything the tree does (listing, new, rename, delete, info, clipboard, drop, the editor's reads and saves, Ctrl+Enter's attach, Prj) goes to the root's host (`treeHost`) through `postHost`, the file actions being the host's, not a project's; a file opened keeps its own host. The Git popup's `openPath` is always the tab's host. Selections are kept per root under `<host>:<path>` too. A click on the root's path row edits it in place; Enter checks the text with the host's `folders` and goes there as Path's pick does (`goTo`). Holds only what the backend last listed. Stays mounted while its tab is hidden; both stop polling then (`active`).
 - `src/components/Tabs.vue`: the row's Tabs button (ctrl-click opens every closed project with a red or green dot, no dialog) and its `<dialog>`: host, Path (the folder picker), name
   and Create above the list of every project, where a click opens or closes one, a hold renames and
-  ctrl-click deletes. It keeps no copy of the list: changes go to the backend and come back as a
+  ctrl-click deletes (its dialog is under Projects, below). It keeps no copy of the list: changes go to the backend and come back as a
   `projects` event. The dialog stays open after Create, with that project's tab on show behind it,
   and closes when a click opens a project (a failed open stays, showing its error); closing the dialog puts the cursor in the prompt box of the tab on show (`focusAsked`).
   The Files bar's Prj opens it with host, path and name filled in from the selected folder (`openWith`, reached through App's `newProjectAt` provide).
@@ -221,7 +221,17 @@ on the laptop, and talks to each backend directly.
   (two would overwrite one sessions file; the backend refuses), and names are unique ignoring case
   (only the page sees all three hosts, so the page refuses). A project with a session running can't
   be closed or deleted (`refuseIfRunning`). Deleting removes its sessions file, images, debug
-  records and run log; its folder and the CLI's transcripts stay. The tab on show closing moves to
+  records and run log; its folder and the CLI's transcripts stay. Ctrl-click on a project in the Tabs dialog opens its own
+  delete `<dialog>` (Tabs.vue, not a `window.confirm`): None or any other project on any host to take the sessions. The
+  sessions' own records (bars and boxes, with their pictures and files) are what is kept; the CLI's transcript is not
+  (a moved session is never resumed). The page sends `moveSessions { moveTo }` for a project on the same host, else
+  `exportSessions` (sessions plus the bytes of their pictures and files by old path) there and `importSessions` on the
+  receiving host (`storeBlob` writes them under its `~/.claude3` and rewrites `turn.images` and `turn.files[].stored`),
+  and then, in both cases, the usual `deleteProject`, so a refusal or failure before it deletes nothing; a move tried
+  again skips ids already there. `receiveSessions` puts each session that has turns in the receiver's trash with
+  `fromProject` (the old project's name): its card says `From <name> project.`, has no R, and the backend refuses to
+  restore or fork it (`trash`, `forkSession`); it can still be picked and deleted for good. Empty "New session" cards
+  are dropped. The tab on show closing moves to
   the next open one by name (`nextTab`).
 - **New session.** "+" → `POST /api/new` makes an empty "New session" card and the
   pane opens it, as claude2 does. Empty sessions are scratch: "+", a card click, Clean and Trash

@@ -552,13 +552,14 @@ onBeforeUnmount(() => {
           />
           <span v-else class="card-name" :class="{ 'search-hit': searchText && nameMatches(session) }">{{ session.name || "New session" }}</span>
           <span class="card-meta">{{ timeLabel(session.updatedAt) }}</span>
+          <span v-if="session.fromProject" class="card-from">From {{ session.fromProject }} project.</span>
           <span v-if="hitCounts.get(session.id)" class="card-hits">{{ hitCounts.get(session.id) }} {{ hitCounts.get(session.id) === 1 ? "match" : "matches" }}</span>
           <div class="card-actions">
             <span v-if="busy(session)" class="card-clock" :class="busy(session)" :title="busy(session) === 'background' ? 'Waiting on a background task (Stop ends it)' : 'Responding'">
               <svg viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
             </span>
             <button v-if="!session.trashed" v-show="!busy(session)" class="card-trash" data-help="card trash button" @pointerdown.stop @click.stop="trash(session, true)">&#x1F5D1;</button>
-            <button v-else class="card-restore" data-help="card restore button" @pointerdown.stop @click.stop="trash(session, false)">R</button>
+            <button v-else-if="!session.fromProject" class="card-restore" data-help="card restore button" @pointerdown.stop @click.stop="trash(session, false)">R</button>
             <span class="card-turns" title="Prompt turns">{{ session.turns.length }}</span>
           </div>
         </div>
@@ -628,6 +629,7 @@ onBeforeUnmount(() => {
 .sidebar .card-name { display: block; overflow-wrap: anywhere; padding-right: 24px; }
 .sidebar .card-rename { display: block; width: 100%; font: inherit; color: var(--ink); background: #fff; border: 1px solid #9a9a93; border-radius: 6px; padding: 1px 4px; }
 .sidebar .card-meta { display: block; }
+.sidebar .card-from { display: block; overflow-wrap: anywhere; padding-right: 28px; }
 /* Every card whose name holds the search text at once, over the card's own yellow. */
 .sidebar .card-name.search-hit { background: #ffc9c9; }
 .sidebar .card-hits { display: block; color: #0b5ed7; }

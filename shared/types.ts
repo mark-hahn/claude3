@@ -104,6 +104,9 @@ export interface ClaudeSession {
   createdAt: number;
   updatedAt: number;
   trashed: boolean;
+  // The name of the deleted project this session was moved from: set, it is trashed for good (no
+  // restore, no fork), only readable and deletable. Absent on every session made here.
+  fromProject?: string;
   turns: ClaudeTurn[];
   // What graft has saved this session, as of its last finished turn. Absent until then.
   graftSavedUsd?: number;

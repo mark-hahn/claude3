@@ -10,6 +10,8 @@
 //        setRoots { roots, rootIdx } -> {} (the Files tree's list of roots and the one on show)
 //        createProject { label, path } -> {} | renameProject { label } -> {} | openProject { open } -> {}
 //        deleteProject -> {} (the project, its sessions and what they keep on disk; never its folder)
+//        moveSessions { moveTo } -> {} (before deleteProject: the sessions with turns go to the trash of the project moveTo on this host, marked fromProject; the rest are dropped)
+//        exportSessions -> { sessions, blobs } | importSessions { from, sessions, blobs } -> {} (the same move between hosts: blobs are the pictures' and files' bytes, base64 by their old paths; the importing project is tab)
 //        prompt  { prompt, images?, files? } -> { sessionId } (an empty sessionId starts a session; images are PNG data URIs, files AttachedFiles with a dataUri)
 //        capture { hideWindow } -> { dataUri } (a shot of the desktop; laptop backends only)
 //        openUrl { url } -> {} (an http(s) address in the Windows default browser, through explorer.exe; laptop backends only)
@@ -197,6 +199,35 @@ function refuseIfRunning(project: Project, what: string): void {
   if (Object.values(statuses(project)).some((status) => status.active) || project.sessions.some((session) => runs.has(session.id))) {
     throw new Error(`${project.tab.label} has a session running, so it can't be ${what}.`);
   }
+}
+
+// A deleted project's sessions, kept in this project's trash for reading: fromProject marks each as
+// never to leave it. Sessions with no turns are scratch and dropped, and one already here (a move
+// tried again) is skipped. From one host the ids stay and so do the pictures' and files' folders;
+// from another (blobs) the bytes are written under this host's ~/.claude3 and the paths follow.
+function receiveSessions(dest: Project, from: string, sessions: ClaudeSession[], blobs?: Record<string, string>): void {
+  const fresh = sessions.filter((session) => session.turns.length && !dest.sessions.some((have) => have.id === session.id));
+  for (const session of fresh) {
+    for (const turn of blobs ? session.turns : []) {
+      if (turn.images) turn.images = turn.images.map((file) => storeBlob("images", file, blobs!));
+      for (const file of turn.files ?? []) file.stored &&= storeBlob("files", file.stored, blobs!);
+    }
+    Object.assign(session, { trashed: true, fromProject: from });
+  }
+  dest.sessions.unshift(...fresh);
+  save(dest);
+  for (const session of fresh) sendSession(dest, session);
+}
+
+// A picture's or file's bytes from another host, written where this host keeps them (images/<session>/<file>,
+// files/<session>/<uuid>/<name>); the old path stays when the bytes didn't come.
+function storeBlob(kind: "images" | "files", old: string, blobs: Record<string, string>): string {
+  const parts = old.split(/[\\/]/).slice(kind === "images" ? -2 : -3);
+  if (blobs[old] === undefined || parts.some((part) => !part || part === "..")) return old;
+  const file = path.join(DATA_DIR, kind, ...parts);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, Buffer.from(blobs[old], "base64"));
+  return file;
 }
 
 // What a session deleted for good leaves on disk. The CLI's transcripts stay, as in claude2.
@@ -650,6 +681,9 @@ function forkSession(project: Project, session: ClaudeSession, turnId: string): 
   if (runs.has(session.id) || runner.status(session.id)?.active) {
     throw new Error("Claude is still responding in this session; stop it before forking.");
   }
+  if (session.fromProject) {
+    throw new Error(`This session came from the deleted project ${session.fromProject} and stays in the trash, so it can't be forked.`);
+  }
   const base = session.name.replace(/ \(\d+\)$/, "");
   let version = 2;
   while (project.sessions.some((entry) => entry.name === `${base} (${version})`)) {
@@ -816,6 +850,37 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     saveTabs();
     return {};
   }
+  // Before deleteProject, which then has no sessions left to remove. Another host's project takes them
+  // through exportSessions here and importSessions there.
+  if (name === "moveSessions") {
+    const dest = projects.get(String(body.moveTo));
+    if (!dest || dest === project) {
+      throw new Error(`No other project ${JSON.stringify(body.moveTo)} on ${hostName}.`);
+    }
+    refuseIfRunning(project, "deleted");
+    receiveSessions(dest, project.tab.label, project.sessions);
+    removeSessions(project, project.sessions.map((session) => session.id));
+    return {};
+  }
+  if (name === "exportSessions") {
+    refuseIfRunning(project, "deleted");
+    const blobs: Record<string, string> = {};
+    for (const turn of project.sessions.flatMap((session) => session.turns)) {
+      for (const file of [...(turn.images ?? []), ...(turn.files ?? []).map((entry) => entry.stored ?? "")]) {
+        const data = file && !(file in blobs) ? await fs.promises.readFile(file, "base64").catch(() => "") : "";
+        if (data) blobs[file] = data;
+      }
+    }
+    return { sessions: project.sessions, blobs };
+  }
+  if (name === "importSessions") {
+    const from = String(body.from ?? "").trim();
+    if (!from || !Array.isArray(body.sessions)) {
+      throw new Error("importSessions needs the project's name and its sessions.");
+    }
+    receiveSessions(project, from, body.sessions as ClaudeSession[], (body.blobs ?? {}) as Record<string, string>);
+    return {};
+  }
   if (name === "deleteProject") {
     refuseIfRunning(project, "deleted");
     projects.delete(project.tab.id);
@@ -955,6 +1020,9 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
       session.name = String(body.name ?? "").trim() || session.name;
       break;
     case "trash":
+      if (session.fromProject && body.trashed !== true) {
+        throw new Error(`This session came from the deleted project ${session.fromProject} and stays in the trash.`);
+      }
       session.trashed = body.trashed === true;
       break;
     case "bestModel":

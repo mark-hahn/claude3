@@ -89,7 +89,16 @@ Click: create the project from the host, Path and name, and show its tab behind 
 @Tabs project name
 Click: open the project (and close the dialog), or close it if open.
 Long press: rename it.
-Ctrl-click: delete the project and its sessions, after asking. Its folder is left alone.
+Ctrl-click: delete the project, after a dialog that asks where its sessions go. Its folder is left alone.
+
+@delete project target
+Click: None, or a project to receive the sessions of the project being deleted (on any host). They go to its trash for good, to be read and deleted, never restored.
+
+@delete project Delete button
+Click: delete the project, moving its sessions to the chosen project first. This cannot be undone.
+
+@delete project Cancel button
+Click: close the dialog and delete nothing. Esc does the same.
 
 @rename box
 Enter: keep the new name. Esc: cancel. Clicking elsewhere keeps it too.
@@ -148,6 +157,7 @@ Click: end the search and leave the trash list.
 Click: open the session (during a search: step to its next hit).
 Long press: rename it.
 Alt-click: copy its name.
+"From <name> project.": a session moved here when that project was deleted. It stays in the trash for good: no R, and it can't be forked.
 On the trash list: click picks just it, ctrl-click adds or drops it, shift-click adds a run.
 Hover: its first prompt.
 

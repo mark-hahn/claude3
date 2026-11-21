@@ -115,9 +115,58 @@ function clickName(tab: Tab, event: MouseEvent): void {
   }));
 }
 
-// ponytail: the project's unsent drafts and pictures stay in this browser, unreachable; clear them if storage ever fills.
+// Ctrl-click on a project: its own dialog, with the choice of another project to take its sessions.
+const deleteDialog = ref<HTMLDialogElement>();
+const deleting = ref<Tab>();
+// The id of the project that receives the sessions; "" is None.
+const receiver = ref("");
+const deleteError = ref("");
+const deleteBusy = ref(false);
+const receivers = computed(() => props.tabs.filter((tab) => tab.id !== deleting.value?.id));
+const chosen = computed(() => receivers.value.find((tab) => tab.id === receiver.value));
+const deleteMessage = computed(() => {
+  const tab = deleting.value;
+  if (!tab) return "";
+  const left = `This cannot be undone. The folder ${tab.path} will be left alone.`;
+  return chosen.value
+    ? `Clicking delete will permanently delete the project ${tab.label}. Its sessions will be moved to project ${chosen.value.label}. ${left}`
+    : `Clicking delete will permanently delete the project ${tab.label} and all its sessions. ${left}`;
+});
+
 function remove(tab: Tab): void {
-  if (window.confirm(`Permanently delete the project "${tab.label}" and its sessions?\n\nThe folder ${tab.path} is left alone.\n\nThis cannot be undone.`)) attempt(post(tab, "deleteProject", {}));
+  deleting.value = tab;
+  receiver.value = "";
+  deleteError.value = "";
+  deleteDialog.value!.showModal();
+}
+
+// The sessions go first and the project only after, so a refusal (a session running) or a failure
+// loses nothing; a move tried again skips what already arrived. On another host the sessions and the
+// bytes of their pictures and files come through here.
+// ponytail: the project's unsent drafts and pictures stay in this browser, unreachable; clear them if storage ever fills.
+async function confirmDelete(): Promise<void> {
+  const tab = deleting.value;
+  if (!tab || deleteBusy.value) return;
+  const to = chosen.value;
+  if (receiver.value && !to) {
+    deleteError.value = "The project chosen to receive the sessions is gone. Choose another.";
+    return;
+  }
+  deleteBusy.value = true;
+  deleteError.value = "";
+  try {
+    if (to?.host === tab.host) {
+      await post(tab, "moveSessions", { moveTo: to.id });
+    } else if (to) {
+      const { sessions, blobs } = await post<{ sessions: unknown; blobs: unknown }>(tab, "exportSessions", {});
+      await post(to, "importSessions", { from: tab.label, sessions, blobs });
+    }
+    await post(tab, "deleteProject", {});
+    deleteDialog.value?.close();
+  } catch (problem) {
+    deleteError.value = messageOf(problem);
+  }
+  deleteBusy.value = false;
 }
 
 function finishRename(tab: Tab, commit: boolean): void {
@@ -180,6 +229,19 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
       </div>
     </section>
   </dialog>
+  <dialog ref="deleteDialog" class="tabs-pop delete-pop" closedby="closerequest">
+    <div>Click a project to receive sessions:</div>
+    <section class="tabs-names">
+      <div class="tabs-name" :class="{ picked: !receiver }" role="button" data-help="delete project target" @click="receiver = ''">None</div>
+      <div v-for="tab in receivers" :key="tab.id" class="tabs-name" :class="{ picked: receiver === tab.id }" :title="`${tab.host}: ${tab.path}`" role="button" data-help="delete project target" @click="receiver = tab.id"><span class="tabs-host">{{ tab.host }}:</span>{{ tab.label }}</div>
+    </section>
+    <div>{{ deleteMessage }}</div>
+    <div v-if="deleteError" class="tabs-error">{{ deleteError }}</div>
+    <section class="tabs-row">
+      <button :disabled="deleteBusy" data-help="delete project Delete button" @click="confirmDelete">Delete</button>
+      <button autofocus data-help="delete project Cancel button" @click="deleteDialog?.close()">Cancel</button>
+    </section>
+  </dialog>
   <FolderPicker ref="picker" :host="host" @pick="setPath" />
 </template>
 
@@ -207,6 +269,9 @@ const vFocus = { mounted: (el: HTMLInputElement) => (el.focus(), el.select()) };
 .tabs-name { padding: 2px 6px; border-radius: 4px; cursor: pointer; user-select: none; }
 .tabs-name:hover { background: var(--wash); }
 .tabs-name.open { font-weight: 700; }
+.delete-pop { width: min(440px, 92vw); }
+.delete-pop .tabs-names { max-height: 40vh; }
+.tabs-name.picked { background: #fbf3c4; }
 /* A fixed width, wider than any host (bold too), so the names start at the same x. */
 .tabs-host { display: inline-block; min-width: 3em; margin-right: 6px; color: #4da3e0; }
 /* A name with no dot keeps the dot's room, so the names line up. */
