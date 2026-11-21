@@ -9,6 +9,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } fr
 import type { HostName, Tab } from "../../shared/config.ts";
 import { awaitingPlan, COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, hasBetter, modelChoice, PLAN_APPROVED, PLAN_WAIT, quotaSpend, shortModel, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
 import { modelPicks, post, postHost, quotaUse } from "../api.ts";
+import { ask, say } from "../say.ts";
 import { cropRect } from "../cropRect.ts";
 import { addLineDots, addListKeys, addWheelZoom, editorOptions, followFontSize, monaco, untab } from "../monaco.ts";
 import { copy, copyCodeBlock } from "../copy.ts";
@@ -551,7 +552,7 @@ defineExpose({ applyDelta, drafted, appendPrompt, attach, focusPrompt, returnPro
 // ---- the dock ----
 
 function report(error: unknown): void {
-  window.alert(error instanceof Error ? error.message : String(error));
+  void say(error instanceof Error ? error.message : String(error));
 }
 
 // A bar's fork mark. The backend keeps the whole conversation as a new session and cuts this one
@@ -560,10 +561,10 @@ async function fork(count: number, turnId: string): Promise<void> {
   const question = count
     ? `Fork the conversation here, dropping the ${count} run${count === 1 ? "" : "s"} after this one?\n\nClaude forgets them too. The whole conversation is kept as a new session beside this one.`
     : "Copy this session?\n\nThe copy is a session of its own, holding the whole conversation.";
-  if (!props.session || !window.confirm(question)) return;
+  if (!props.session || !(await ask(question))) return;
   try {
     const { warning } = await post<{ warning: string }>(props.tab, "fork", { sessionId: props.session.id, turnId });
-    if (warning) window.alert(warning);
+    if (warning) void say(warning);
   } catch (error) {
     report(error);
   }
@@ -830,7 +831,7 @@ async function deploySetupOk(what: "prompt" | "run" = "prompt"): Promise<boolean
       emit("started", sessionId);
     } else if (choice === "check") {
       const { problems } = await post<{ problems: string[] }>(props.tab, "deployCheck", {});
-      window.alert(problems.length ? `${props.tab.label}: the deploy setup isn't finished.\n\n${problems.map((problem) => `- ${problem}`).join("\n")}` : `${props.tab.label}: deploy is set up. Press Run to deploy.`);
+      void say(problems.length ?`${props.tab.label}: the deploy setup isn't finished.\n\n${problems.map((problem) => `- ${problem}`).join("\n")}` : `${props.tab.label}: deploy is set up. Press Run to deploy.`);
     } else if (choice === "none") {
       await post(props.tab, "deploySetup", { state: "none" });
     }
@@ -940,7 +941,7 @@ async function send(text: string, keepDraft: boolean, snips: boolean, approve = 
   const fresh = !props.session || choice === "new";
   // Sending during a run stops that run and takes this prompt instead; a run waiting on a
   // background task takes it as a follow-up.
-  if (!fresh && props.status?.active && props.status.phase !== "background" && !window.confirm("Stop the running response and send this prompt instead?")) return;
+  if (!fresh && props.status?.active && props.status.phase !== "background" && !(await ask("Stop the running response and send this prompt instead?"))) return;
   if (!keepDraft) draft.value = "";
   // Every waiting picture and file rides with this prompt; a failed send puts them back.
   const key = sessionKey();

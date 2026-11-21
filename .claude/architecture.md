@@ -390,11 +390,11 @@ on the laptop, and talks to each backend directly.
   **File mode:** A header row shows the path after the host, as the tree's path row does. Ctrl-double-click on a `.md` opens the same editor with its markdown view (`MdView`) already on (`file.rendered`; Ctrl-Alt-X flips it either way). In the editor: saved 500ms after typing, and read again if the file's mtime changes, asked every 2s. With the last line in view it is in tail mode, the header's path yellow: the read is `waitFile`, which the backend answers on an `fs.watch` event or after 2s (where a watch can't see the change), and the view sticks to the bottom when text arrives. `saveFile`
   carries the mtime it read and is refused if the file has moved on; the editor then stops saving
   until Reload.
-- **Delete for good.** Picked trashed cards → `POST /api/delete`, after a `window.confirm`. The
+- **Delete for good.** Picked trashed cards → `POST /api/delete`, after an `ask` (src/say.ts). The
   backend takes only trashed ids with no run going (skips running ones), removes them and their
   debug records, and posts `removed`. The CLI's
   transcripts stay, as in claude2.
-- **Fork (claude2's).** The mark leading each bar → `window.confirm` → `fork` action
+- **Fork (claude2's).** The mark leading each bar → `ask` (src/say.ts) → `fork` action
   (`forkSession`), refused while the session runs. The whole session is copied as "<name> (2)"
   (then (3), ...) under a new id: every mention of the old id in it is swapped, the pictures' folder
   copied, and the CLI transcript copied with the id swapped (`copySessionTranscript`). Then, unless
@@ -477,8 +477,15 @@ on the laptop, and talks to each backend directly.
 - Every modal `<dialog>` carries `closedby="any"`: a click on its gray backdrop closes it as Esc does
   (a `cancel` handler can refuse, as Git's does while committing; a press that starts inside and is let
   go outside doesn't count). Give a new dialog the attribute too. A non-modal one (the Git popup's review) must not have `any`: on a non-modal dialog it closes on any click outside.
+- No browser dialogs: never `window.alert`, `confirm` or `prompt` (their text can't be selected or sized).
+  `src/say.ts` has the page's own: `say(text)` (an alert) and `ask(text, cancelFirst?)` (a confirm,
+  resolving true for OK; `cancelFirst` makes Cancel the button Enter presses, used for the deletes and
+  the revert), each a `<dialog class="say-pop">` (style.css) built on `document.body`, so any
+  component can call them, in any tab. They queue, one on show at a time, and an alert whose text
+  is already waiting or on show is dropped, so a repeating error doesn't pile up. A confirm is a
+  promise, so its caller is async. They carry `data-help` `alert dialog` and `confirm dialog`.
 - Errors nothing caught (Vue's `app.config.errorHandler`, window `error` and `unhandledrejection`)
-  get a `window.alert` from `src/main.ts`, each message once per page load (a broken render repeats
+  get a drawn "Page error" dialog from `src/main.ts` (its own, not `say`), each message once per page load (a broken render repeats
   on every update). Window errors without an error object, like ResizeObserver's loop notice, are skipped.
 - Not ported yet from claude2: export, presets (M),
   Stats/Instructions/Settings tabs, the git changes check, prompt

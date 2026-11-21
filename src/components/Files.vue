@@ -18,6 +18,7 @@ import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, 
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import type { FileEntry } from "../../shared/types.ts";
 import { post, postHost, upload } from "../api.ts";
+import { ask, say } from "../say.ts";
 import { copy } from "../copy.ts";
 import { pick } from "../pick.ts";
 import { foldersBetween, parentFolder, sameName, withSeparator } from "../tabList.ts";
@@ -293,7 +294,7 @@ async function findAll(text: string): Promise<void> {
       note.value = /[\\/]/.test(name) ? `No path here ends in "${name}".` : `No name here contains "${name}".`;
       return;
     }
-    if (paths.length > 20 && !window.confirm(`Select all ${paths.length} matches for "${name}", opening the folders on the way to each?`)) return;
+    if (paths.length > 20 && !(await ask(`Select all ${paths.length} matches for "${name}", opening the folders on the way to each?`))) return;
     select(...paths);
     await reveal(paths[0]!, paths.flatMap(wayTo));
     if (line) await openRow(paths[0]!, false, Number(line));
@@ -348,16 +349,16 @@ async function paste(folder: string): Promise<void> {
 
 // Every selected row, but refused while any is out of sight: what is deleted must be on show.
 // Rows inside a selected folder go with it.
-function remove(): void {
+async function remove(): Promise<void> {
   const shown = selectedRows.value;
   const hidden = [...selected.value].filter((path) => !shown.some((row) => row.path === path));
   if (hidden.length) {
-    window.alert(`Nothing deleted: these selected items are out of sight, in a closed folder or gone:\n\n${hidden.map(below).join("\n")}\n\nOpen their folders or change the selection.`);
+    void say(`Nothing deleted: these selected items are out of sight, in a closed folder or gone:\n\n${hidden.map(below).join("\n")}\n\nOpen their folders or change the selection.`);
     return;
   }
   const doomed = shown.filter((row) => !shown.some((folder) => folder.dir && foldersBetween(folder.path, row.path)));
   const list = doomed.map((row) => (row.dir ? `${below(row.path)}  (folder, and everything in it)` : below(row.path))).join("\n");
-  if (!window.confirm(`Permanently delete ${doomed.length === 1 ? "this" : `these ${doomed.length}`}?\n\n${list}\n\nThis cannot be undone.`)) return;
+  if (!(await ask(`Permanently delete ${doomed.length === 1 ? "this" : `these ${doomed.length}`}?\n\n${list}\n\nThis cannot be undone.`, true))) return;
   const host = treeHost.value;
   void attempt((async () => {
     for (const row of doomed) await postHost(host, "deletePath", { path: row.path });
@@ -436,7 +437,7 @@ function infoClosed(): void {
   const name = infoName.value.trim();
   if (row && name && name !== row.name) {
     void postHost<{ path: string }>(treeHost.value, "renamePath", { path: row.path, name })
-      .then((reply) => moved(row.path, reply.path), (problem) => window.alert(`Not renamed: ${messageOf(problem)}`))
+      .then((reply) => moved(row.path, reply.path), (problem) => void say(`Not renamed: ${messageOf(problem)}`))
       .finally(() => refresh());
   }
   treeArea.value?.focus();
@@ -511,7 +512,7 @@ function keyDown(event: KeyboardEvent): void {
   const picked = window.getSelection();
   if (key === "ctrl+c" && picked && !picked.isCollapsed && area.contains(picked.anchorNode)) return;
   if (key === "backspace") stepRoot(-1);
-  else if (key === "delete" && selected.value.size) remove();
+  else if (key === "delete" && selected.value.size) void remove();
   else if (key === "ctrl+v" && !many.value) {
     const folder = landing.value;
     clipboardJob(folder, () => paste(folder));

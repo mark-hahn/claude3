@@ -8,6 +8,7 @@ import "@xterm/xterm/css/xterm.css";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { postHost } from "../api.ts";
+import { say } from "../say.ts";
 import { findBack, STAMP } from "../termFind.ts";
 import FolderPicker from "./FolderPicker.vue";
 
@@ -107,7 +108,7 @@ async function flush(): Promise<void> {
   try {
     await call("termSend", { data });
   } catch (problem) {
-    window.alert(`Term: ${messageOf(problem)}`);
+    void say(`Term: ${messageOf(problem)}`);
   }
   sending = false;
   void flush();
@@ -201,7 +202,7 @@ function cd(folder: string): void {
 function clear(): void {
   term.clear();
   term.focus();
-  call("termClear", {}).catch((problem) => window.alert(`Term: ${messageOf(problem)}`));
+  call("termClear", {}).catch((problem) => void say(`Term: ${messageOf(problem)}`));
 }
 
 // The header's Close, or the shell's exit with other terminals left: no more reads here, Project takes
@@ -210,7 +211,7 @@ function clear(): void {
 function close(): void {
   alive = false;
   emit("close");
-  void reading.catch(() => undefined).then(() => call("termClose", {})).catch((problem) => window.alert(`Term: ${messageOf(problem)}`));
+  void reading.catch(() => undefined).then(() => call("termClose", {})).catch((problem) => void say(`Term: ${messageOf(problem)}`));
 }
 
 // Capture phase, so xterm doesn't scroll as well; the box keeps its size, so the fit is called here.

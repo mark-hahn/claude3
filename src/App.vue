@@ -4,6 +4,7 @@
 import { computed, provide, reactive, ref, watch, watchEffect } from "vue";
 import { FIRST_TABS, type HostName, type Tab } from "../shared/config.ts";
 import { connect, post } from "./api.ts";
+import { say } from "./say.ts";
 import Project from "./components/Project.vue";
 import Settings from "./components/Settings.vue";
 import Snips from "./components/Snips.vue";
@@ -53,7 +54,7 @@ function clickTab(tab: Tab, event: MouseEvent): void {
   logViewEnd.value++;
   if (event.ctrlKey) {
     post(tab, "openProject", { open: false })
-      .catch((error) => window.alert(error instanceof Error ? error.message : String(error)))
+      .catch((error) => void say(error instanceof Error ? error.message : String(error)))
       .finally(() => focusAsked.value++);
     return;
   }

@@ -12,6 +12,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { Tab } from "../../shared/config.ts";
 import { post, postHost } from "../api.ts";
+import { ask } from "../say.ts";
 import { pick } from "../pick.ts";
 import { modifiedLine } from "../diffLine.ts";
 import { MessageHistory } from "../messageHistory.ts";
@@ -74,7 +75,7 @@ async function revert(): Promise<void> {
   const paths = [...new Set(chosen.map((file) => file.path))];
   if (!paths.length || committing.value || review.value) return;
   const list = paths.map((path) => (chosen.some((file) => file.path === path && file.x === "?") ? `${path}  (untracked: deleted)` : path)).join("\n");
-  if (!window.confirm(`Revert ${paths.length === 1 ? "this file" : `these ${paths.length} files`} to the last commit?\n\n${list}\n\nThis cannot be undone.`)) return;
+  if (!(await ask(`Revert ${paths.length === 1 ? "this file" : `these ${paths.length} files`} to the last commit?\n\n${list}\n\nThis cannot be undone.`, true))) return;
   const untracked = chosen.filter((file) => file.x === "?");
   const tracked = chosen.filter((file) => file.x !== "?").flatMap((file) => (file.from ? [file.path, file.from] : [file.path]));
   error.value = "";

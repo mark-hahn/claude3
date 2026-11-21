@@ -7,6 +7,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { olderCli, shortModel } from "../../shared/types.ts";
 import { post, postHost } from "../api.ts";
+import { say } from "../say.ts";
 import { checkModels, modelsChanged, type ModelRow } from "../modelsWatch.ts";
 
 // active: this is the tab on show; a tab out of sight stops asking the backend.
@@ -92,12 +93,12 @@ async function openModels(): Promise<void> {
   cliVersions.value = Object.fromEntries((Object.keys(HOSTS) as HostName[]).map((host) => [host, got[host] instanceof Error ? "?" : (got[host] as { version: string }).version]));
   const mine = got[props.tab.host];
   if (mine instanceof Error) {
-    window.alert("Could not load the model list: " + mine.message);
+    void say("Could not load the model list: " + mine.message);
     return;
   }
   defaultModel.value = mine.defaultModel;
-  if (mine.limitsError) window.alert("Could not load the models' token limits: " + mine.limitsError);
-  if (mine.aliasesError) window.alert("Could not read the CLI's model aliases: " + mine.aliasesError);
+  if (mine.limitsError) void say("Could not load the models' token limits: " + mine.limitsError);
+  if (mine.aliasesError) void say("Could not read the CLI's model aliases: " + mine.aliasesError);
   aliases.value = mine.aliases;
   modelRows.value = mine.rows;
 }
@@ -110,7 +111,7 @@ async function setDefault(model: string, id: string, event: Event): Promise<void
   defaultModel.value = model;
   const failed: string[] = [];
   await Promise.all((Object.keys(HOSTS) as HostName[]).map((host) => postHost(host, "setDefaultModel", { model, id }).catch((error) => void failed.push(`${host}: ${error instanceof Error ? error.message : error}`))));
-  if (failed.length) window.alert("The default model was not set on:\n" + failed.join("\n"));
+  if (failed.length) void say("The default model was not set on:\n" + failed.join("\n"));
 }
 
 async function load(force: boolean): Promise<void> {

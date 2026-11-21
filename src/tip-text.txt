@@ -274,6 +274,13 @@ Cancel: don't send; the prompt stays in the box.
 @file details
 OK: close.
 
+@alert dialog
+OK: close (the Enter key). The text can be selected and copied.
+
+@confirm dialog
+OK: go ahead. Cancel: do nothing; Esc and a click on the gray do the same.
+Enter presses the button with the outline: Cancel for what can't be undone, else OK.
+
 @image popup picture
 Drag: crop the picture. Click: undo the last crop.
 A picture already sent is shown only.

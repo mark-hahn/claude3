@@ -6,6 +6,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { typedPrompt, type ClaudeSession, type RunningStatus, type ServerEvent } from "../../shared/types.ts";
 import { authNeeded, listen, post, postHost } from "../api.ts";
+import { ask, say } from "../say.ts";
 import { beep } from "../beep.ts";
 import { copy } from "../copy.ts";
 import { keepOpen } from "../keepOpen.ts";
@@ -160,7 +161,7 @@ function onEvent(event: ServerEvent): void {
     ceilings.value = event.count;
   } else if (event.type === "returned") {
     pane.value?.returnPrompt(event.sessionId, event.prompt, event.images, event.files ?? []);
-    if (event.notice) window.alert(`${event.notice}\n\nYour prompt is back in the box.`);
+    if (event.notice) void say(`${event.notice}\n\nYour prompt is back in the box.`);
   }
   if (event.type === "state" || event.type === "removed") void ensureOpen();
 }
@@ -283,10 +284,10 @@ function onPageKey(event: KeyboardEvent): void {
 }
 
 // claude2's delete for good: one question for the whole pick.
-function deletePicked(): void {
+async function deletePicked(): Promise<void> {
   const ids = [...picked.value];
   const question = ids.length === 1 ? `Permanently delete "${sessions.find((session) => session.id === ids[0])?.name || "this session"}"?` : `Permanently delete the ${ids.length} selected sessions?`;
-  if (!window.confirm(`${question}\n\nThis cannot be undone.`)) return;
+  if (!(await ask(`${question}\n\nThis cannot be undone.`, true))) return;
   void post(props.tab, "delete", { sessionIds: ids }).catch(report);
 }
 
@@ -360,7 +361,7 @@ function trash(session: ClaudeSession, trashed: boolean): void {
 }
 
 function report(error: unknown): void {
-  window.alert(error instanceof Error ? error.message : String(error));
+  void say(error instanceof Error ? error.message : String(error));
 }
 
 // A test of Re-Auth: ctrl-click on the counts raises this tab's host's flag, as an expired login

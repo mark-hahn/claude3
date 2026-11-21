@@ -20,6 +20,14 @@ button:disabled::after { content: ""; position: absolute; inset: -1px; border-ra
 .help-pop .help-text { white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 10px; }
 /* What a line acts on ("Ctrl-click"), before its colon: blue, dark enough not to wash out. */
 .help-pop .help-key { color: #0b5ed7; }
+/* src/say.ts: the page's own alert and confirm. The text is selectable, as a browser dialog's isn't. */
+.say-pop { margin-top: 15vh; width: min(640px, 90vw); max-height: 80vh; padding: 12px 16px; border: 1px solid #000; border-radius: 8px; background: var(--surface); color: #000; font-size: 14px; }
+.say-pop[open] { display: flex; flex-direction: column; gap: 10px; }
+.say-pop::backdrop { background: rgba(0, 0, 0, 0.15); }
+.say-pop pre { margin: 0; min-height: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; user-select: text; }
+.say-pop form { flex: none; text-align: right; }
+.say-pop button { font-size: 14px; }
+.say-pop button:focus { outline: 2px solid #000; outline-offset: 1px; }
 /* The ? popup's focused part, at the top and over its keys. */
 .help-pop .help-mode { color: #e04848; }
 .help-pop .help-buttons { text-align: right; }

@@ -6,6 +6,7 @@
 import { computed, ref, watch } from "vue";
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { post, postHost } from "../api.ts";
+import { say } from "../say.ts";
 import { folderName, sameName } from "../tabList.ts";
 import FolderPicker from "./FolderPicker.vue";
 
@@ -54,7 +55,7 @@ function open(event?: MouseEvent): void {
 function openFlagged(): void {
   const flagged = props.tabs.filter((tab) => !tab.open && (props.highlighted[tab.id] || props.busy[tab.id]));
   Promise.all(flagged.map((tab) => post(tab, "openProject", { open: true })))
-    .catch((problem) => window.alert(messageOf(problem)))
+    .catch((problem) => void say(messageOf(problem)))
     .finally(() => emit("closed"));
 }
 
