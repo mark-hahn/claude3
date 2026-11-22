@@ -420,6 +420,7 @@ Check: the search looks inside node_modules too.
 
 @Files root path
 Click: type a path. Enter: show that folder. Esc: cancel.
+Alt-click: copy the full path shown.
 Drop files from Explorer: they are uploaded here.
 
 @Files tree

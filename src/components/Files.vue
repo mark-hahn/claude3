@@ -250,12 +250,14 @@ function showHost(host: HostName): void {
   picker.value?.open(host === treeHost.value ? root.value : HOSTS[host].home, host);
 }
 
-// A click on the path row edits it in place (not a drag that picked text in it, for Ctrl-C); Enter
+// Alt-click on the path row copies the full path it shows (the selected row's, else the root's). A click on the path row edits it in place (not a drag that picked text in it, for Ctrl-C); Enter
 // goes to the folder typed as Path's pick does, Esc or leaving the box drops it.
 const rootText = ref<string | null>(null);
 const rootInput = ref<HTMLInputElement>();
-function editRoot(): void {
-  if (rootText.value !== null || !window.getSelection()?.isCollapsed) return;
+function editRoot(event: MouseEvent): void {
+  if (rootText.value !== null) return;
+  if (event.altKey) return copy(selectedRow.value?.path ?? root.value, event.currentTarget as HTMLElement);
+  if (!window.getSelection()?.isCollapsed) return;
   rootText.value = root.value;
   void nextTick(() => {
     rootInput.value?.focus();
