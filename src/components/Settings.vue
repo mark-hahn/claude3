@@ -21,7 +21,7 @@ const zoom = 1;
 type Reply = { ok: boolean; payload?: any; error?: string };
 const backs: Record<string, number> = { five: 0, seven: 0 };
 // Pro: the graphs as a Pro plan would read, its limits a fifth of this plan's, so every percent is 5x.
-let pro = true;
+let pro = false;
 function togglePro(event: Event): void {
   pro = (event.target as HTMLInputElement).checked;
   render();
@@ -480,7 +480,7 @@ onBeforeUnmount(() => {
       <div class="title-row">
         <!-- Tabs act as radio buttons. -->
         <div class="tab-row"><button class="tab" :class="{ selected: view === 'quota' }" data-help="Settings Quotas" @click="view = 'quota'">Quotas</button><button class="tab" :class="{ selected: view === 'models', due: modelsChanged }" data-help="Settings Models" @click="openModels">Models</button></div>
-        <div class="actions"><button id="q-update" v-show="view === 'quota'" data-help="Settings Update" @click="load(true)">Update</button><button data-help="Settings Close" @click="emit('close')">Close</button><label v-show="view === 'quota'" data-help="Settings Pro"><input type="checkbox" checked @change="togglePro" /> Pro</label></div>
+        <div class="actions"><button id="q-update" v-show="view === 'quota'" data-help="Settings Update" @click="load(true)">Update</button><button data-help="Settings Close" @click="emit('close')">Close</button><label v-show="view === 'quota'" data-help="Settings Pro"><input type="checkbox" @change="togglePro" /> Pro</label></div>
       </div>
       <div v-show="view === 'quota'" class="title-row"><div id="q-credits" class="credits" data-help="Settings credits" @click="creditsClick"></div></div>
     </div>
