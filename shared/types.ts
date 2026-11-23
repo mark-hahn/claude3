@@ -110,7 +110,8 @@ export interface ClaudeSession {
   turns: ClaudeTurn[];
   // What graft has saved this session, as of its last finished turn. Absent until then.
   graftSavedUsd?: number;
-  // The footer's bestModel box; see modelChoice. Absent is unchecked.
+  // The footer's bestModel box; see modelChoice. A new session is made checked (2026-11-23); absent, as
+  // on every session from before, is unchecked.
   bestModel?: boolean;
   // The footer's plan box: while checked every prompt is a plan turn (see modelChoice and awaitingPlan).
   planMode?: boolean;
@@ -121,16 +122,13 @@ export interface ModelList {
   models: ModelMap;
   names: Record<string, string>;
   ids: Record<string, string>;
-}// The list plus the value the Settings pane's Models tab marked Default (a backend keeps it, and sends this to every page).
-export type ModelPick = ModelList & { default: string };
+}
 
 // A model value or id as shown on the page: no "claude-" prefix, no date suffix (a number past 100).
 export const shortModel = (model: string) => model.replace(/^claude-/, "").replace(/-\d{3,}$/, "");
 
 // Every family, weakest first: the order sortModels keeps the Models tab in.
 const FAMILIES = ["haiku", "sonnet", "opus", "fable"];
-// False when the Default is Opus, so the footer's bestModel box has nothing to choose.
-export const hasBetter = (pick?: ModelPick): boolean => (pick?.default ?? "sonnet") === "sonnet";
 
 // The hosts whose CLI version is below the newest one shown. A "?" (the CLI wouldn't answer) or a host
 // not heard from yet has no version to compare.
@@ -156,22 +154,19 @@ export function sortModels(values: string[], ids: Record<string, string>): strin
   });
 }
 
-// What a session's turns run on, in every tab on every host, by the user's rules (2026-11-22). Only the
-// plain names sonnet, opus and fable are ever run or advise; every other row of the Models tab is for
-// reference. The CLI resolves each to its family's newest (5.5, 5.5 and 5.2 on all three hosts that day;
-// srv's list has no fable row, but the name ran Fable 5.2 there). A plan turn (the footer's plan box)
-// runs on Fable alone. Any other turn has Fable as advisor and runs on the Default (sonnet or opus; any
-// other value left from before counts as opus), or on Opus when the bestModel box is checked.
+// What a session's turns run on, in every tab on every host, hardwired by the user's rules (2026-11-23)
+// from the footer's plan and best boxes alone. Only the plain names sonnet, opus and fable are ever run or
+// advise; the whole Models tab is for reference. The CLI resolves each to its family's newest (5.5, 5.5
+// and 5.2 on all three hosts on 2026-11-22; srv's list has no fable row, but the name ran Fable 5.2 there).
+//   plan off, best off: Sonnet xhigh, Fable advisor      plan on, best off: Fable medium, no advisor
+//   plan off, best on:  Opus xhigh, Fable advisor        plan on, best on:  Fable xhigh, no advisor
 // An advisor takes a model only: neither the CLI nor the API has an effort for it.
-// Effort is xhigh where the model has it, else its highest below max; none for a model with no levels.
 // Max is never used: it cost 2.3x xhigh for no better result.
-export function modelChoice(bestModel: boolean | undefined, pick: ModelPick = { default: "sonnet", models: {}, names: {}, ids: {} }, plan = false) {
-  const run = plan ? "fable" : bestModel || pick.default !== "sonnet" ? "opus" : "sonnet";
-  const advisor = plan ? "" : "fable";
-  const levels = pick.models[run]?.filter((level) => level !== "max");
-  const effort = !levels || levels.includes("xhigh") ? "xhigh" : levels.at(-1) ?? "";
-  const name = (value: string) => pick.names[value] || value;
-  return { model: run, effort, advisor, title: `${name(run)}${effort ? " " + effort : ""}, ${advisor ? "advisor " + name(advisor) : "no advisor"}` };
+// `names` (the host's list) only dresses the title: "Sonnet 5.5" for sonnet.
+export function modelChoice(best: boolean | undefined, plan = false, names: Record<string, string> = {}) {
+  const [model, effort, advisor] = plan ? ["fable", best ? "xhigh" : "medium", ""] : [best ? "opus" : "sonnet", "xhigh", "fable"];
+  const name = (value: string) => names[value] || value;
+  return { model, effort, advisor, title: `${name(model)} ${effort}, ${advisor ? "advisor " + name(advisor) : "no advisor"}` };
 }
 
 // What Enter on an empty prompt sends to approve a plan, and the line under a plan that waits for it.
@@ -245,7 +240,7 @@ export type ServerEvent =
 
 // A backend's one event stream: its list of projects and whether its Claude login needs renewing,
 // on connect and at every change, the model list and default likewise, the plan's use on connect and at each turn's end, and each project's events marked with its id.
-export type StreamEvent = { type: "projects"; tabs: Tab[] } | { type: "auth"; needed: boolean } | { type: "quota"; use: QuotaUse } | { type: "modelPick"; pick: ModelPick } | (ServerEvent & { tab: string });
+export type StreamEvent = { type: "projects"; tabs: Tab[] } | { type: "auth"; needed: boolean } | { type: "quota"; use: QuotaUse } | { type: "modelPick"; pick: ModelList } | (ServerEvent & { tab: string });
 
 // The account's plan use from the backend's newest reading (one account behind every host): each
 // window's (5h, 7d, Fable) percent and reset in epoch seconds, and the month's extra-usage spend.

@@ -1,15 +1,15 @@
 // The Settings Models pane's content, asked of every host: when the Models button opens it, and once
 // an hour in the background. `modelsChanged` is on while any host's list or CLI version differs from
 // what the pane last showed (it lights the gear and the Models button). Kept in localStorage so a
-// reload keeps both the flag and the hour's count. The Default checkbox is the user's own, so it isn't compared.
+// reload keeps both the flag and the hour's count.
 import { ref } from "vue";
 import { HOSTS, type HostName } from "../shared/config.ts";
-import { sortModels, type ModelPick } from "../shared/types.ts";
+import { sortModels, type ModelList } from "../shared/types.ts";
 import { postHost } from "./api.ts";
 
 export type ModelRow = { model: string; id: string; name: string; effort: string; tokens: string };
 // aliases: the names in the CLI's binary (server/cliAliases.ts), aliasesError why there are none ("" when read).
-export type HostModels = { rows: ModelRow[]; version: string; defaultModel: string; limitsError: string; aliases: string[]; aliasesError: string };
+export type HostModels = { rows: ModelRow[]; version: string; limitsError: string; aliases: string[]; aliasesError: string };
 
 const KEY = "claude3.models";
 const HOUR = 3600e3;
@@ -22,17 +22,17 @@ export const modelsChanged = ref(differs(saved()));
 
 async function loadHost(host: HostName): Promise<HostModels> {
   const [reply, version, found] = await Promise.all([
-    postHost<{ payload: ModelPick & { contextTokens: Record<string, number>; limitsError: string } }>(host, "models", {}),
+    postHost<{ payload: ModelList & { contextTokens: Record<string, number>; limitsError: string } }>(host, "models", {}),
     postHost<{ version: string }>(host, "cliVersion", {}).then((r) => r.version, () => "?"),
     postHost<{ aliases: string[] }>(host, "modelAliases", {}).then((r) => ({ aliases: r.aliases, aliasesError: "" }), (error) => ({ aliases: [] as string[], aliasesError: error instanceof Error ? error.message : String(error) })),
   ]);
-  const { models, names, ids, contextTokens, limitsError, default: defaultModel } = reply.payload;
+  const { models, names, ids, contextTokens, limitsError } = reply.payload;
   // The CLI lists a model's efforts weakest first, so the last is its max (none for Haiku 4.5).
   const rows = sortModels(Object.keys(models), ids).map((model) => {
     const tokens = contextTokens[ids[model] ?? ""];
     return { model, id: ids[model] || "", name: names[model] || "", effort: models[model].at(-1) ?? "", tokens: !tokens ? "" : tokens >= 1e6 ? `${tokens / 1e6}M` : `${tokens / 1000}K` };
   });
-  return { rows, version, defaultModel, limitsError, ...found };
+  return { rows, version, limitsError, ...found };
 }
 
 // Asks every host. `opened`: the pane is showing this, so it counts as seen. A host that didn't answer

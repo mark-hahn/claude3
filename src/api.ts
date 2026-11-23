@@ -2,7 +2,7 @@
 // down the backend's event stream, one for all its projects.
 import { reactive, ref } from "vue";
 import { HOSTS, type HostName, type Tab } from "../shared/config.ts";
-import type { ModelPick, QuotaUse, ServerEvent, StreamEvent } from "../shared/types.ts";
+import type { ModelList, QuotaUse, ServerEvent, StreamEvent } from "../shared/types.ts";
 
 // The backends whose Claude login needs renewing, as each last said.
 export const authNeeded = reactive<Record<HostName, boolean>>({ wsl: false, win: false, srv: false });
@@ -10,7 +10,7 @@ export const authNeeded = reactive<Record<HostName, boolean>>({ wsl: false, win:
 export const quotaUse = ref<QuotaUse | null>(null);
 // Each backend's model list and Default as it last sent them (the footer's bestModel hover): the
 // hosts' CLIs list the models under different names, so one host's pick can't stand for another's.
-export const modelPicks = reactive<Partial<Record<HostName, ModelPick>>>({});
+export const modelPicks = reactive<Partial<Record<HostName, ModelList>>>({});
 
 async function answer<T>(host: HostName, res: Response): Promise<T> {
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };

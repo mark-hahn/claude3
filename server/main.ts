@@ -45,9 +45,8 @@
 //        quota { force } -> { readAt, rows, state, apiCosts } (the Quotas pane; force is its Update)
 //        quotaSync { readAt, error } -> { payload } (null when the pane already shows the newest)
 //        speechmatics { month, rescan } -> { payload } (the tv project's Speechmatics spend)
-//        models {} -> { payload: ModelPick } (the CLI's model list asked fresh, and the Default)
+//        models {} -> { payload: ModelList } (the CLI's model list asked fresh)
 //        modelAliases {} -> { aliases: string[] } (the aliases in the CLI's binary, read by server/cliAliases.ts: sonnet, opus, best, opusplan, ...; an error when the binary has no table)
-//        setDefaultModel { model } -> {} (the Models tab's Default checkbox, sonnet or opus; the page sends it to every host)
 //        login -> { url } (starts this host's `claude auth login`) | loginCode { code } -> {} | loginCancel -> {}
 //        loginResult -> { done, account, error } (the page polls this; error is "" on success)
 //        fakeAuthNeeded -> {} (a test: raises this host's expired-login flag)
@@ -62,7 +61,7 @@ import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { FIRST_TABS, HOSTS, ORIGINS, STATS_URL, type HostName, type Tab } from "../shared/config.ts";
-import { ANSWER_MARK, AUTH_FAILED, awaitingPlan, CLI_MISSING, DEFAULT_CONTEXT_WINDOW, fileNote, imageNote, modelChoice, PLAN_APPROVED, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type ModelList, type ModelMap, type ModelPick, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
+import { ANSWER_MARK, AUTH_FAILED, awaitingPlan, CLI_MISSING, DEFAULT_CONTEXT_WINDOW, fileNote, imageNote, modelChoice, PLAN_APPROVED, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type ModelList, type ModelMap, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
 import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cliAliases } from "./cliAliases.ts";
 import { ClaudeCliRunner, copySessionTranscript, pruneCliDebug, setCliLog, swapSessionTranscripts, truncateSessionTranscript, type RunLimits } from "./claudeCli.ts";
@@ -296,10 +295,7 @@ function statuses(project: Project): Record<string, RunningStatus> {
 let models: ModelMap = {};
 let modelNames: Record<string, string> = {};
 let modelIds: Record<string, string> = {};
-// The Settings pane's Default model (a list value), kept per host: the page sets it on every host.
-const MODEL_DEFAULT_FILE = path.join(DATA_DIR, "model-default");
-let modelDefault = fs.existsSync(MODEL_DEFAULT_FILE) ? fs.readFileSync(MODEL_DEFAULT_FILE, "utf8").trim() : "sonnet";
-const modelPick = (): ModelPick => ({ default: modelDefault, models, names: modelNames, ids: modelIds });
+const modelPick = (): ModelList => ({ models, names: modelNames, ids: modelIds });
 function setModels(list: ModelList): void {
   ({ models, names: modelNames, ids: modelIds } = list);
   broadcast({ type: "modelPick", pick: modelPick() });
@@ -383,7 +379,7 @@ async function submitPrompt(project: Project, body: Record<string, unknown>): Pr
   let session = project.sessions.find((entry) => entry.id === body.sessionId);
   if (!session) {
     // The pane's draft (no card picked): the session exists from its first prompt on.
-    session = { id: randomUUID(), name: firstWords(prompt), createdAt: Date.now(), updatedAt: Date.now(), trashed: false, turns: [] };
+    session = { id: randomUUID(), name: firstWords(prompt), createdAt: Date.now(), updatedAt: Date.now(), trashed: false, turns: [], bestModel: true };
     project.sessions.unshift(session);
   }
   if (!session.turns.length && !session.name) {
@@ -404,7 +400,7 @@ async function submitPrompt(project: Project, body: Record<string, unknown>): Pr
   // While the CLI waits on a background task the prompt joins that process instead; otherwise a
   // prompt sent during a run replaces it (the page asked first).
   const planning = session.planMode === true;
-  const { model, effort, advisor } = modelChoice(session.bestModel, modelPick(), planning);
+  const { model, effort, advisor } = modelChoice(session.bestModel, planning);
   if (!runner.canFollowUp(id, model, effort, advisor, planning ? "plan" : LIMITS.permissionMode) && (runs.has(id) || runner.isRunning(id))) {
     runner.stop(id);
     await runs.get(id);
@@ -479,7 +475,7 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
   const workspacePath = project.tab.path;
   // A plan turn runs the CLI in its read-only plan mode, on Fable with no advisor (modelChoice).
   const planning = session.planMode === true;
-  const { model, effort, advisor } = modelChoice(session.bestModel, modelPick(), planning);
+  const { model, effort, advisor } = modelChoice(session.bestModel, planning);
   const wasFirstPrompt = session.turns.length === 0;
   // Context is a level: a run inherits where the last one that recorded one left off.
   const priorContext = session.turns.reduce((level, prior) => prior.contextUsed || (prior.cleared ? 0 : level), 0);
@@ -637,7 +633,7 @@ async function nameSession(project: Project, session: ClaudeSession, prompt: str
 // The Ctx popup's table: the transcript's counts with the CLI's own split of the fixed parts.
 async function ctxTable(project: Project, session: ClaudeSession): Promise<unknown> {
   let usage: Record<string, unknown> | null = null;
-  const { model, advisor } = modelChoice(session.bestModel, modelPick());
+  const { model, advisor } = modelChoice(session.bestModel);
   try {
     usage = await runner.contextUsage({
       sessionId: session.id,
@@ -662,7 +658,7 @@ function discardEmpty(project: Project, keep: string[]): void {
 }
 
 function addSession(project: Project): ClaudeSession {
-  const session: ClaudeSession = { id: randomUUID(), name: "", createdAt: Date.now(), updatedAt: Date.now(), trashed: false, turns: [] };
+  const session: ClaudeSession = { id: randomUUID(), name: "", createdAt: Date.now(), updatedAt: Date.now(), trashed: false, turns: [], bestModel: true };
   project.sessions.unshift(session);
   save(project);
   sendSession(project, session);
@@ -779,14 +775,6 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     return await new Promise<{ version: string }>((resolve) => {
       execFile("claude", ["--version"], (err, stdout) => resolve({ version: err ? "?" : (stdout.trim().split(/\s+/)[0] ?? "?") }));
     });
-  }
-  if (name === "setDefaultModel") {
-    const model = String(body.model ?? "");
-    if (model !== "sonnet" && model !== "opus") throw new Error(`Only sonnet or opus can be the Default, not ${model || "nothing"}.`);
-    modelDefault = model;
-    fs.writeFileSync(MODEL_DEFAULT_FILE, model);
-    broadcast({ type: "modelPick", pick: modelPick() });
-    return {};
   }
   if (name === "speechmatics") {
     return { payload: await speechmaticsCost(String(body.month ?? ""), body.rescan === true, log) };

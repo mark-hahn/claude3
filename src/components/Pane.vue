@@ -7,7 +7,7 @@
 // prompt editor.
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { HostName, Tab } from "../../shared/config.ts";
-import { awaitingPlan, COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, hasBetter, modelChoice, PLAN_APPROVED, PLAN_WAIT, quotaSpend, shortModel, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
+import { awaitingPlan, COMPACT_RESERVE, DEFAULT_CONTEXT_WINDOW, modelChoice, PLAN_APPROVED, PLAN_WAIT, quotaSpend, shortModel, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type RunningStatus } from "../../shared/types.ts";
 import { modelPicks, post, postHost, quotaUse } from "../api.ts";
 import { ask, say } from "../say.ts";
 import { cropRect } from "../cropRect.ts";
@@ -609,6 +609,8 @@ function approveKey(event: monaco.IKeyboardEvent): void {
 }
 
 const active = computed(() => !!props.status?.active);
+// The footer's bestModel box: a draft pane (no session yet) shows it checked, as the session its first prompt makes will be.
+const bestOn = computed(() => (props.session ? !!props.session.bestModel : true));
 const latest = computed(() => {
   void props.version;
   return turns().at(-1);
@@ -1667,8 +1669,8 @@ onBeforeUnmount(() => {
             <button class="stop" data-help="stop button" :class="{ stopping: stopping && active }" aria-label="Stop" :disabled="!active" @click="stop">&#x25AA;</button>
             <button data-help="Cap button" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
             <span class="pb-label">PB</span>
-            <span class="tick" data-help="plan box" :title="'Plan first: plan turns run on ' + modelChoice(false, modelPicks[tab.host], true).title"><input type="checkbox" aria-label="plan" :checked="!!session?.planMode" :disabled="!session || session.trashed" @mousedown.prevent @change="setPlanMode" /></span>
-            <span class="tick" data-help="bestModel box" :title="hasBetter(modelPicks[tab.host]) ? modelChoice(session?.bestModel, modelPicks[tab.host]).title : 'The Default is Opus, so this box has nothing to choose: ' + modelChoice(false, modelPicks[tab.host]).title"><input type="checkbox" aria-label="bestModel" :checked="!!session?.bestModel" :disabled="!session || session.trashed || !hasBetter(modelPicks[tab.host])" @mousedown.prevent @change="setBestModel" /></span>
+            <span class="tick" data-help="plan box" :title="'Plan first: plan turns run on ' + modelChoice(bestOn, true, modelPicks[tab.host]?.names).title"><input type="checkbox" aria-label="plan" :checked="!!session?.planMode" :disabled="!session || session.trashed" @mousedown.prevent @change="setPlanMode" /></span>
+            <span class="tick" data-help="bestModel box" :title="'Turns run on ' + modelChoice(bestOn, false, modelPicks[tab.host]?.names).title"><input type="checkbox" aria-label="bestModel" :checked="bestOn" :disabled="!session || session.trashed" @mousedown.prevent @change="setBestModel" /></span>
           </div>
         </div>
         <div class="stats">

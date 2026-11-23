@@ -6,7 +6,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { HOSTS, type HostName, type Tab } from "../../shared/config.ts";
 import { olderCli, shortModel } from "../../shared/types.ts";
-import { post, postHost } from "../api.ts";
+import { post } from "../api.ts";
 import { say } from "../say.ts";
 import { checkModels, modelsChanged, type ModelRow } from "../modelsWatch.ts";
 
@@ -64,22 +64,16 @@ const modelRows = ref<ModelRow[]>([]);
 const modelsNote = ref("");
 const cliVersions = ref<Partial<Record<HostName, string>>>({});
 const olderHosts = computed(() => olderCli(cliVersions.value));
-// The list value whose Default box is checked, sonnet or opus: a turn runs on it, or on Opus with the bestModel
-// box checked, always with Fable as advisor; a plan turn runs on Fable alone (shared/types.ts's modelChoice).
-const defaultModel = ref("");
+// The whole table is for reference: what a turn runs on is hardwired (shared/types.ts's modelChoice).
 // The aliases in this host's CLI binary (server/cliAliases.ts, asked at each open; src/modelsWatch.ts lights
 // the gear when any host's change), shown for documentation only: after the list's own rows come the
 // aliases it lacks (a [1m] size, opusplan, best, whatever a new release adds), in the binary's order and
-// with no description. They have no Default box and are no part of the list a run picks from
-// (modelsWatch and shared/types.ts never see them: "opusplan" would pass for an Opus model there).
+// with no description. They are no part of the host's list (modelsWatch's rows never include them).
 const aliases = ref<string[]>([]);
-type TableRow = ModelRow & { alias: boolean };
-const tableRows = computed<TableRow[]>(() => [
-  ...modelRows.value.map((row) => ({ ...row, alias: false })),
-  ...aliases.value.filter((model) => !modelRows.value.some((row) => row.model === model)).map((model) => ({ model, id: "", name: "", effort: "", tokens: "", alias: true })),
+const tableRows = computed<ModelRow[]>(() => [
+  ...modelRows.value,
+  ...aliases.value.filter((model) => !modelRows.value.some((row) => row.model === model)).map((model) => ({ model, id: "", name: "", effort: "", tokens: "" })),
 ]);
-// Only the plain sonnet and opus rows can be the Default; every other row is for reference (shared/types.ts's modelChoice).
-const canDefault = (row: TableRow): boolean => !row.alias && (row.model === "sonnet" || row.model === "opus");
 // Asks every host (src/modelsWatch.ts), which also counts the pane as seen, clearing its light red; this tab's host fills the table.
 async function openModels(): Promise<void> {
   view.value = "models";
@@ -94,21 +88,10 @@ async function openModels(): Promise<void> {
     void say("Could not load the model list: " + mine.message);
     return;
   }
-  defaultModel.value = mine.defaultModel;
   if (mine.limitsError) void say("Could not load the models' token limits: " + mine.limitsError);
   if (mine.aliasesError) void say("Could not read the CLI's model aliases: " + mine.aliasesError);
   aliases.value = mine.aliases;
   modelRows.value = mine.rows;
-}
-
-// Checkboxes that act as radio buttons: the checked one stays checked, and the choice goes to every
-// host (each keeps its own copy), any that refuse in an alert.
-async function setDefault(model: string, event: Event): Promise<void> {
-  (event.target as HTMLInputElement).checked = true;
-  defaultModel.value = model;
-  const failed: string[] = [];
-  await Promise.all((Object.keys(HOSTS) as HostName[]).map((host) => postHost(host, "setDefaultModel", { model }).catch((error) => void failed.push(`${host}: ${error instanceof Error ? error.message : error}`))));
-  if (failed.length) void say("The default model was not set on:\n" + failed.join("\n"));
 }
 
 async function load(force: boolean): Promise<void> {
@@ -482,8 +465,8 @@ onBeforeUnmount(() => {
       <h2>Models By Value</h2>
       <div class="cli-versions"><span v-for="host in (Object.keys(HOSTS) as HostName[])" :key="host" :class="{ warn: olderHosts.includes(host) || cliVersions[host] === '?' }">{{ host }}: {{ cliVersions[host] ?? '…' }}</span></div>
       <table>
-        <thead><tr><th>Model</th><th>Descr</th><th>Effort</th><th>Tokens</th><th>Default</th></tr></thead>
-        <tbody><tr v-for="row in tableRows" :key="row.model"><td>{{ shortModel(row.model) }}</td><td>{{ row.name }}</td><td>{{ row.effort }}</td><td>{{ row.tokens }}</td><td><input v-if="canDefault(row)" type="checkbox" data-help="Settings Default" :checked="row.model === defaultModel" @change="setDefault(row.model, $event)" /></td></tr></tbody>
+        <thead><tr><th>Model</th><th>Descr</th><th>Effort</th><th>Tokens</th></tr></thead>
+        <tbody><tr v-for="row in tableRows" :key="row.model"><td>{{ shortModel(row.model) }}</td><td>{{ row.name }}</td><td>{{ row.effort }}</td><td>{{ row.tokens }}</td></tr></tbody>
       </table>
       <div>{{ modelsNote }}</div>
     </div>

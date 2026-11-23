@@ -234,14 +234,14 @@ Alt-click: the previous tab is shown for the shot.
 The picture waits in the prompt box; click its icon to see or crop it, ctrl-click to remove it.
 
 @plan box
-PB: plan, then best. Check: plan first. Every prompt becomes a read-only plan turn on Fable (no advisor, whatever the Default is); the response is the plan, with a yellow line under it saying it waits for an answer.
+PB: plan, then best. Check: plan first. Every prompt becomes a read-only plan turn on Fable with no advisor, at medium effort, or xhigh with the best box checked; the response is the plan, with a yellow line under it saying it waits for an answer.
 Enter in the empty prompt box: approve the plan. This unchecks the box and starts the turn that carries it out, on what the best box picks.
 Typed text and Ctrl+Enter: another plan turn, to change the plan.
 Uncheck by hand: the planning is over and the next prompt is an ordinary one.
 
 @bestModel box
-PB: plan, then best. Check: run this session on Opus instead of a Sonnet Default (the hover says which); unchecked it runs on the Default. Either way Fable is the advisor. The Default is set in Settings, Models.
-Grayed out when the Default is Opus. While the plan box is checked it changes only the turn that carries out the plan, not the plan turn.
+PB: plan, then best. Check: run this session on Opus xhigh; unchecked it runs on Sonnet xhigh. A new session starts checked. Either way Fable is the advisor (the hover says which).
+While the plan box is checked it raises the plan turns on Fable from medium to xhigh, and picks Opus or Sonnet for the turn that carries out the plan.
 
 @context stat
 Context used / where the CLI compacts it, in thousands of tokens. Red past it.
@@ -483,12 +483,8 @@ Ctrl-wheel: text size.
 Click: show the quota graphs.
 
 @Settings Models
-Click: show the models the CLI lists now (asked each time): name, description, max effort and context window in tokens (from the Models API). Rows at the bottom with only a name are the CLI's other aliases (opusplan, best, the 1M sizes, in the order its program lists them), read from the program: documentation, with no Default box. A line above the table shows the CLI version on each host, in red (host name and version) for any host older than another, or showing ? because it didn't answer.
-Light red: something in it changed on any host since you last opened it (the models, the aliases, a CLI version; checked once an hour; the Default box doesn't count). Clicking it asks all three hosts and clears the colour.
-
-@Settings Default
-Check: make this the default model, and clear the other. Only Sonnet and Opus have the box; the other rows are for reference and never run. A tab's bestModel box unchecked runs on the Default, checked on Opus; Fable is the advisor either way. Plan turns run on Fable with no advisor.
-Sent to every host; it stays checked until you check another.
+Click: show the models the CLI lists now (asked each time): name, description, max effort and context window in tokens (from the Models API). Rows at the bottom with only a name are the CLI's other aliases (opusplan, best, the 1M sizes, in the order its program lists them), read from the program: documentation. The whole table is for reference: what a turn runs on is fixed by the footer's PB boxes. A line above the table shows the CLI version on each host, in red (host name and version) for any host older than another, or showing ? because it didn't answer.
+Light red: something in it changed on any host since you last opened it (the models, the aliases, a CLI version; checked once an hour). Clicking it asks all three hosts and clears the colour.
 
 @Settings Update
 Click: ask for a new quota reading now.
