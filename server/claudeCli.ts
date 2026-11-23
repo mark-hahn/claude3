@@ -782,10 +782,10 @@ export class ClaudeCliRunner {
     }
   }
 
-  // The Git popup's "Describe changes": a commit message of at most 2 short sentences from Opus 5.5 (the
-  // user's pick), with no tools and no project settings, like the titles.
+  // The Git popup's "Describe changes": a commit message of at most 2 short sentences from Opus (the
+  // user's pick; only the plain names sonnet, opus and fable are ever run: shared/types.ts's modelChoice), with no tools and no project settings, like the titles.
   public async describeChanges(diff: string, workspacePath: string): Promise<string> {
-    const args = ["-p", "--output-format", "json", "--model", "claude-opus-5-5", "--max-budget-usd", "1", "--tools", "", "--setting-sources", "", "--no-session-persistence", "--system-prompt", "You write git commit messages."];
+    const args = ["-p", "--output-format", "json", "--model", "opus", "--max-budget-usd", "1", "--tools", "", "--setting-sources", "", "--no-session-persistence", "--system-prompt", "You write git commit messages."];
     const prompt = `Write a very short commit message for these changes: at most 2 plain sentences of at most 12 words each, describing only the 2 biggest changes. Return only the message, with no quotes, headings or lists.\n\n${diff}`;
     const output = await collectProcess("claude", args, workspacePath, 180000, prompt, "describe changes");
     const parsed = JSON.parse(output) as unknown;
@@ -1431,18 +1431,4 @@ function stringOf(value: unknown): string {
 
 function numberOf(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-// From claude2's modelInfo.ts. ponytail: the CLI's model list carries no prices, so cheapness is
-// ranked by family name; a new family lands here or it is never picked.
-const cheapestFirst = ["haiku", "sonnet", "opus", "fable"];
-
-// The cheapest model the CLI lists, for background calls (titles) that need no more.
-export function cheapestModel(models: ModelMap): string {
-  for (const family of cheapestFirst) {
-    const model = Object.keys(models).find((id) => id.includes(family));
-    if (model) {
-      return model;
-    }
-  }
-  throw new Error(`no known model family in the CLI's list (${Object.keys(models).join(", ")}).`);
 }

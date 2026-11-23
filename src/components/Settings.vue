@@ -64,8 +64,8 @@ const modelRows = ref<ModelRow[]>([]);
 const modelsNote = ref("");
 const cliVersions = ref<Partial<Record<HostName, string>>>({});
 const olderHosts = computed(() => olderCli(cliVersions.value));
-// The list value whose Default box is checked: when bestModel is off the run is on it with the next better model
-// as advisor, when on the run is on that next better model alone (shared/types.ts's modelChoice).
+// The list value whose Default box is checked, sonnet or opus: a turn runs on it, or on Opus with the bestModel
+// box checked, always with Fable as advisor; a plan turn runs on Fable alone (shared/types.ts's modelChoice).
 const defaultModel = ref("");
 // The aliases in this host's CLI binary (server/cliAliases.ts, asked at each open; src/modelsWatch.ts lights
 // the gear when any host's change), shown for documentation only: after the list's own rows come the
@@ -78,10 +78,8 @@ const tableRows = computed<TableRow[]>(() => [
   ...modelRows.value.map((row) => ({ ...row, alias: false })),
   ...aliases.value.filter((model) => !modelRows.value.some((row) => row.model === model)).map((model) => ({ model, id: "", name: "", effort: "", tokens: "", alias: true })),
 ]);
-// Fable bills usage credits on a Pro plan, so it is never a Default; neither are the aliases, nor opusplan
-// and best should a CLI's list ever carry them.
-const NO_DEFAULT = ["opusplan", "best"];
-const canDefault = (row: TableRow): boolean => !row.alias && !NO_DEFAULT.includes(row.model) && !row.model.includes("fable") && !row.id.includes("fable");
+// Only the plain sonnet and opus rows can be the Default; every other row is for reference (shared/types.ts's modelChoice).
+const canDefault = (row: TableRow): boolean => !row.alias && (row.model === "sonnet" || row.model === "opus");
 // Asks every host (src/modelsWatch.ts), which also counts the pane as seen, clearing its light red; this tab's host fills the table.
 async function openModels(): Promise<void> {
   view.value = "models";
@@ -104,13 +102,12 @@ async function openModels(): Promise<void> {
 }
 
 // Checkboxes that act as radio buttons: the checked one stays checked, and the choice goes to every
-// host (each keeps its own copy), any that refuse in an alert. The id goes with the value: another
-// host's CLI may list the same model under another name, and keeps its own name for it (ownModel).
-async function setDefault(model: string, id: string, event: Event): Promise<void> {
+// host (each keeps its own copy), any that refuse in an alert.
+async function setDefault(model: string, event: Event): Promise<void> {
   (event.target as HTMLInputElement).checked = true;
   defaultModel.value = model;
   const failed: string[] = [];
-  await Promise.all((Object.keys(HOSTS) as HostName[]).map((host) => postHost(host, "setDefaultModel", { model, id }).catch((error) => void failed.push(`${host}: ${error instanceof Error ? error.message : error}`))));
+  await Promise.all((Object.keys(HOSTS) as HostName[]).map((host) => postHost(host, "setDefaultModel", { model }).catch((error) => void failed.push(`${host}: ${error instanceof Error ? error.message : error}`))));
   if (failed.length) void say("The default model was not set on:\n" + failed.join("\n"));
 }
 
@@ -372,11 +369,6 @@ function drawSvg(period: any, width: number, height: number): string {
     svg += '<line x1="' + xValue + '" x2="' + xValue + '" y1="' + margin.top + '" y2="' + (height - margin.bottom) + '" stroke="rgba(0,0,0,0.15)" />';
   }
   svg += '<line x1="' + margin.left + '" y1="' + y(0) + '" x2="' + (width - margin.right) + '" y2="' + y(yMax) + '" stroke="rgba(0,0,0,0.45)" stroke-dasharray="5 4" stroke-width="1" />';
-  // The Pro plan's limit drawn on this plan's scale; the Pro view is already on its own scale.
-  if (!pro) {
-    svg += '<line x1="' + margin.left + '" y1="' + y(0) + '" x2="' + (width - margin.right) + '" y2="' + y(yMax / 5) + '" stroke="rgba(0,0,0,0.45)" stroke-dasharray="5 4" stroke-width="1" />';
-    svg += '<line x1="' + margin.left + '" y1="' + y(yMax / 5) + '" x2="' + (width - margin.right) + '" y2="' + y(yMax / 5) + '" stroke="rgba(0,0,0,0.45)" stroke-dasharray="5 4" stroke-width="1" />';
-  }
   for (const series of period.series) {
     const points = carriedPoints(series.points, period).sort((left, right) => left.t - right.t);
     if (points.length === 1) {
@@ -491,7 +483,7 @@ onBeforeUnmount(() => {
       <div class="cli-versions"><span v-for="host in (Object.keys(HOSTS) as HostName[])" :key="host" :class="{ warn: olderHosts.includes(host) || cliVersions[host] === '?' }">{{ host }}: {{ cliVersions[host] ?? '…' }}</span></div>
       <table>
         <thead><tr><th>Model</th><th>Descr</th><th>Effort</th><th>Tokens</th><th>Default</th></tr></thead>
-        <tbody><tr v-for="row in tableRows" :key="row.model"><td>{{ shortModel(row.model) }}</td><td>{{ row.name }}</td><td>{{ row.effort }}</td><td>{{ row.tokens }}</td><td><input v-if="canDefault(row)" type="checkbox" data-help="Settings Default" :checked="row.model === defaultModel" @change="setDefault(row.model, row.id, $event)" /></td></tr></tbody>
+        <tbody><tr v-for="row in tableRows" :key="row.model"><td>{{ shortModel(row.model) }}</td><td>{{ row.name }}</td><td>{{ row.effort }}</td><td>{{ row.tokens }}</td><td><input v-if="canDefault(row)" type="checkbox" data-help="Settings Default" :checked="row.model === defaultModel" @change="setDefault(row.model, $event)" /></td></tr></tbody>
       </table>
       <div>{{ modelsNote }}</div>
     </div>

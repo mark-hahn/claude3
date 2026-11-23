@@ -234,14 +234,14 @@ Alt-click: the previous tab is shown for the shot.
 The picture waits in the prompt box; click its icon to see or crop it, ctrl-click to remove it.
 
 @plan box
-PB: plan, then best. Check: plan first. Every prompt becomes a read-only plan turn on the top model (Opus, no advisor, whatever the Default is); the response is the plan, with a yellow line under it saying it waits for an answer.
+PB: plan, then best. Check: plan first. Every prompt becomes a read-only plan turn on Fable (no advisor, whatever the Default is); the response is the plan, with a yellow line under it saying it waits for an answer.
 Enter in the empty prompt box: approve the plan. This unchecks the box and starts the turn that carries it out, on what the best box picks.
 Typed text and Ctrl+Enter: another plan turn, to change the plan.
 Uncheck by hand: the planning is over and the next prompt is an ordinary one.
 
 @bestModel box
-PB: plan, then best. Check: run this session on the next better model than the Default (the hover says which) with no advisor; unchecked it runs on the Default with that better model as advisor. The Default is set in Settings, Models.
-Grayed out when nothing is better than the Default (Opus). While the plan box is checked it changes only the turn that carries out the plan, not the plan turn.
+PB: plan, then best. Check: run this session on Opus instead of a Sonnet Default (the hover says which); unchecked it runs on the Default. Either way Fable is the advisor. The Default is set in Settings, Models.
+Grayed out when the Default is Opus. While the plan box is checked it changes only the turn that carries out the plan, not the plan turn.
 
 @context stat
 Context used / where the CLI compacts it, in thousands of tokens. Red past it.
@@ -487,7 +487,7 @@ Click: show the models the CLI lists now (asked each time): name, description, m
 Light red: something in it changed on any host since you last opened it (the models, the aliases, a CLI version; checked once an hour; the Default box doesn't count). Clicking it asks all three hosts and clears the colour.
 
 @Settings Default
-Check: make this the default model, and clear the others. A tab's bestModel box unchecked runs on it with the next better model as advisor; checked, it runs on the next better model with no advisor.
+Check: make this the default model, and clear the other. Only Sonnet and Opus have the box; the other rows are for reference and never run. A tab's bestModel box unchecked runs on the Default, checked on Opus; Fable is the advisor either way. Plan turns run on Fable with no advisor.
 Sent to every host; it stays checked until you check another.
 
 @Settings Update
@@ -497,7 +497,7 @@ Click: ask for a new quota reading now.
 Click: close the Settings.
 
 @Settings Pro
-Unchecked when the pane opens. Check: show the graphs as a Pro plan would read them: every percent 5x, no 20% lines. Uncheck: this plan's own percents.
+Unchecked when the pane opens. Check: show the graphs as a Pro plan would read them: every percent 5x. Uncheck: this plan's own percents.
 Lines stop at 100%; the figures under each graph show the full value.
 
 @Settings credits

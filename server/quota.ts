@@ -8,8 +8,7 @@ import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
 import { STATS_URL } from "../shared/config.ts";
-import type { ModelMap } from "../shared/types.ts";
-import { cheapestModel, childEnv, noteCliStart } from "./claudeCli.ts";
+import { childEnv, noteCliStart } from "./claudeCli.ts";
 
 export interface QuotaReadingRow {
   at: number;
@@ -132,13 +131,11 @@ export class QuotaService {
   private finalReadingTimer: NodeJS.Timeout | undefined;
   private readonly dir: string;
   private readonly cwd: string;
-  private readonly models: () => ModelMap;
   private readonly log: (line: string) => void;
 
-  public constructor(dir: string, cwd: string, models: () => ModelMap, log: (line: string) => void) {
+  public constructor(dir: string, cwd: string, log: (line: string) => void) {
     this.dir = dir;
     this.cwd = cwd;
-    this.models = models;
     this.log = log;
   }
 
@@ -305,9 +302,8 @@ export class QuotaService {
       await this.probeInFlight;
       return;
     }
-    const model = cheapestModel(this.models());
     this.probeInFlight = new Promise<void>((resolve, reject) => {
-      const child = spawn("claude", ["-p", "quota", "--model", model, "--max-turns", "1", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--tools", ""], {
+      const child = spawn("claude", ["-p", "quota", "--model", "sonnet", "--max-turns", "1", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--tools", ""], {
         cwd: this.cwd,
         env: childEnv(),
         stdio: ["ignore", "pipe", "pipe"],

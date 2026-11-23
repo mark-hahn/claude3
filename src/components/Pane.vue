@@ -1668,7 +1668,7 @@ onBeforeUnmount(() => {
             <button data-help="Cap button" :disabled="capturing || session?.trashed" @mousedown.prevent @click="capture">Cap</button>
             <span class="pb-label">PB</span>
             <span class="tick" data-help="plan box" :title="'Plan first: plan turns run on ' + modelChoice(false, modelPicks[tab.host], true).title"><input type="checkbox" aria-label="plan" :checked="!!session?.planMode" :disabled="!session || session.trashed" @mousedown.prevent @change="setPlanMode" /></span>
-            <span class="tick" data-help="bestModel box" :title="hasBetter(modelPicks[tab.host]) ? modelChoice(session?.bestModel, modelPicks[tab.host]).title : 'Nothing is better than the Default, so this box has nothing to choose'"><input type="checkbox" aria-label="bestModel" :checked="!!session?.bestModel" :disabled="!session || session.trashed || !hasBetter(modelPicks[tab.host])" @mousedown.prevent @change="setBestModel" /></span>
+            <span class="tick" data-help="bestModel box" :title="hasBetter(modelPicks[tab.host]) ? modelChoice(session?.bestModel, modelPicks[tab.host]).title : 'The Default is Opus, so this box has nothing to choose: ' + modelChoice(false, modelPicks[tab.host]).title"><input type="checkbox" aria-label="bestModel" :checked="!!session?.bestModel" :disabled="!session || session.trashed || !hasBetter(modelPicks[tab.host])" @mousedown.prevent @change="setBestModel" /></span>
           </div>
         </div>
         <div class="stats">

@@ -32,7 +32,7 @@
 //        gitCommit { hash } -> { files: [{ x, y, path, from?, full }] } (the files that commit changed, against its first parent, as status entries)
 //        delete { sessionIds } -> {} (permanently remove those of them that are in the trash)
 //        bestModel { sessionId, on } -> {} (the session's model choice, the footer's box)
-//        planMode { sessionId, on } -> {} (the footer's plan box: while on, every prompt is a read-only plan turn on the top model; `prompt` with approve: true is
+//        planMode { sessionId, on } -> {} (the footer's plan box: while on, every prompt is a read-only plan turn on Fable; `prompt` with approve: true is
 //                                          Enter on an empty prompt with a plan waiting: it unchecks the box and sends PLAN_APPROVED as an ordinary turn)
 //        commit { message } -> {} (add everything, commit, push) | push {} -> {} (git push, for a commit whose push failed) | gitWeb {} -> { url } (origin's https page) | gitGraph -> { lines: [{ text, hash, message }] } (git log --graph)
 //        each with term, 0 to 2: which of the tab's terminals, and cwd, the folder its shell starts in (the tab needn't be this host's). termRead { id, at, cols, rows } -> { id, at, text, reset, idle, exited } (its pty, started on first ask: its output past at, waiting up to 2s for some; reset: the whole last 1000 lines; idle: ms since the last output or key)
@@ -47,8 +47,7 @@
 //        speechmatics { month, rescan } -> { payload } (the tv project's Speechmatics spend)
 //        models {} -> { payload: ModelPick } (the CLI's model list asked fresh, and the Default)
 //        modelAliases {} -> { aliases: string[] } (the aliases in the CLI's binary, read by server/cliAliases.ts: sonnet, opus, best, opusplan, ...; an error when the binary has no table)
-//        setDefaultModel { model, id } -> {} (the Models tab's Default checkbox; the page sends it to every host,
-//                                              each keeping its own list's value for that id: ownModel)
+//        setDefaultModel { model } -> {} (the Models tab's Default checkbox, sonnet or opus; the page sends it to every host)
 //        login -> { url } (starts this host's `claude auth login`) | loginCode { code } -> {} | loginCancel -> {}
 //        loginResult -> { done, account, error } (the page polls this; error is "" on success)
 //        fakeAuthNeeded -> {} (a test: raises this host's expired-login flag)
@@ -63,10 +62,10 @@ import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { FIRST_TABS, HOSTS, ORIGINS, STATS_URL, type HostName, type Tab } from "../shared/config.ts";
-import { ANSWER_MARK, AUTH_FAILED, awaitingPlan, CLI_MISSING, DEFAULT_CONTEXT_WINDOW, fileNote, imageNote, modelChoice, ownModel, PLAN_APPROVED, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type ModelList, type ModelMap, type ModelPick, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
+import { ANSWER_MARK, AUTH_FAILED, awaitingPlan, CLI_MISSING, DEFAULT_CONTEXT_WINDOW, fileNote, imageNote, modelChoice, PLAN_APPROVED, typedPrompt, type AttachedFile, type ClaudeSession, type ClaudeTurn, type ModelList, type ModelMap, type ModelPick, type PonySkip, type RunningStatus, type ServerEvent, type StreamEvent } from "../shared/types.ts";
 import { captureScreen, PNG_DATA_URI } from "./capture.ts";
 import { cliAliases } from "./cliAliases.ts";
-import { cheapestModel, ClaudeCliRunner, copySessionTranscript, pruneCliDebug, setCliLog, swapSessionTranscripts, truncateSessionTranscript, type RunLimits } from "./claudeCli.ts";
+import { ClaudeCliRunner, copySessionTranscript, pruneCliDebug, setCliLog, swapSessionTranscripts, truncateSessionTranscript, type RunLimits } from "./claudeCli.ts";
 import { contextTable } from "./contextStats.ts";
 import { fileActions, upload } from "./files.ts";
 import { commitFiles, GRAPH_ARGS, headText, layoutGraph, MESSAGE_ARGS, parseMessages, rewordHead, webUrl } from "./gitGraph.ts";
@@ -322,7 +321,7 @@ const windows = (fs.existsSync(WINDOWS_FILE) ? JSON.parse(fs.readFileSync(WINDOW
 // The run in progress per session, so a new prompt can wait for a stopped one to settle.
 const runs = new Map<string, Promise<void>>();
 // One per backend; its token-refresh probe runs in DATA_DIR so no project gets its transcript.
-const quota = new QuotaService(DATA_DIR, DATA_DIR, () => models, log);
+const quota = new QuotaService(DATA_DIR, DATA_DIR, log);
 
 // The plan's use for every footer (QuotaUse), to every page. state: one the caller already holds;
 // otherwise a reading, which the stats server's lease keeps to one endpoint call per cycle for the fleet.
@@ -478,7 +477,7 @@ async function sendCeilings(project: Project): Promise<void> {
 // Ported from claude2's runTurn, without files, stats, quota or notifications.
 async function runTurn(project: Project, session: ClaudeSession, prompt: string, images: string[], files: AttachedFile[] = []): Promise<void> {
   const workspacePath = project.tab.path;
-  // A plan turn runs the CLI in its read-only plan mode, on the top model and with no advisor (modelChoice).
+  // A plan turn runs the CLI in its read-only plan mode, on Fable with no advisor (modelChoice).
   const planning = session.planMode === true;
   const { model, effort, advisor } = modelChoice(session.bestModel, modelPick(), planning);
   const wasFirstPrompt = session.turns.length === 0;
@@ -626,7 +625,7 @@ async function runTurn(project: Project, session: ClaudeSession, prompt: string,
 
 async function nameSession(project: Project, session: ClaudeSession, prompt: string): Promise<void> {
   try {
-    const name = await runner.generateTitle(prompt, cheapestModel(models), project.tab.path);
+    const name = await runner.generateTitle(prompt, "sonnet", project.tab.path);
     session.name = name;
     save(project);
     sendSession(project, session);
@@ -782,9 +781,8 @@ async function action(name: string, body: Record<string, unknown>): Promise<unkn
     });
   }
   if (name === "setDefaultModel") {
-    const id = String(body.id ?? "");
-    const model = ownModel(modelPick(), String(body.model ?? ""), id);
-    if (!model) throw new Error(`This host's CLI lists no ${id || String(body.model ?? "") || "model"}.`);
+    const model = String(body.model ?? "");
+    if (model !== "sonnet" && model !== "opus") throw new Error(`Only sonnet or opus can be the Default, not ${model || "nothing"}.`);
     modelDefault = model;
     fs.writeFileSync(MODEL_DEFAULT_FILE, model);
     broadcast({ type: "modelPick", pick: modelPick() });

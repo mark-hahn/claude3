@@ -1,7 +1,7 @@
 // Self-check for the markdown renderer, answer text and trash-list picking ported from claude2: `node src/render.check.mjs`.
 // The ports un-doubled every backslash of claude2's template-literal source, so a missed one shows here.
 import assert from "node:assert/strict";
-import { AUTH_FAILED, awaitingPlan, hasBetter, imageNote, modelChoice, olderCli, ownModel, quotaSpend, shortModel, sortModels, typedPrompt } from "../shared/types.ts";
+import { AUTH_FAILED, awaitingPlan, hasBetter, imageNote, modelChoice, olderCli, quotaSpend, shortModel, sortModels, typedPrompt } from "../shared/types.ts";
 import { extraBlankLines, headingEnter, joinLines } from "./blankLines.ts";
 import { cropRect } from "./cropRect.ts";
 import { modifiedLine } from "./diffLine.ts";
@@ -450,54 +450,33 @@ assert.equal(fableWindow(weekly("Fable 5.2", 7, early), weekly("Fable 5.1", null
 assert.deepEqual(fableWindow(weekly("Opus", 5, early)), { key: "model", label: "Fable", pct: null, resetsAt: null });
 assert.equal(modelScopedWindow(undefined).pct, null);
 
-// The Default model: two hosts' CLIs as they listed on 2026-11-15, the older (srv's) naming Fable 5.2 by its id
-// and calling Fable 5.1 `fable[1m]`. A pick goes by its id, each host keeping its own name for it.
+// The model a turn runs on: only the plain sonnet, opus and fable, whatever else the list has (srv's has no
+// fable row). Sonnet Default: Sonnet, or Opus with the best box; Opus Default: Opus. Fable advises both.
+// A plan turn: Fable alone. Max effort is never used.
 {
   const efforts = ["low", "medium", "high", "xhigh", "max"];
-  const list = (ids) => ({ models: Object.fromEntries(Object.keys(ids).map((value) => [value, value.includes("4-6") ? ["low", "high", "max"] : efforts])), ids, names: { opus: "Opus 5.5", sonnet: "Sonnet 5.5" } });
+  const list = (ids) => ({ models: Object.fromEntries(Object.keys(ids).map((value) => [value, value.includes("4-6") ? ["low", "high", "max"] : efforts])), ids, names: { opus: "Opus 5.5", sonnet: "Sonnet 5.5", fable: "Fable 5.2" } });
   const shared = { opus: "claude-opus-5-5", sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5", "claude-opus-4-6": "claude-opus-4-6" };
   const newer = list({ ...shared, fable: "claude-fable-5-2", "claude-fable-5-1": "claude-fable-5-1" });
   const older = list({ ...shared, "claude-fable-5-2": "claude-fable-5-2", "fable[1m]": "claude-fable-5-1" });
-  assert.equal(ownModel(newer, "fable", "claude-fable-5-2"), "fable");
-  assert.equal(ownModel(older, "fable", "claude-fable-5-2"), "claude-fable-5-2");
-  assert.equal(ownModel(newer, "fable[1m]", "claude-fable-5-1"), "claude-fable-5-1");
-  assert.equal(ownModel(older, "claude-fable-5-1", "claude-fable-5-1"), "fable[1m]");
-  assert.equal(ownModel(older, "sonnet", "claude-sonnet-5-5"), "sonnet");
-  assert.equal(ownModel(older, "fable", "claude-fable-9"), undefined);
-  assert.equal(ownModel(older, "nope", ""), undefined);
-  // A page from before ids were sent: the value alone, when the list has it.
-  assert.equal(ownModel(older, "opus", ""), "opus");
-  // Unchecked: the Default with the next family up as advisor. Checked: that one alone. Opus is the top:
-  // Fable is never the next one up (it bills usage credits on a Pro plan), and max effort is never used.
   const choice = (best, base, from = newer, plan = false) => { const { model, effort, advisor } = modelChoice(best, { ...from, default: base }, plan); return [model, effort, advisor].join(" "); };
-  assert.equal(choice(false, "sonnet"), "claude-sonnet-5-5 xhigh opus");
-  assert.equal(choice(true, "sonnet"), "claude-opus-5-5 xhigh ");
-  assert.equal(choice(false, "opus"), "claude-opus-5-5 xhigh ");
-  assert.equal(choice(true, "opus", older), "claude-opus-5-5 xhigh ");
-  // A Default of Fable (set before it was kept out of the Models tab's boxes) runs as it is: nothing is above it.
-  assert.equal(choice(false, "fable"), "claude-fable-5-2 xhigh ");
-  assert.equal(choice(true, "claude-fable-5-2", older), "claude-fable-5-2 xhigh ");
-  // The next family's newest by resolved version, wherever the list puts it and whatever its alias says.
-  const lower = { sonnet: "claude-sonnet-5-5", haiku: "claude-haiku-5-5" };
-  const lateAlias = list({ ...lower, "claude-opus-5-1": "claude-opus-5-1", "opus[1m]": "claude-opus-5-5" });
-  const staleAlias = list({ ...lower, opus: "claude-opus-5-1", "claude-opus-5-5": "claude-opus-5-5" });
-  assert.equal(choice(true, "sonnet", lateAlias), "claude-opus-5-5 xhigh ");
-  assert.equal(choice(false, "sonnet", staleAlias), "claude-sonnet-5-5 xhigh claude-opus-5-5");
+  assert.equal(choice(false, "sonnet"), "sonnet xhigh fable");
+  assert.equal(choice(true, "sonnet"), "opus xhigh fable");
+  assert.equal(choice(false, "opus"), "opus xhigh fable");
+  assert.equal(choice(true, "opus", older), "opus xhigh fable");
+  // A Default left from before (a versioned row, haiku, fable) counts as Opus.
+  assert.deepEqual(["claude-opus-4-6", "haiku", "fable", "claude-sonnet-5-5"].map((base) => choice(false, base)), Array(4).fill("opus xhigh fable"));
+  // A plan turn runs on Fable alone, whatever the Default and the best box say, srv's list too.
+  assert.deepEqual([choice(false, "sonnet", newer, true), choice(true, "sonnet", newer, true), choice(false, "opus", older, true)], Array(3).fill("fable xhigh "));
   // A model with no xhigh gets its highest level below max, never max.
-  assert.equal(choice(false, "claude-opus-4-6"), "claude-opus-4-6 high ");
-  assert.equal(modelChoice(false, { ...list({ x: "claude-sonnet-9" }), models: { x: ["low", "max"] }, default: "x" }).effort, "low");
-  assert.equal(modelChoice(false, { ...list({ x: "claude-sonnet-9" }), models: { x: ["max"] }, default: "x" }).effort, "");
-  assert.equal(modelChoice(false, { ...newer, default: "sonnet" }).title, "Sonnet 5.5 xhigh, advisor Opus 5.5");
-  // A plan turn runs on the top model alone, whatever the Default and the best box say.
-  assert.equal(choice(false, "haiku", newer, true), "claude-opus-5-5 xhigh ");
-  assert.equal(choice(false, "sonnet", newer, true), "claude-opus-5-5 xhigh ");
-  assert.equal(choice(true, "sonnet", newer, true), "claude-opus-5-5 xhigh ");
-  assert.equal(choice(false, "opus", newer, true), "claude-opus-5-5 xhigh ");
-  assert.equal(modelChoice(false, undefined, true).model, "opus");
-  // The best box has nothing to choose when the Default is the top.
-  assert.deepEqual([hasBetter({ ...newer, default: "haiku" }), hasBetter({ ...newer, default: "sonnet" }), hasBetter({ ...newer, default: "opus" }), hasBetter()], [true, true, false, true]);
-  // No list yet (a backend still asking its CLI): the family names themselves.
-  assert.equal(modelChoice(false).model + " " + modelChoice(false).advisor + " " + modelChoice(true).model, "sonnet opus opus");
+  assert.equal(modelChoice(false, { ...newer, models: { sonnet: ["low", "max"] }, default: "sonnet" }).effort, "low");
+  assert.equal(modelChoice(false, { ...newer, models: { sonnet: ["max"] }, default: "sonnet" }).effort, "");
+  assert.equal(modelChoice(false, { ...newer, default: "sonnet" }).title, "Sonnet 5.5 xhigh, advisor Fable 5.2");
+  assert.equal(modelChoice(false, { ...newer, default: "opus" }, true).title, "Fable 5.2 xhigh, no advisor");
+  // The best box has nothing to choose when the Default is Opus.
+  assert.deepEqual([hasBetter({ ...newer, default: "sonnet" }), hasBetter({ ...newer, default: "opus" }), hasBetter()], [true, false, true]);
+  // No list yet (a backend still asking its CLI): the names themselves.
+  assert.equal(modelChoice(false).model + " " + modelChoice(false).advisor + " " + modelChoice(true).model, "sonnet fable opus");
   // A plan waits for an answer while its box is checked and the last turn was a plan turn that ended well.
   const planTurn = (extra = {}) => ({ plan: true, finished: true, stopped: false, error: null, ...extra });
   const planned = (turns, planMode = true) => awaitingPlan({ planMode, turns });
