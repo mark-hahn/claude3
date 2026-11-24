@@ -154,7 +154,9 @@ on the laptop, and talks to each backend directly.
   renderer. `src/render.check.mjs` is its self-check (`npm test`).
 - `src/api.ts`: `post` (a project's backend), `postHost` (a backend, no project needed), and the
   one event stream per backend: `connect` opens them, `listen` is one project's share of its
-  host's. A state that arrives before its `Project` is mounted is held for it.
+  host's. A state that arrives before its `Project` is mounted is held for it. Every status that
+  arrives has its `startedAt` and `lastEventAt` rewritten onto the page's clock (`onPageClock`, from
+  `elapsedMs`/`sinceEventMs`), which the footer's two clocks count from.
 - `vite.config.ts`: besides the pinned ports, a dev-only plugin (copied from tv) that mirrors the
   page's console and uncaught errors to `vite-console.log` in the repo, emptied at each vite start.
 - `public/manifest.webmanifest`: for the page installed as an Edge app (taskbar pin).
@@ -457,7 +459,7 @@ on the laptop, and talks to each backend directly.
 - Pane history elements are built by script, so they get no Vue scope attribute: the pane's and
   sidebar's styles are global, prefixed `.pane` / `.sidebar`.
 - A tab must never be hidden with `display:none` / `v-show`: the browser loses every scroll position in it, and the pane's ResizeObserver runs at 0x0, drops the box's height clamp and sends the box to its bottom on return. `.offstage` keeps it laid out.
-- Whether the open box is following its bottom is remembered (Pane's `boxPinned`, set at the end of each `syncSelectedBlock` and by the box's scroll events while its `scrollHeight` is unchanged), never measured live in the resize observer, `applyDelta` or `render`: a resize (the right column opening) rewraps the text taller before the observer runs, so a live `atBottom` reads a followed box as unfollowed and leaves it behind.
+- Whether the open box is following its bottom is remembered (Pane's `boxPinned`, set at the end of each `syncSelectedBlock` and by the box's scroll events while its `scrollHeight` is unchanged), never measured live in the resize observer, `applyDelta` or `render`: a resize (the right column opening) rewraps the text taller before the observer runs, so a live `atBottom` reads a followed box as unfollowed and leaves it behind. A ctrl-wheel text size change reflows the box without resizing the pane, so the observer never sees it: Pane's `zoom` sends a `claude3:pane-zoom` window event and every tab's Pane (the size is page-wide) runs `resyncSelectedBlock`.
 - Vue runs a `flush: "post"` watcher on a prop before that update's `v-show` hook (Snips' column), and a pre-flush watcher before the update's patch, so what is being shown can't take focus there yet. Project's `focusPrompt` awaits `nextTick`.
 - Session objects are plain (not reactive) and mutated in place as text streams in; `version`
   tells Vue the shape changed. A delta goes to `Pane.applyDelta`, which refills only the growing

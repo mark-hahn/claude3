@@ -24,8 +24,13 @@ const props = defineProps<{ tab: Tab; session: ClaudeSession | null; status: Run
 const emit = defineEmits<{ started: [sessionId: string]; deployDue: [due: boolean] }>();
 
 const historyEl = ref<HTMLElement>();
-// Ctrl-wheel on the bars and boxes sizes their text alone, the same in every tab.
-const zoom = wheelZoom("pane-font-size");
+// Ctrl-wheel on the bars and boxes sizes their text alone, the same in every tab. Every tab's open
+// box is fitted again after it, so one following its bottom (boxPinned) stays there.
+const wheelSize = wheelZoom("pane-font-size");
+function zoom(event: WheelEvent): void {
+  wheelSize(event);
+  if (event.ctrlKey) window.dispatchEvent(new Event("claude3:pane-zoom"));
+}
 const runPopEl = ref<HTMLDialogElement>();
 const runText = ref("");
 const runErrorEl = ref<HTMLDialogElement>();
@@ -48,7 +53,6 @@ const now = ref(Date.now());
 // The run's status as this pane last heard it: from the prop, or straight from a delta, which
 // arrives before the prop catches up.
 let status: RunningStatus | null = null;
-let statusAt = 0;
 
 // Per-session view state, reset when the pane switches session.
 let anchorIndex = 0;
@@ -427,7 +431,6 @@ function resyncSelectedBlock(): void {
 // full render is kept for structure: the first delta of a run anchors and opens its block.
 function applyDelta(turnId: string, next: RunningStatus | null): void {
   status = next ?? status;
-  statusAt = Date.now();
   const turn = turns().find((entry) => entry.id === turnId);
   if (!turn) return;
   if (status?.active && status.turnId !== shownActiveTurn) return render();
@@ -1463,15 +1466,14 @@ const stats = computed(() => {
   const list = turns();
   const last = latest.value;
   const live = active.value ? props.status! : null;
-  const since = Math.max(0, now.value - statusAt);
-  const spent = list.reduce((sum, turn) => sum + (turn.durationMs || 0), 0) + (live ? live.elapsedMs + since : 0);
+  const spent = list.reduce((sum, turn) => sum + (turn.durationMs || 0), 0) + (live ? now.value - live.startedAt : 0);
   const skips = list.reduce((sum, turn) => sum + (turn.ponySkips || []).length, 0) + (live ? live.ponySkips.length : 0);
   return {
     turns: live ? live.turns : last?.turns ?? 0,
     graftSaved: props.session?.graftSavedUsd ?? 0,
     pony: skips,
     spend: quotaSpend(quotaUse.value, now.value),
-    quiet: shortTime(live ? live.sinceEventMs + since : 0),
+    quiet: shortTime(live ? now.value - live.lastEventAt : 0),
     duration: shortTime(spent),
   };
 });
@@ -1524,7 +1526,6 @@ watch(
   () => props.status,
   (next, prev) => {
     status = next;
-    statusAt = Date.now();
     if (!next?.active || next.turnId !== stopping.value) stopping.value = "";
     // A response that ends (finished, stopped or failed) hands the keyboard back to the prompt box.
     if (props.active && prev?.active && !next?.active) focusPrompt();
@@ -1598,6 +1599,8 @@ onMounted(() => {
   // The open box's clamp is sized from the pane height, so any resize has to re-derive it.
   resize = new ResizeObserver(resyncSelectedBlock);
   resize.observe(historyEl.value!);
+  // A text size change reflows the box without resizing the pane, so the observer misses it.
+  window.addEventListener("claude3:pane-zoom", resyncSelectedBlock);
   // Manual scrolling never changes the selection; the pane is clamped to the window the rules allow.
   historyEl.value!.addEventListener("scroll", () => {
     if (programmaticScroll || !turns().length) return;
@@ -1612,6 +1615,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("focus", checkDeploySoon);
   window.clearInterval(ticker);
   resize?.disconnect();
+  window.removeEventListener("claude3:pane-zoom", resyncSelectedBlock);
   window.removeEventListener("keydown", onPageKey, true);
   promptBox?.dispose();
 });

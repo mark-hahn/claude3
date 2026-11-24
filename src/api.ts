@@ -2,7 +2,7 @@
 // down the backend's event stream, one for all its projects.
 import { reactive, ref } from "vue";
 import { HOSTS, type HostName, type Tab } from "../shared/config.ts";
-import type { ModelList, QuotaUse, ServerEvent, StreamEvent } from "../shared/types.ts";
+import type { ModelList, QuotaUse, RunningStatus, ServerEvent, StreamEvent } from "../shared/types.ts";
 
 // The backends whose Claude login needs renewing, as each last said.
 export const authNeeded = reactive<Record<HostName, boolean>>({ wsl: false, win: false, srv: false });
@@ -78,10 +78,21 @@ function openStream(host: HostName, stream: Stream): void {
       if (event.use.at >= (quotaUse.value?.at ?? 0)) quotaUse.value = event.use;
       return;
     }
+    if (event.type === "state") Object.values(event.statuses).forEach(onPageClock);
+    else if (event.type === "session" || event.type === "delta") onPageClock(event.status);
     const listener = stream.listeners.get(event.tab);
     if (listener) listener.onEvent(event);
     else if (event.type === "state") stream.held.set(event.tab, event);
   };
+}
+
+// A run's start and last event, moved from the backend's clock to the page's as its status arrives,
+// so the footer's clocks are right whenever a pane first sees it (a hot update remounts the pane).
+function onPageClock(status: RunningStatus | null): void {
+  if (!status) return;
+  const at = Date.now();
+  status.startedAt = at - status.elapsedMs;
+  status.lastEventAt = at - status.sinceEventMs;
 }
 
 // Starts the streams, once; handed each backend's list of projects as it arrives and changes.
