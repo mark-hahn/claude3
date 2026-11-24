@@ -209,7 +209,7 @@ Click: show or hide this tool step's detail.
 Alt-click: copy the block.
 
 @prompt box
-Ctrl+Enter: send. In an empty box, brings back the last prompt; sending it unchanged just empties the box.
+Ctrl+Enter: send. In an empty box, brings back the last prompt to edit or send as it is.
 Up at the very start of the box: the session's previous prompt, each press an older one. Down at the very end: the next one, then the text you were typing.
 Ctrl-Alt-Z or Ctrl-Alt-click: the big prompt editor on or off. Ctrl-Alt-X there: show it as markdown. Ctrl-wheel there: text size.
 Tab / Shift-Tab: make list items, or step them back. Enter: the next list item. Backspace: drop the dash. #: an empty item becomes a heading.

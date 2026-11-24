@@ -980,14 +980,12 @@ async function send(text: string, keepDraft: boolean, snips: boolean, approve = 
 }
 
 // Ctrl+Enter in the prompt box. An empty one (no text, pictures or files) takes the last bar's prompt as
-// ordinary text to edit and send; left as it came, it isn't sent again: Ctrl+Enter only clears it.
+// ordinary text to edit and send; the next Ctrl+Enter sends it, changed or not.
 function sendKey(): void {
   if (props.session?.trashed) return;
-  const last = turns().at(-1);
-  const lastText = last ? untab(typedText(last)) : "";
-  if (!images().length && !attached().length) {
-    if (!draft.value.trim()) return void (draft.value = lastText);
-    if (lastText.trim() && draft.value.trim() === lastText.trim()) return void (draft.value = "");
+  if (!images().length && !attached().length && !draft.value.trim()) {
+    const last = turns().at(-1);
+    return void (draft.value = last ? untab(typedText(last)) : "");
   }
   void submit();
 }
