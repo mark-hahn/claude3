@@ -87,11 +87,24 @@ function start(shell: Shell, cwd: string): void {
     const windows = process.platform === "win32";
     const rc = join(homedir(), ".claude3", "term.bashrc");
     writeFileSync(rc, bashRc(windows));
-    // Git Bash is given C:/..., not backslashes.
-    const pty = spawn(windows ? GIT_BASH : "bash", ["--rcfile", rc.replaceAll("\\", "/")], { name: "xterm-256color", cols: shell.cols, rows: shell.rows, cwd, env: { ...childEnv(), TERM: "xterm-256color", COLORTERM: "truecolor" } });
+    // Git Bash is given C:/..., not backslashes. On Windows the ConPTY node-pty bundles (prebuilds/win32-x64/conpty, as
+    // VS Code's terminal.integrated.windowsUseConptyDll), not Windows' own: that one keeps a screen of its own and writes a
+    // wrapped line with absolute cursor moves, so once the page's Clr had moved the prompt to the top, output landed on
+    // the bottom rows. The bundled one passes text through, and its clear() (ConptyClearPseudoConsole) works.
+    const pty = spawn(windows ? GIT_BASH : "bash", ["--rcfile", rc.replaceAll("\\", "/")], { name: "xterm-256color", cols: shell.cols, rows: shell.rows, cwd, env: { ...childEnv(), TERM: "xterm-256color", COLORTERM: "truecolor" }, useConptyDll: windows });
     shell.pty = pty;
     shell.exited = false;
-    pty.onData((data) => append(shell, data));
+    // The bundled ConPTY asks the terminal's attributes (DA1) as it starts and holds the shell's output until answered
+    // (3s): answered here, and kept out of the buffer, since a page replaying it would answer again, typing "1;2c" into bash.
+    let asked = !windows;
+    pty.onData((data) => {
+      if (!asked && data.includes("\x1b[c")) {
+        asked = true;
+        data = data.replace("\x1b[c", "");
+        pty.write("\x1b[?1;2c");
+      }
+      append(shell, data);
+    });
     pty.onExit(({ exitCode }) => {
       if (shell.pty === pty) {
         shell.pty = undefined;
@@ -137,7 +150,7 @@ export function termSend(project: string, cwd: string, data: string): void {
 
 // The pane's Clr, which has cleared its own xterm: the buffer cut to its last line, the prompt, so a
 // reload doesn't bring the rest back, with the last folder sent kept for the header. The page's offset
-// stays good. ConPTY is told too, or it may reprint the old screen.
+// stays good. ConPTY is told too (ConptyClearPseudoConsole), so its screen agrees with the page's.
 export function termClear(project: string): void {
   const shell = shells.get(project);
   if (!shell) return;
