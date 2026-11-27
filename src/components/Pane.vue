@@ -175,6 +175,11 @@ function render(): void {
     bar.title = `${turn.plan ? "PLAN   " : ""}${ranAs}   ${sent}\n${typed}`;
     bar.dataset.help = "bar";
     const boxShown = index === anchorIndex && boxOpen;
+    // The block's number in its session, from 1, at the bar's far left.
+    const number = document.createElement("span");
+    number.className = "bar-index";
+    number.textContent = String(index + 1);
+    bar.appendChild(number);
     // A running turn whose box is closed says so with a blinking arrow; the delay is set from the
     // clock so the rebuild on every streamed chunk doesn't restart the blink.
     if (active && status!.turnId === turn.id && !boxShown) {
@@ -1708,6 +1713,7 @@ onBeforeUnmount(() => {
 .pane .prompt-bar:hover { background: linear-gradient(var(--wash), var(--wash)), var(--yellow); }
 .pane .prompt-bar.prompt-expanded { height: auto; min-height: 1.65em; overflow: visible; text-overflow: clip; white-space: pre-wrap; }
 .pane .prompt-bar.search-hit { background: #cfe8ff; border-color: #9cc4e8; }
+.pane .bar-index { margin-right: 6px; font-variant-numeric: tabular-nums; }
 .pane .bar-icon { display: inline-block; width: 1em; height: 1em; vertical-align: -0.15em; margin-right: 6px; border-radius: 3px; cursor: pointer; }
 .pane .bar-icon:hover { background: var(--wash); }
 .pane .bar-icon svg { display: block; width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }

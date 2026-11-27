@@ -183,6 +183,7 @@ Click: select this block and open its box; on the selected bar, open or close th
 Ctrl-click: show the whole prompt, or one line again.
 Alt-click: copy the prompt.
 Hover: model and time it ran with, PLAN first when it was a plan turn, and the prompt.
+The number at its far left counts the session's blocks from 1.
 Enter (outside a text box): open or close the last block's box; with another block selected, select the last one first.
 
 @fork mark
