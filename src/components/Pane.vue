@@ -1511,6 +1511,8 @@ watch(
         localStorage.removeItem(draftKey(""));
       }
       switchedFrom = id;
+      // The icons are this session's pictures; the draft watcher redraws them only when the text differs.
+      showImageChars();
       anchorIndex = 0;
       boxOpen = true;
       toolsBox = false;
